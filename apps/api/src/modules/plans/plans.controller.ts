@@ -3,9 +3,8 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
-import { PaginationDto } from '@/common/dto/pagination.dto';
 import { PlansService } from './plans.service';
-import { CreatePlanDto, UpdatePlanDto } from './dto/plan.dto';
+import { CreatePlanDto, PlansQueryDto, UpdatePlanDto } from './dto/plan.dto';
 
 @ApiTags('Plans')
 @ApiBearerAuth()
@@ -32,16 +31,14 @@ export class PlansController {
   @ApiOperation({ summary: 'Listar planos (filtrados por parceiro quando aplicável)' })
   findAll(
     @CurrentUser() user: AuthUser,
-    @Query() pagination: PaginationDto,
-    @Query('operatorId') operatorId?: string,
-    @Query('partnerId') partnerId?: string,
+    @Query() query: PlansQueryDto,
   ) {
     return this.plansService.findAll(user, {
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 50,
-      search: pagination.search,
-      operatorId,
-      partnerId,
+      page: query.page ?? 1,
+      limit: query.limit ?? 50,
+      search: query.search,
+      operatorId: query.operatorId,
+      partnerId: query.partnerId,
     });
   }
 

@@ -41,6 +41,7 @@ export class PlansService {
 
     const partnerId = resolvePartnerId(user, params.partnerId);
     if (user.role === UserRole.PARTNER && partnerId) {
+      await this.ensurePartnerPlanLinks(partnerId);
       where.partnerPlans = { some: { partnerId, isActive: true } };
     }
 
@@ -69,9 +70,13 @@ export class PlansService {
 
   async create(dto: CreatePlanDto, actorId?: string) {
     const data = this.normalizePlanData(dto);
-    const plan = await this.prisma.plan.create({
-      data: data as Prisma.PlanCreateInput,
-      include: { operator: { select: { id: true, name: true } } },
+    const plan = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.plan.create({
+        data: data as Prisma.PlanCreateInput,
+        include: { operator: { select: { id: true, name: true } } },
+      });
+      await this.linkPlanToActivePartners(created.id, tx);
+      return created;
     });
     await this.auditService.log({
       userId: actorId,
@@ -112,5 +117,46 @@ export class PlansService {
       entityType: 'Plan',
     });
     return { message: 'Plano removido com sucesso' };
+  }
+
+  private async linkPlanToActivePartners(
+    planId: string,
+    tx: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const partners = await tx.partner.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (!partners.length) return;
+    await tx.partnerPlan.createMany({
+      data: partners.map((partner) => ({
+        partnerId: partner.id,
+        planId,
+        isActive: true,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  async ensurePartnerPlanLinks(partnerId: string) {
+    const linkedCount = await this.prisma.partnerPlan.count({
+      where: { partnerId, isActive: true },
+    });
+    if (linkedCount > 0) return;
+
+    const plans = await this.prisma.plan.findMany({
+      where: { status: true },
+      select: { id: true },
+    });
+    if (!plans.length) return;
+
+    await this.prisma.partnerPlan.createMany({
+      data: plans.map((plan) => ({
+        partnerId,
+        planId: plan.id,
+        isActive: true,
+      })),
+      skipDuplicates: true,
+    });
   }
 }

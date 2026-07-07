@@ -1,16 +1,15 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { SaleStatus } from '@prisma/client';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
-import { PaginationDto } from '@/common/dto/pagination.dto';
 import { SalesService } from './sales.service';
 import {
   ContestSaleDto,
   CreateSaleDto,
   RejectSaleDto,
   RequestSaleDocumentsDto,
+  SalesQueryDto,
   UpdateSaleDto,
   UpdateSaleStatusDto,
 } from './dto/sale.dto';
@@ -26,20 +25,16 @@ export class SalesController {
   @ApiOperation({ summary: 'Listar vendas' })
   findAll(
     @CurrentUser() user: AuthUser,
-    @Query() pagination: PaginationDto,
-    @Query('status') status?: SaleStatus,
-    @Query('partnerId') partnerId?: string,
-    @Query('branchId') branchId?: string,
-    @Query('campaignId') campaignId?: string,
+    @Query() query: SalesQueryDto,
   ) {
     return this.salesService.findAll(user, {
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      search: pagination.search,
-      status,
-      partnerId,
-      branchId,
-      campaignId,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      search: query.search,
+      status: query.status,
+      partnerId: query.partnerId,
+      branchId: query.branchId,
+      campaignId: query.campaignId,
     });
   }
 

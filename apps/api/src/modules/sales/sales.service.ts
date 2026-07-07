@@ -11,6 +11,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { CommissionsService } from '@/modules/commissions/commissions.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { PlansService } from '@/modules/plans/plans.service';
 import { EventsGateway } from '@/gateway/events.gateway';
 import { MESSAGES } from '@/common/constants/messages';
 import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
@@ -66,6 +67,7 @@ export class SalesService {
     private commissionsService: CommissionsService,
     private notificationsService: NotificationsService,
     private eventsGateway: EventsGateway,
+    private plansService: PlansService,
   ) {}
 
   private async resolveCommission(partnerId: string, planId: string, saleValue: number) {
@@ -231,10 +233,13 @@ export class SalesService {
     if (!plan) throw new BadRequestException('Plano inválido');
 
     if (user.role === UserRole.PARTNER) {
+      await this.plansService.ensurePartnerPlanLinks(partnerId);
       const linked = await this.prisma.partnerPlan.findFirst({
         where: { partnerId, planId: dto.planId, isActive: true },
       });
-      if (!linked) throw new BadRequestException('Plano não disponível para este parceiro');
+      if (!linked) {
+        throw new BadRequestException('Plano não disponível para este parceiro');
+      }
     }
 
     if (dto.campaignId) {

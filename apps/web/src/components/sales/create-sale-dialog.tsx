@@ -78,19 +78,55 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
 
   useEffect(() => {
     if (!open) return;
-    getPaginated<Operator>('/operators', { limit: 100 }).then((ops) => setOperators(ops.data));
-    const plansPath = isPartner ? '/plans/available' : '/plans';
-    getPaginated<Plan>(plansPath, { limit: 100 }).then((pls) => setPlans(pls.data));
-    if (!isPartner) {
-      getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' }).then((pts) => setPartners(pts.data));
+
+    const load = async () => {
+      const results = await Promise.allSettled([
+        getPaginated<Operator>('/operators', { limit: 100 }),
+        ...(isPartner ? [] : [getPaginated<Partner>('/partners', { limit: 100 })]),
+      ]);
+
+      const [opsResult, ptsResult] = results;
+      if (opsResult.status === 'fulfilled') {
+        setOperators(opsResult.value.data);
+      } else {
+        setOperators([]);
+      }
+      if (!isPartner && ptsResult?.status === 'fulfilled') {
+        setPartners(ptsResult.value.data);
+      }
+    };
+
+    void load();
+
+    if (isPartner) {
+      if (user?.partnerId) {
+        setPartnerId(user.partnerId);
+      } else {
+        toast({
+          title: 'Conta sem parceiro vinculado',
+          description: 'Peça ao administrador para vincular seu usuário a um parceiro.',
+          variant: 'destructive',
+        });
+      }
     }
-    if (isPartner && user?.partnerId) setPartnerId(user.partnerId);
-  }, [open, isPartner, user?.partnerId]);
+  }, [open, isPartner, user?.partnerId, toast]);
+
+  useEffect(() => {
+    if (!open || !operatorId) {
+      if (!operatorId) setPlans([]);
+      return;
+    }
+
+    const plansPath = isPartner ? '/plans/available' : '/plans';
+    getPaginated<Plan>(plansPath, { limit: 100, operatorId })
+      .then((pls) => setPlans(pls.data))
+      .catch(() => setPlans([]));
+  }, [open, operatorId, isPartner]);
 
   const filteredPlans = plans.filter((p) => p.operatorId === operatorId);
 
   const reset = () => {
-    setPartnerId('');
+    setPartnerId(isPartner && user?.partnerId ? user.partnerId : '');
     setOperatorId('');
     setPlanId('');
     setValue('');
@@ -108,6 +144,14 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
   };
 
   const handleSave = async () => {
+    if (isPartner && !user?.partnerId) {
+      toast({
+        title: 'Conta sem parceiro vinculado',
+        description: 'Não é possível registrar vendas sem vínculo com um parceiro.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (!partnerId || !operatorId || !planId || !newNumber || !contractFormat) {
       toast({ title: 'Preencha parceiro, operadora, plano, linha e contrato', variant: 'destructive' });
       return;
@@ -209,16 +253,30 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                 <Select value={operatorId} onValueChange={(v) => { setOperatorId(v); setPlanId(''); setValue(''); }}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    {operators.map((o) => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
+                    {operators.length === 0 ? (
+                      <SelectItem value="__empty" disabled>Nenhuma operadora cadastrada</SelectItem>
+                    ) : (
+                      operators.map((o) => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)
+                    )}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Plano *</Label>
-                <Select value={planId} onValueChange={(v) => { setPlanId(v); const p = filteredPlans.find((x) => x.id === v); if (p) setValue(String(p.price)); }}>
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <Select
+                  value={planId}
+                  disabled={!operatorId}
+                  onValueChange={(v) => { setPlanId(v); const p = filteredPlans.find((x) => x.id === v); if (p) setValue(String(p.price)); }}
+                >
+                  <SelectTrigger><SelectValue placeholder={operatorId ? 'Selecione' : 'Escolha a operadora'} /></SelectTrigger>
                   <SelectContent>
-                    {filteredPlans.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                    {filteredPlans.length === 0 ? (
+                      <SelectItem value="__empty" disabled>
+                        {operatorId ? 'Nenhum plano para esta operadora' : 'Escolha a operadora primeiro'}
+                      </SelectItem>
+                    ) : (
+                      filteredPlans.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                    )}
                   </SelectContent>
                 </Select>
               </div>

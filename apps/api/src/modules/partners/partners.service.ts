@@ -108,6 +108,8 @@ export class PartnersService {
         });
       }
 
+      await this.linkPartnerToActivePlans(created.id, tx);
+
       return created;
     });
 
@@ -258,5 +260,24 @@ export class PartnersService {
       entityType: 'Partner',
     });
     return { message: 'Parceiro removido com sucesso' };
+  }
+
+  private async linkPartnerToActivePlans(
+    partnerId: string,
+    tx: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const plans = await tx.plan.findMany({
+      where: { status: true },
+      select: { id: true },
+    });
+    if (!plans.length) return;
+    await tx.partnerPlan.createMany({
+      data: plans.map((plan) => ({
+        partnerId,
+        planId: plan.id,
+        isActive: true,
+      })),
+      skipDuplicates: true,
+    });
   }
 }

@@ -76,8 +76,15 @@ export default function VendasPage() {
       });
       setItems(res.data);
       setTotalPages(res.meta.totalPages);
-    } catch { setItems([]); } finally { setLoading(false); }
-  }, [search, statusFilter, page]);
+    } catch (err) {
+      setItems([]);
+      toast({
+        title: 'Erro ao carregar vendas',
+        description: err instanceof Error ? err.message : 'Falha na requisição',
+        variant: 'destructive',
+      });
+    } finally { setLoading(false); }
+  }, [search, statusFilter, page, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -165,7 +172,11 @@ export default function VendasPage() {
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
       ) : items.length === 0 ? (
-        <EmptyState icon={ShoppingCart} title="Nenhuma venda" description="As vendas aparecerão aqui." />
+        <EmptyState
+          icon={ShoppingCart}
+          title="Nenhuma venda"
+          description={isPartner ? 'Registre sua primeira venda com o botão acima.' : 'As vendas aparecerão aqui.'}
+        />
       ) : (
         <>
           <div className="rounded-xl border bg-card shadow-card">

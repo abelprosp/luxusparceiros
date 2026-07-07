@@ -3,6 +3,7 @@ import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Min } from '
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CommissionType } from '@prisma/client';
 import { Type } from 'class-transformer';
+import { PaginationDto } from '@/common/dto/pagination.dto';
 
 export class CreatePlanDto {
   @ApiProperty()
@@ -59,4 +60,16 @@ export class UpdatePlanDto extends PartialType(CreatePlanDto) {
   @IsOptional()
   @IsBoolean()
   status?: boolean;
+}
+
+export class PlansQueryDto extends PaginationDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  operatorId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
 }

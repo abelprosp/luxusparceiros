@@ -15,6 +15,7 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ContractFormat, DocumentType, SaleStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
+import { PaginationDto } from '@/common/dto/pagination.dto';
 import { CreateClientInlineDto } from './create-client-inline.dto';
 
 export class SaleRequiredDocumentDto {
@@ -155,4 +156,26 @@ export class RejectSaleDto {
   @ApiProperty()
   @IsString()
   reason: string;
+}
+
+export class SalesQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ enum: SaleStatus })
+  @IsOptional()
+  @IsEnum(SaleStatus)
+  status?: SaleStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  campaignId?: string;
 }
