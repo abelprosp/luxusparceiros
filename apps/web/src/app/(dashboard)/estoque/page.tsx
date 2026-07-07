@@ -127,20 +127,34 @@ export default function EstoquePage() {
     else loadLines();
   }, [tab, loadChips, loadLines, isPartner]);
 
+  const loadFormOptions = useCallback(async () => {
+    try {
+      const [opsRes, plsRes, ptsRes] = await Promise.all([
+        getPaginated<Operator>('/operators', { limit: 100 }),
+        getPaginated<Plan>('/plans', { limit: 100 }),
+        getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' }),
+      ]);
+      setOperators(opsRes.data);
+      setPlans(plsRes.data);
+      setPartners(ptsRes.data);
+    } catch (err) {
+      toast({
+        title: 'Erro ao carregar opções',
+        description: err instanceof Error ? err.message : 'Falha ao buscar operadoras, planos e parceiros',
+        variant: 'destructive',
+      });
+    }
+  }, [toast]);
+
   useEffect(() => {
     if (isPartner) return;
-    Promise.all([
-      getPaginated<Operator>('/operators', { limit: 100 }),
-      getPaginated<Plan>('/plans', { limit: 200 }),
-      getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' }),
-    ])
-      .then(([ops, pls, pts]) => {
-        setOperators(ops.data);
-        setPlans(pls.data);
-        setPartners(pts.data);
-      })
-      .catch(() => {});
-  }, [isPartner]);
+    loadFormOptions();
+  }, [isPartner, loadFormOptions]);
+
+  useEffect(() => {
+    if (isPartner || !lineDialogOpen) return;
+    loadFormOptions();
+  }, [isPartner, lineDialogOpen, loadFormOptions]);
 
   const handleReserve = async (lineId: string) => {
     setReserving(lineId);
@@ -404,16 +418,25 @@ export default function EstoquePage() {
             <div className="space-y-2">
               <Label>Operadora *</Label>
               <Select
-                value={lineForm.operatorId}
+                value={lineForm.operatorId || undefined}
                 onValueChange={(v) => setLineForm({ ...lineForm, operatorId: v, planId: '' })}
               >
                 <SelectTrigger><SelectValue placeholder="Selecione a operadora" /></SelectTrigger>
                 <SelectContent>
-                  {operators.map((op) => (
-                    <SelectItem key={op.id} value={op.id}>{op.name}</SelectItem>
-                  ))}
+                  {operators.length === 0 ? (
+                    <SelectItem value="__empty" disabled>
+                      Nenhuma operadora cadastrada
+                    </SelectItem>
+                  ) : (
+                    operators.map((op) => (
+                      <SelectItem key={op.id} value={op.id}>{op.name}</SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
+              {operators.length === 0 && (
+                <p className="text-xs text-muted-foreground">Cadastre operadoras em Operadoras antes de criar linhas.</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Plano</Label>
@@ -425,11 +448,20 @@ export default function EstoquePage() {
                 <SelectTrigger><SelectValue placeholder="Opcional" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Nenhum</SelectItem>
-                  {filteredPlans.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
+                  {filteredPlans.length === 0 && lineForm.operatorId ? (
+                    <SelectItem value="__no_plans" disabled>
+                      Nenhum plano para esta operadora
+                    </SelectItem>
+                  ) : (
+                    filteredPlans.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
+              {lineForm.operatorId && filteredPlans.length === 0 && (
+                <p className="text-xs text-muted-foreground">Cadastre planos em Planos vinculados à operadora selecionada.</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Parceiro</Label>
@@ -445,6 +477,9 @@ export default function EstoquePage() {
                   ))}
                 </SelectContent>
               </Select>
+              {partners.length === 0 && (
+                <p className="text-xs text-muted-foreground">Nenhum parceiro ativo cadastrado. Use estoque geral ou cadastre em Parceiros.</p>
+              )}
             </div>
           </div>
           <DialogFooter>

@@ -80,7 +80,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     if (!open) return;
     getPaginated<Operator>('/operators', { limit: 100 }).then((ops) => setOperators(ops.data));
     const plansPath = isPartner ? '/plans/available' : '/plans';
-    getPaginated<Plan>(plansPath, { limit: 200 }).then((pls) => setPlans(pls.data));
+    getPaginated<Plan>(plansPath, { limit: 100 }).then((pls) => setPlans(pls.data));
     if (!isPartner) {
       getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' }).then((pts) => setPartners(pts.data));
     }
