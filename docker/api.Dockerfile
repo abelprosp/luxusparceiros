@@ -16,31 +16,27 @@ COPY . .
 RUN pnpm --filter @luxus/types build \
  && pnpm --filter @luxus/utils build \
  && pnpm --filter @luxus/api prisma generate \
- && pnpm --filter @luxus/api build
+ && pnpm --filter @luxus/api build \
+ && pnpm deploy --filter=@luxus/api --prod /prod
 
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
 RUN addgroup --system --gid 1001 nodejs \
- && adduser --system --uid 1001 nestjs
+ && adduser --system --uid 1001 nestjs \
+ && npm install -g prisma@6.19.3
 
-# Copia monorepo completo para preservar symlinks do pnpm e dependências de runtime
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
-COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
-COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
+COPY --from=builder /prod ./
+COPY --from=builder /app/apps/api/dist ./dist
+COPY --from=builder /app/apps/api/prisma ./prisma
 COPY docker/api-entrypoint.sh /app/entrypoint.sh
 
-RUN chmod +x /app/entrypoint.sh \
- && mkdir -p /app/apps/api/uploads \
+RUN prisma generate --schema=./prisma/schema.prisma \
+ && chmod +x /app/entrypoint.sh \
+ && mkdir -p uploads \
  && chown -R nestjs:nodejs /app
 
 USER nestjs
-WORKDIR /app/apps/api
 EXPOSE 3001
-
 ENTRYPOINT ["/app/entrypoint.sh"]
