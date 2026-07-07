@@ -1,0 +1,11 @@
+# Configuração do serviço WEB na Railway.
+# No painel do serviço Web: Settings → Config-as-code → Config file path = railway.web.toml
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "docker/web.Dockerfile"
+
+[deploy]
+healthcheckPath = "/login"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
