@@ -9,7 +9,7 @@ import {
   REQUEST_TYPE_LABELS,
 } from '@luxus/types';
 import { formatDate } from '@luxus/utils';
-import { getPaginated } from '@/lib/api';
+import { getPaginated, API_URL } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { Input } from '@/components/ui/input';
@@ -75,7 +75,7 @@ export default function SolicitacoesPage() {
       if (statusFilter !== 'all') params.set('status', statusFilter);
       const qs = params.toString();
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api/requests/export/csv${qs ? `?${qs}` : ''}`,
+        `${API_URL}/requests/export/csv${qs ? `?${qs}` : ''}`,
         { headers: token ? { Authorization: `Bearer ${token}` } : {} },
       );
       if (!response.ok) throw new Error('Falha ao exportar');

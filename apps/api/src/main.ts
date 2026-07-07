@@ -11,7 +11,11 @@ async function bootstrap() {
 
   app.use(helmet());
   app.enableCors({
-    origin: configService.get<string>('CORS_ORIGINS', 'http://localhost:3000').split(','),
+    origin: configService
+      .get<string>('CORS_ORIGINS', 'http://localhost:3000')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean),
     credentials: true,
   });
 
