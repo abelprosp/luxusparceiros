@@ -102,6 +102,13 @@ export class SalesController {
     return this.salesService.requestDocuments(id, dto, user);
   }
 
+  @Post(':id/resubmit-documents')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Parceiro reenvia documentos solicitados' })
+  resubmitDocuments(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesService.resubmitDocuments(id, user);
+  }
+
   @Delete(':id')
   @RequirePermissions(PERMISSIONS.SALES_DELETE)
   @ApiOperation({ summary: 'Remover venda' })

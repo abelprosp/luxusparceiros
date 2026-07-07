@@ -500,6 +500,52 @@ export class SalesService {
     return updated;
   }
 
+  async resubmitDocuments(id: string, user: AuthUser) {
+    const sale = await this.findOne(id, user);
+
+    if (sale.status !== SaleStatus.DOCUMENTS_PENDING) {
+      throw new BadRequestException('Esta venda não está aguardando documentos');
+    }
+
+    const required = (sale.requiredDocuments ?? []) as Array<{
+      type: string;
+      label: string;
+      fulfilled: boolean;
+    }>;
+
+    if (!required.length) {
+      throw new BadRequestException('Nenhum documento foi solicitado para esta venda');
+    }
+
+    const pending = required.filter((doc) => !doc.fulfilled);
+    if (pending.length > 0) {
+      throw new BadRequestException(
+        `Envie os documentos pendentes: ${pending.map((doc) => doc.label).join(', ')}`,
+      );
+    }
+
+    const updated = await this.updateStatus(id, { status: SaleStatus.IN_ANALYSIS }, user);
+
+    const admins = await this.prisma.user.findMany({
+      where: { role: { in: [UserRole.ADMIN, UserRole.SUPERVISOR] }, isActive: true },
+      select: { id: true },
+    });
+
+    await Promise.all(
+      admins.map((admin) =>
+        this.notificationsService.create({
+          userId: admin.id,
+          type: 'SYSTEM',
+          title: 'Documentos reenviados',
+          message: `O parceiro reenviou os documentos da venda ${sale.protocol}.`,
+          data: { saleId: sale.id },
+        }),
+      ),
+    );
+
+    return updated;
+  }
+
   private async notifyStatusChange(
     sale: { id: string; protocol: string; partnerId: string },
     status: SaleStatus,

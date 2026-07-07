@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal } from 'lucide-react';
+import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal, Upload } from 'lucide-react';
 import { SaleStatus, DocumentType, SALE_STATUS_LABELS } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
@@ -19,6 +19,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/components/ui/toaster';
 import { CreateSaleButton } from '@/components/sales/create-sale-dialog';
+import { ResubmitSaleDocumentsDialog } from '@/components/sales/resubmit-sale-documents-dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerUser } from '@/lib/rbac';
 
@@ -61,6 +62,7 @@ export default function VendasPage() {
   const [reason, setReason] = useState('');
   const [docMessage, setDocMessage] = useState('');
   const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
+  const [resubmitSaleId, setResubmitSaleId] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const isPartner = isPartnerUser(user);
@@ -191,7 +193,7 @@ export default function VendasPage() {
                   <TableHead>Valor</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Data</TableHead>
-                  {!isPartner && <TableHead className="text-right">Ações</TableHead>}
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -203,10 +205,27 @@ export default function VendasPage() {
                     <TableCell>{s.plan?.name || '-'}</TableCell>
                     {!isPartner && <TableCell>{s.campaign?.title || '-'}</TableCell>}
                     <TableCell>{formatCurrency(Number(s.value))}</TableCell>
-                    <TableCell><Badge variant={statusBadge(s.status)}>{SALE_STATUS_LABELS[s.status] ?? s.status}</Badge></TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={statusBadge(s.status)}>{SALE_STATUS_LABELS[s.status] ?? s.status}</Badge>
+                        {isPartner && s.status === SaleStatus.DOCUMENTS_PENDING && s.requiredDocuments?.length ? (
+                          <span className="text-xs text-amber-600">
+                            {s.requiredDocuments.filter((d) => !d.fulfilled).length} doc(s) pendente(s)
+                          </span>
+                        ) : null}
+                      </div>
+                    </TableCell>
                     <TableCell>{formatDate(s.createdAt)}</TableCell>
-                    {!isPartner && (
-                      <TableCell className="text-right">
+                    <TableCell className="text-right">
+                      {isPartner ? (
+                        s.status === SaleStatus.DOCUMENTS_PENDING ? (
+                          <Button size="sm" variant="outline" onClick={() => setResubmitSaleId(s.id)}>
+                            <Upload className="mr-2 h-4 w-4" /> Enviar docs
+                          </Button>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )
+                      ) : (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
@@ -234,8 +253,8 @@ export default function VendasPage() {
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>
-                      </TableCell>
-                    )}
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -295,6 +314,13 @@ export default function VendasPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ResubmitSaleDocumentsDialog
+        saleId={resubmitSaleId}
+        open={!!resubmitSaleId}
+        onOpenChange={(open) => { if (!open) setResubmitSaleId(null); }}
+        onSuccess={load}
+      />
     </DashboardLayout>
   );
 }
