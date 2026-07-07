@@ -12,16 +12,16 @@ import {
   Filter,
   X,
 } from 'lucide-react';
-import { UserRole, type DashboardAdminMetrics } from '@luxus/types';
+import type { DashboardAdminMetrics } from '@luxus/types';
 import { formatCurrency } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerScopedUser } from '@/lib/rbac';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { PartnerDashboard } from '@/components/dashboard/partner-dashboard';
+import { BrazilPartnersMap } from '@/components/dashboard/brazil-partners-map';
 import { MetricsCard } from '@/components/charts/metrics-card';
 import { SalesChart } from '@/components/charts/sales-chart';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 
 interface PartnerOption {
   id: string;
@@ -63,10 +64,32 @@ const fallbackMetrics: DashboardAdminMetrics = {
   revenue: 0,
   commissions: 0,
   salesChart: [],
-  partnersByState: [],
+  partnersInBrazil: [],
   ranking: [],
   campaignPerformance: [],
 };
+
+function BentoPanel({
+  title,
+  icon: Icon,
+  children,
+  className,
+}: {
+  title: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('bento-card p-5 sm:p-6', className)}>
+      <div className="mb-5 flex items-center gap-2">
+        {Icon && <Icon className="h-5 w-5 text-primary" />}
+        <h3 className="text-base font-semibold">{title}</h3>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -151,14 +174,14 @@ export default function DashboardPage() {
       title="Dashboard"
       description="Visão geral do ecossistema Luxus Parceiros"
     >
-      <div className="mb-6 flex flex-col gap-3">
-        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+      <div className="bento-card mb-6 p-4 sm:p-5">
+        <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
           <Filter className="h-4 w-4" />
           Filtros
         </div>
         <div className="flex flex-wrap gap-3">
           <Select value={partnerId} onValueChange={setPartnerId}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="h-11 w-48 rounded-2xl border-0 bg-[#f8f7f4] shadow-none">
               <SelectValue placeholder="Parceiro" />
             </SelectTrigger>
             <SelectContent>
@@ -172,7 +195,7 @@ export default function DashboardPage() {
           </Select>
 
           <Select value={state} onValueChange={setState}>
-            <SelectTrigger className="w-40">
+            <SelectTrigger className="h-11 w-40 rounded-2xl border-0 bg-[#f8f7f4] shadow-none">
               <SelectValue placeholder="Região (UF)" />
             </SelectTrigger>
             <SelectContent>
@@ -186,7 +209,7 @@ export default function DashboardPage() {
           </Select>
 
           <Select value={campaignId} onValueChange={setCampaignId}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="h-11 w-48 rounded-2xl border-0 bg-[#f8f7f4] shadow-none">
               <SelectValue placeholder="Campanha" />
             </SelectTrigger>
             <SelectContent>
@@ -200,7 +223,7 @@ export default function DashboardPage() {
           </Select>
 
           <Select value={operatorId} onValueChange={setOperatorId}>
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="h-11 w-44 rounded-2xl border-0 bg-[#f8f7f4] shadow-none">
               <SelectValue placeholder="Operadora" />
             </SelectTrigger>
             <SelectContent>
@@ -214,7 +237,7 @@ export default function DashboardPage() {
           </Select>
 
           {hasFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
+            <Button variant="ghost" size="sm" className="rounded-2xl" onClick={clearFilters}>
               <X className="mr-1 h-4 w-4" />
               Limpar
             </Button>
@@ -223,14 +246,14 @@ export default function DashboardPage() {
       </div>
 
       {loading ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 rounded-xl" />
+            <Skeleton key={i} className="h-40 rounded-2xl" />
           ))}
         </div>
       ) : (
-        <>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <MetricsCard
               title="Parceiros Ativos"
               value={data.activePartners}
@@ -240,12 +263,14 @@ export default function DashboardPage() {
             <MetricsCard
               title="Linhas Disponíveis"
               value={data.availableLines}
+              description={`${data.soldLines} vendidas`}
               icon={Smartphone}
             />
             <MetricsCard
               title="Receita"
               value={formatCurrency(data.revenue)}
               icon={TrendingUp}
+              variant="accent"
             />
             <MetricsCard
               title="Comissões"
@@ -254,65 +279,52 @@ export default function DashboardPage() {
             />
           </div>
 
-          <div className="mt-6 grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <SalesChart
-                data={data.salesChart}
-                title="Vendas nos últimos 30 dias"
-              />
-            </div>
+          <div className="grid gap-4 xl:grid-cols-12">
+            <SalesChart
+              data={data.salesChart}
+              title="Vendas nos últimos 30 dias"
+              className="xl:col-span-8"
+            />
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Trophy className="h-5 w-5 text-primary" />
-                  Ranking de Parceiros
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
+            <BentoPanel title="Ranking de Parceiros" icon={Trophy} className="xl:col-span-4">
+              <div className="space-y-3">
                 {data.ranking.length > 0 ? (
                   data.ranking.slice(0, 5).map((item, index) => (
                     <div
                       key={item.partnerId}
-                      className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2"
+                      className="flex items-center justify-between rounded-2xl bg-[#f8f7f4] px-4 py-3"
                     >
-                      <div className="flex items-center gap-3">
-                        <Badge variant={index === 0 ? 'default' : 'secondary'}>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Badge variant={index === 0 ? 'default' : 'secondary'} className="rounded-full">
                           #{index + 1}
                         </Badge>
-                        <span className="text-sm font-medium">{item.partnerName}</span>
+                        <span className="truncate text-sm font-medium">{item.partnerName}</span>
                       </div>
-                      <span className="text-sm font-semibold text-primary">
-                        {item.sales} vendas
+                      <span className="shrink-0 text-sm font-semibold text-primary">
+                        {item.sales}
                       </span>
                     </div>
                   ))
                 ) : (
-                  <p className="py-4 text-center text-sm text-muted-foreground">
+                  <p className="py-6 text-center text-sm text-muted-foreground">
                     Nenhum parceiro com vendas no período
                   </p>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </BentoPanel>
           </div>
 
-          {(data.campaignPerformance?.length ?? 0) > 0 && (
-            <div className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Megaphone className="h-5 w-5 text-primary" />
-                    Performance por Campanha
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
+          <div className="grid gap-4 xl:grid-cols-12">
+            {(data.campaignPerformance?.length ?? 0) > 0 && (
+              <BentoPanel title="Performance por Campanha" icon={Megaphone} className="xl:col-span-4">
+                <div className="space-y-3">
                   {data.campaignPerformance!.map((c) => (
                     <div
                       key={c.campaignId}
-                      className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2"
+                      className="rounded-2xl bg-[#f8f7f4] px-4 py-3"
                     >
-                      <span className="text-sm font-medium">{c.title}</span>
-                      <div className="flex items-center gap-4 text-sm">
+                      <p className="truncate text-sm font-medium">{c.title}</p>
+                      <div className="mt-2 flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">{c.salesCount} vendas</span>
                         <span className="font-semibold text-primary">
                           {formatCurrency(c.revenue)}
@@ -320,44 +332,21 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ))}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          <div className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <MapPin className="h-5 w-5 text-primary" />
-                  Parceiros por Estado
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex h-64 items-center justify-center rounded-xl border border-dashed bg-muted/30">
-                  <div className="text-center">
-                    <MapPin className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Mapa do Brasil — em breve
-                    </p>
-                    <div className="mt-4 flex flex-wrap justify-center gap-2">
-                      {data.partnersByState.map((s) => (
-                        <Badge key={s.state} variant="outline">
-                          {s.state}: {s.count}
-                        </Badge>
-                      ))}
-                    </div>
-                    {data.partnersByState.length === 0 && (
-                      <p className="mt-4 text-sm text-muted-foreground">
-                        Nenhum parceiro encontrado
-                      </p>
-                    )}
-                  </div>
                 </div>
-              </CardContent>
-            </Card>
+              </BentoPanel>
+            )}
+
+            <BentoPanel
+              title="Parceiros no Brasil"
+              icon={MapPin}
+              className={cn(
+                (data.campaignPerformance?.length ?? 0) > 0 ? 'xl:col-span-8' : 'xl:col-span-12',
+              )}
+            >
+              <BrazilPartnersMap partners={data.partnersInBrazil} />
+            </BentoPanel>
           </div>
-        </>
+        </div>
       )}
     </DashboardLayout>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Search, Upload, Warehouse, Download, Plus, Smartphone } from 'lucide-react';
+import { Search, Upload, Warehouse, Download, Plus, Smartphone, Pencil } from 'lucide-react';
 import { LineStatus, LINE_STATUS_LABELS } from '@luxus/types';
 import { formatDate, formatPhone } from '@luxus/utils';
 import { api, downloadAuthenticatedFile, getPaginated } from '@/lib/api';
@@ -78,6 +78,7 @@ const emptyLineForm = {
   operatorId: '',
   planId: '',
   partnerId: '',
+  status: LineStatus.AVAILABLE,
 };
 
 function statusBadgeVariant(status: LineStatus) {
@@ -112,6 +113,7 @@ export default function EstoquePage() {
   const [partnerFilter, setPartnerFilter] = useState('all');
   const [importing, setImporting] = useState(false);
   const [lineDialogOpen, setLineDialogOpen] = useState(false);
+  const [editingLine, setEditingLine] = useState<Line | null>(null);
   const [lineForm, setLineForm] = useState(emptyLineForm);
   const [savingLine, setSavingLine] = useState(false);
   const [adminSummary, setAdminSummary] = useState<AdminStockSummary | null>(null);
@@ -301,30 +303,62 @@ export default function EstoquePage() {
     }
   };
 
-  const handleCreateLine = async () => {
+  const openCreateLine = () => {
+    setEditingLine(null);
+    setLineForm(emptyLineForm);
+    setLineDialogOpen(true);
+  };
+
+  const openEditLine = async (line: Line) => {
+    setSavingLine(true);
+    try {
+      const full = await api<Line & { operator?: { id: string }; plan?: { id: string }; partner?: { id: string } | null }>(`/lines/${line.id}`);
+      setEditingLine(full);
+      setLineForm({
+        number: full.number,
+        operatorId: full.operator?.id ?? '',
+        planId: full.plan?.id ?? '',
+        partnerId: full.partner?.id ?? '',
+        status: full.status,
+      });
+      setLineDialogOpen(true);
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao carregar linha', variant: 'destructive' });
+    } finally {
+      setSavingLine(false);
+    }
+  };
+
+  const handleSaveLine = async () => {
     if (!lineForm.number || !lineForm.operatorId) {
       toast({ title: 'Preencha número e operadora', variant: 'destructive' });
       return;
     }
     setSavingLine(true);
     try {
-      await api('/lines', {
-        method: 'POST',
-        body: {
-          number: lineForm.number,
-          operatorId: lineForm.operatorId,
-          planId: lineForm.planId || undefined,
-          partnerId: lineForm.partnerId || undefined,
-        },
-      });
-      toast({ title: 'Linha cadastrada', variant: 'success' });
+      const body = {
+        number: lineForm.number,
+        operatorId: lineForm.operatorId,
+        planId: lineForm.planId || null,
+        partnerId: lineForm.partnerId || null,
+        ...(editingLine && { status: lineForm.status }),
+      };
+
+      if (editingLine) {
+        await api(`/lines/${editingLine.id}`, { method: 'PATCH', body });
+        toast({ title: 'Linha atualizada', variant: 'success' });
+      } else {
+        await api('/lines', { method: 'POST', body });
+        toast({ title: 'Linha cadastrada', variant: 'success' });
+        setTab('lines');
+      }
       setLineDialogOpen(false);
+      setEditingLine(null);
       setLineForm(emptyLineForm);
-      setTab('lines');
       loadLines();
       loadSummary();
     } catch (err) {
-      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao cadastrar', variant: 'destructive' });
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao salvar', variant: 'destructive' });
     } finally {
       setSavingLine(false);
     }
@@ -493,7 +527,7 @@ export default function EstoquePage() {
           </TabsList>
           <div className="flex gap-2">
             {tab === 'lines' && (
-              <Button onClick={() => { setLineForm(emptyLineForm); setLineDialogOpen(true); }}>
+              <Button onClick={openCreateLine}>
                 <Plus className="mr-2 h-4 w-4" /> Nova Linha
               </Button>
             )}
@@ -596,7 +630,7 @@ export default function EstoquePage() {
               title="Nenhuma linha"
               description="Cadastre manualmente uma linha telefônica."
               action={
-                <Button onClick={() => { setLineForm(emptyLineForm); setLineDialogOpen(true); }}>
+                <Button onClick={openCreateLine}>
                   <Plus className="mr-2 h-4 w-4" /> Nova Linha
                 </Button>
               }
@@ -612,6 +646,7 @@ export default function EstoquePage() {
                     <TableHead>Parceiro</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Data</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -623,6 +658,11 @@ export default function EstoquePage() {
                       <TableCell>{l.partner?.name || 'Estoque geral'}</TableCell>
                       <TableCell><LineStatusBadge status={l.status} /></TableCell>
                       <TableCell>{formatDate(l.createdAt)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button size="icon" variant="ghost" onClick={() => openEditLine(l)} title="Editar">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -632,10 +672,10 @@ export default function EstoquePage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={lineDialogOpen} onOpenChange={setLineDialogOpen}>
+      <Dialog open={lineDialogOpen} onOpenChange={(open) => { if (!open) { setEditingLine(null); setLineForm(emptyLineForm); } setLineDialogOpen(open); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Nova Linha</DialogTitle>
+            <DialogTitle>{editingLine ? 'Editar linha' : 'Nova linha'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -695,11 +735,27 @@ export default function EstoquePage() {
                 </SelectContent>
               </Select>
             </div>
+            {editingLine && (
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select
+                  value={lineForm.status}
+                  onValueChange={(v) => setLineForm({ ...lineForm, status: v as LineStatus })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.values(LineStatus).map((s) => (
+                      <SelectItem key={s} value={s}>{LINE_STATUS_LABELS[s]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLineDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCreateLine} disabled={savingLine}>
-              {savingLine ? 'Salvando...' : 'Cadastrar linha'}
+            <Button onClick={handleSaveLine} disabled={savingLine}>
+              {savingLine ? 'Salvando...' : editingLine ? 'Salvar alterações' : 'Cadastrar linha'}
             </Button>
           </DialogFooter>
         </DialogContent>

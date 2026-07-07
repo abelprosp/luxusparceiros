@@ -1,21 +1,11 @@
 'use client';
 
-import { LogOut, Moon, Sun, User } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { isAttendantUser, isPartnerUser } from '@/lib/rbac';
-import { getInitials } from '@luxus/utils';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { LuxusLogo } from '@/components/brand/luxus-logo';
 import { NotificationsBell } from '@/components/notifications/notifications-bell';
 
 interface HeaderProps {
@@ -25,31 +15,34 @@ interface HeaderProps {
 
 export function Header({ title, description }: HeaderProps) {
   const { theme, setTheme } = useTheme();
-  const { user, logout } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
   const isPartner = isPartnerUser(user);
   const isAttendant = isAttendantUser(user);
+  const firstName = user?.name?.split(' ')[0] ?? 'usuário';
+
   const contextLabel = isAttendant
     ? [user?.branchName, user?.partnerName ? `Parceiro: ${user.partnerName}` : null].filter(Boolean).join(' · ')
     : isPartner && user?.partnerName
       ? `Parceiro: ${user.partnerName}`
       : null;
-  const subtitle = isAttendant && contextLabel
-    ? (description ? `${contextLabel} — ${description}` : contextLabel)
-    : description ?? contextLabel ?? null;
 
-  const handleLogout = async () => {
-    await logout();
-    router.push('/login');
-  };
+  const subtitle =
+    description ??
+    contextLabel ??
+    'Explore informações e atividades do ecossistema Luxus Parceiros.';
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-background/80 px-6 backdrop-blur-md">
-      <div>
-        {title && <h1 className="text-xl font-semibold tracking-tight">{title}</h1>}
-        {(description || contextLabel) && (
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
-        )}
+    <header className="sticky top-0 z-30 flex items-center justify-between px-4 py-5 sm:px-6 lg:px-8">
+      <div className="flex items-center gap-5">
+        <LuxusLogo variant="full" className="hidden shrink-0 md:flex" />
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            Olá, {firstName}!
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            {title ? `${title} — ${subtitle}` : subtitle}
+          </p>
+        </div>
       </div>
 
       <div className="flex items-center gap-2">
@@ -57,44 +50,16 @@ export function Header({ title, description }: HeaderProps) {
           variant="ghost"
           size="icon"
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className="rounded-full"
+          className="h-11 w-11 rounded-2xl bg-white shadow-bento hover:bg-white/90"
         >
           <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
           <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
           <span className="sr-only">Alternar tema</span>
         </Button>
 
-        <NotificationsBell />
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-              <Avatar className="h-9 w-9">
-                <AvatarFallback>
-                  {user ? getInitials(user.name) : 'LP'}
-                </AvatarFallback>
-              </Avatar>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="end" forceMount>
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium">{user?.name}</p>
-                <p className="text-xs text-muted-foreground">{user?.email}</p>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push(isPartner ? '/perfil' : '/dashboard')}>
-              <User className="mr-2 h-4 w-4" />
-              Meu perfil
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} className="text-red-600">
-              <LogOut className="mr-2 h-4 w-4" />
-              Sair
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="h-11 w-11">
+          <NotificationsBell />
+        </div>
       </div>
     </header>
   );

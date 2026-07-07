@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { MessageSquare, Plus } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { GripVertical, MessageSquare, Plus } from 'lucide-react';
 import {
   TicketStatus,
   TicketPriority,
@@ -60,6 +60,10 @@ export default function ChamadosPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<TicketStatus | null>(null);
+  const [movingId, setMovingId] = useState<string | null>(null);
+  const didDragRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,12 +82,56 @@ export default function ChamadosPage() {
   }, [load]);
 
   const moveTicket = async (id: string, status: TicketStatus) => {
+    const ticket = tickets.find((t) => t.id === id);
+    if (!ticket || ticket.status === status) return;
+
+    const previous = tickets;
+    setMovingId(id);
+    setTickets((current) =>
+      current.map((t) => (t.id === id ? { ...t, status } : t)),
+    );
+
     try {
       await api(`/tickets/${id}/status`, { method: 'PATCH', body: { status } });
-      load();
     } catch (err) {
-      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao mover', variant: 'destructive' });
+      setTickets(previous);
+      toast({
+        title: 'Erro',
+        description: err instanceof Error ? err.message : 'Falha ao mover',
+        variant: 'destructive',
+      });
+    } finally {
+      setMovingId(null);
     }
+  };
+
+  const handleDragStart = (e: React.DragEvent, ticketId: string) => {
+    didDragRef.current = true;
+    e.dataTransfer.setData('text/ticket-id', ticketId);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggingId(ticketId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingId(null);
+    setDragOverColumn(null);
+    setTimeout(() => {
+      didDragRef.current = false;
+    }, 0);
+  };
+
+  const handleDragOver = (e: React.DragEvent, status: TicketStatus) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverColumn(status);
+  };
+
+  const handleDrop = (e: React.DragEvent, status: TicketStatus) => {
+    e.preventDefault();
+    const ticketId = e.dataTransfer.getData('text/ticket-id');
+    setDragOverColumn(null);
+    setDraggingId(null);
+    if (ticketId) void moveTicket(ticketId, status);
   };
 
   const openDetail = (id: string) => {
@@ -155,9 +203,27 @@ export default function ChamadosPage() {
         <div className="flex gap-4 overflow-x-auto pb-4">
           {columns.map((col) => {
             const colTickets = tickets.filter((t) => t.status === col.status);
+            const isDropTarget = dragOverColumn === col.status;
             return (
-              <div key={col.status} className="min-w-[280px] flex-1">
-                <Card className={cn('border-t-4', col.color)}>
+              <div
+                key={col.status}
+                className="min-w-[280px] flex-1"
+                onDragOver={(e) => handleDragOver(e, col.status)}
+                onDragEnter={() => setDragOverColumn(col.status)}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setDragOverColumn((current) => (current === col.status ? null : current));
+                  }
+                }}
+                onDrop={(e) => handleDrop(e, col.status)}
+              >
+                <Card
+                  className={cn(
+                    'border-t-4 transition-all',
+                    col.color,
+                    isDropTarget && 'ring-2 ring-primary ring-offset-2 ring-offset-background',
+                  )}
+                >
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center justify-between text-sm">
                       {col.label}
@@ -165,41 +231,46 @@ export default function ChamadosPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-2">
-                    <ScrollArea className="h-[calc(100vh-280px)]">
-                      <div className="space-y-2 p-1">
+                    <ScrollArea className={cn('h-[calc(100vh-280px)] rounded-md', isDropTarget && 'bg-primary/5')}>
+                      <div className="min-h-[120px] space-y-2 p-1">
+                        {colTickets.length === 0 && isDropTarget && (
+                          <p className="py-8 text-center text-xs text-muted-foreground">Solte aqui</p>
+                        )}
                         {colTickets.map((ticket) => (
                           <Card
                             key={ticket.id}
-                            className="cursor-pointer shadow-sm transition-shadow hover:shadow-card"
-                            onClick={() => openDetail(ticket.id)}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, ticket.id)}
+                            onDragEnd={handleDragEnd}
+                            className={cn(
+                              'cursor-grab shadow-sm transition-all active:cursor-grabbing hover:shadow-card',
+                              draggingId === ticket.id && 'opacity-50',
+                              movingId === ticket.id && 'pointer-events-none opacity-70',
+                            )}
+                            onClick={() => {
+                              if (!didDragRef.current) openDetail(ticket.id);
+                            }}
                           >
-                            <CardContent className="p-3 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="font-mono text-xs text-muted-foreground">{ticket.protocol}</span>
-                                <Badge variant={priorityVariant(ticket.priority)} className="text-[10px]">
-                                  {TICKET_PRIORITY_LABELS[ticket.priority]}
-                                </Badge>
-                              </div>
-                              <p className="text-sm font-medium leading-tight">{ticket.subject}</p>
-                              {ticket.partner && (
-                                <p className="text-xs text-muted-foreground">{ticket.partner.name}</p>
-                              )}
-                              <p className="text-[10px] text-muted-foreground">{formatDateTime(ticket.createdAt)}</p>
-                              <div className="flex gap-1 pt-1" onClick={(e) => e.stopPropagation()}>
-                                {columns
-                                  .filter((c) => c.status !== ticket.status)
-                                  .slice(0, 2)
-                                  .map((c) => (
-                                    <Button
-                                      key={c.status}
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-6 text-[10px] px-2"
-                                      onClick={() => moveTicket(ticket.id, c.status)}
-                                    >
-                                      → {c.label}
-                                    </Button>
-                                  ))}
+                            <CardContent className="space-y-2 p-3">
+                              <div className="flex items-start gap-2">
+                                <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" />
+                                <div className="min-w-0 flex-1 space-y-2">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="truncate font-mono text-xs text-muted-foreground">
+                                      {ticket.protocol}
+                                    </span>
+                                    <Badge variant={priorityVariant(ticket.priority)} className="shrink-0 text-[10px]">
+                                      {TICKET_PRIORITY_LABELS[ticket.priority]}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-sm font-medium leading-tight">{ticket.subject}</p>
+                                  {ticket.partner && (
+                                    <p className="text-xs text-muted-foreground">{ticket.partner.name}</p>
+                                  )}
+                                  <p className="text-[10px] text-muted-foreground">
+                                    {formatDateTime(ticket.createdAt)}
+                                  </p>
+                                </div>
                               </div>
                             </CardContent>
                           </Card>

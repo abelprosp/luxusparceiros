@@ -33,7 +33,7 @@ export class DashboardService {
       activatedLines,
       sales,
       commissions,
-      partnersByState,
+      partnersInBrazil,
       ranking,
       salesChart,
       campaignSales,
@@ -53,10 +53,10 @@ export class DashboardService {
         where: commissionWhere,
         select: { value: true },
       }),
-      this.prisma.partner.groupBy({
-        by: ['state'],
-        _count: { id: true },
-        where: { ...partnerWhere, state: { not: null } },
+      this.prisma.partner.findMany({
+        where: partnerWhere,
+        select: { id: true, name: true, city: true, state: true, status: true },
+        orderBy: { name: 'asc' },
       }),
       this.prisma.sale.groupBy({
         by: ['partnerId'],
@@ -102,9 +102,13 @@ export class DashboardService {
       revenue: sales.reduce((sum, s) => sum + Number(s.value), 0),
       commissions: commissions.reduce((sum, c) => sum + Number(c.value), 0),
       salesChart,
-      partnersByState: partnersByState
-        .filter((p) => p.state)
-        .map((p) => ({ state: p.state!, count: p._count.id })),
+      partnersInBrazil: partnersInBrazil.map((p) => ({
+        id: p.id,
+        name: p.name,
+        city: p.city,
+        state: p.state,
+        status: p.status,
+      })),
       ranking: ranking.map((r) => ({
         partnerId: r.partnerId,
         partnerName: partnerMap[r.partnerId] ?? 'Desconhecido',

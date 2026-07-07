@@ -53,6 +53,11 @@ export class CreatePlanDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({ description: 'Vincular plano exclusivamente a este parceiro. Omita para todos os parceiros ativos.' })
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
 }
 
 export class UpdatePlanDto extends PartialType(CreatePlanDto) {

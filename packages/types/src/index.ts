@@ -247,6 +247,14 @@ export interface DashboardPartnerMetrics {
   topOperators: { name: string; count: number }[];
 }
 
+export interface PartnerMapLocation {
+  id: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  status: string;
+}
+
 export interface DashboardAdminMetrics {
   totalPartners: number;
   activePartners: number;
@@ -256,7 +264,7 @@ export interface DashboardAdminMetrics {
   revenue: number;
   commissions: number;
   salesChart: { date: string; value: number }[];
-  partnersByState: { state: string; count: number }[];
+  partnersInBrazil: PartnerMapLocation[];
   ranking: { partnerId: string; partnerName: string; sales: number }[];
   campaignPerformance?: { campaignId: string; title: string; salesCount: number; revenue: number }[];
 }

@@ -65,4 +65,24 @@
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;
   }
+
+  .dashboard-surface {
+    background-color: #f3f2ee;
+  }
+
+  .dark .dashboard-surface {
+    background-color: hsl(var(--background));
+  }
+
+  .bento-card {
+    @apply rounded-2xl border-0 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)] transition-shadow hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)];
+  }
+
+  .dark .bento-card {
+    @apply border border-border bg-card shadow-card;
+  }
+
+  .bento-card-dark {
+    @apply rounded-2xl border-0 bg-[#0f172a] text-white shadow-[0_8px_24px_rgba(15,23,42,0.18)];
+  }
 }

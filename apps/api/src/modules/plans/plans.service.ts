@@ -7,6 +7,14 @@ import { MESSAGES } from '@/common/constants/messages';
 import { resolvePartnerId } from '@/common/utils/partner-scope';
 import { CreatePlanDto, UpdatePlanDto } from './dto/plan.dto';
 
+const planInclude = {
+  operator: { select: { id: true, name: true } },
+  partnerPlans: {
+    where: { isActive: true },
+    include: { partner: { select: { id: true, name: true } } },
+  },
+} as const;
+
 @Injectable()
 export class PlansService {
   constructor(
@@ -15,16 +23,16 @@ export class PlansService {
   ) {}
 
   private normalizePlanData(dto: CreatePlanDto | UpdatePlanDto) {
-    const commissionType = dto.commissionType ?? CommissionType.PERCENTAGE;
-    const commissionValue =
-      dto.commissionValue ?? dto.commission ?? 0;
+    const { partnerId: _partnerId, ...rest } = dto;
+    const commissionType = rest.commissionType ?? CommissionType.PERCENTAGE;
+    const commissionValue = rest.commissionValue ?? rest.commission ?? 0;
     const commission =
       commissionType === CommissionType.PERCENTAGE
         ? commissionValue
-        : dto.commission ?? 0;
+        : rest.commission ?? 0;
 
     return {
-      ...dto,
+      ...rest,
       commissionType,
       commissionValue,
       commission,
@@ -51,7 +59,7 @@ export class PlansService {
         skip: (params.page - 1) * params.limit,
         take: params.limit,
         orderBy: { name: 'asc' },
-        include: { operator: { select: { id: true, name: true } } },
+        include: planInclude,
       }),
       this.prisma.plan.count({ where }),
     ]);
@@ -62,40 +70,74 @@ export class PlansService {
   async findOne(id: string) {
     const plan = await this.prisma.plan.findUnique({
       where: { id },
-      include: { operator: true },
+      include: planInclude,
     });
     if (!plan) throw new NotFoundException(MESSAGES.NOT_FOUND);
     return plan;
   }
 
   async create(dto: CreatePlanDto, actorId?: string) {
+    const { partnerId } = dto;
     const data = this.normalizePlanData(dto);
     const plan = await this.prisma.$transaction(async (tx) => {
       const created = await tx.plan.create({
         data: data as Prisma.PlanCreateInput,
-        include: { operator: { select: { id: true, name: true } } },
+        include: planInclude,
       });
-      await this.linkPlanToActivePartners(created.id, tx);
-      return created;
+
+      if (partnerId) {
+        await tx.partnerPlan.create({
+          data: { partnerId, planId: created.id, isActive: true },
+        });
+      } else {
+        await this.linkPlanToActivePartners(created.id, tx);
+      }
+
+      return tx.plan.findUnique({
+        where: { id: created.id },
+        include: planInclude,
+      });
     });
+
     await this.auditService.log({
       userId: actorId,
       action: 'CREATE',
       module: 'plans',
-      entityId: plan.id,
+      entityId: plan!.id,
       entityType: 'Plan',
+      newData: { partnerId: partnerId ?? 'all' } as Prisma.InputJsonValue,
     });
     return plan;
   }
 
   async update(id: string, dto: UpdatePlanDto, actorId?: string) {
     await this.findOne(id);
+    const partnerId = 'partnerId' in dto ? dto.partnerId : undefined;
     const data = this.normalizePlanData(dto);
-    const plan = await this.prisma.plan.update({
-      where: { id },
-      data: data as Prisma.PlanUpdateInput,
-      include: { operator: { select: { id: true, name: true } } },
+
+    const plan = await this.prisma.$transaction(async (tx) => {
+      await tx.plan.update({
+        where: { id },
+        data: data as Prisma.PlanUpdateInput,
+      });
+
+      if (partnerId !== undefined) {
+        await tx.partnerPlan.deleteMany({ where: { planId: id } });
+        if (partnerId) {
+          await tx.partnerPlan.create({
+            data: { partnerId, planId: id, isActive: true },
+          });
+        } else {
+          await this.linkPlanToActivePartners(id, tx);
+        }
+      }
+
+      return tx.plan.findUnique({
+        where: { id },
+        include: planInclude,
+      });
     });
+
     await this.auditService.log({
       userId: actorId,
       action: 'UPDATE',
@@ -144,14 +186,27 @@ export class PlansService {
     });
     if (linkedCount > 0) return;
 
+    const activePartners = await this.prisma.partner.count({
+      where: { status: 'ACTIVE' },
+    });
+
     const plans = await this.prisma.plan.findMany({
       where: { status: true },
-      select: { id: true },
+      select: {
+        id: true,
+        _count: { select: { partnerPlans: { where: { isActive: true } } } },
+      },
     });
     if (!plans.length) return;
 
+    const globalPlans = plans.filter((plan) => {
+      const links = plan._count.partnerPlans;
+      return links === 0 || links > 1 || (links === 1 && activePartners === 1);
+    });
+    if (!globalPlans.length) return;
+
     await this.prisma.partnerPlan.createMany({
-      data: plans.map((plan) => ({
+      data: globalPlans.map((plan) => ({
         partnerId,
         planId: plan.id,
         isActive: true,

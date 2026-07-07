@@ -34,7 +34,7 @@ export function NotificationsBell() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative rounded-full">
+        <Button variant="ghost" size="icon" className="relative h-11 w-11 rounded-2xl">
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
             <Badge className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full p-0 text-[10px]">

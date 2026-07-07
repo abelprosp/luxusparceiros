@@ -14,11 +14,11 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children, title, description }: DashboardLayoutProps) {
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen dashboard-surface">
         <Sidebar />
-        <div className={cn('transition-all duration-300', 'lg:pl-64')}>
+        <div className={cn('transition-all duration-300', 'lg:pl-[88px]')}>
           <Header title={title} description={description} />
-          <main className="p-6 animate-fade-in">{children}</main>
+          <main className="animate-fade-in px-4 py-6 sm:px-6 lg:px-8">{children}</main>
         </div>
       </div>
     </ProtectedRoute>

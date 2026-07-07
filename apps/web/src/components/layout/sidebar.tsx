@@ -16,18 +16,19 @@ import {
   UserCog,
   ClipboardList,
   FileText,
-  ChevronLeft,
-  ChevronRight,
-  Zap,
   User,
   Store,
+  Settings,
+  LogOut,
 } from 'lucide-react';
+import { LuxusLogo } from '@/components/brand/luxus-logo';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { canAccessRoute, isAttendantUser, isPartnerUser } from '@/lib/rbac';
+import { getInitials } from '@luxus/utils';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { useRouter } from 'next/navigation';
 
 const adminNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -67,8 +68,8 @@ const attendantNavItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { user } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
+  const { user, logout } = useAuth();
+  const router = useRouter();
   const navItems = isAttendantUser(user)
     ? attendantNavItems
     : isPartnerUser(user)
@@ -76,27 +77,23 @@ export function Sidebar() {
       : adminNavItems;
   const visibleItems = navItems.filter((item) => canAccessRoute(user, item.href));
 
-  return (
-    <aside
-      className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r bg-card transition-all duration-300',
-        collapsed ? 'w-[72px]' : 'w-64',
-      )}
-    >
-      <div className="flex h-16 items-center gap-3 border-b px-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
-          <Zap className="h-5 w-5 text-white" />
-        </div>
-        {!collapsed && (
-          <div className="animate-fade-in overflow-hidden">
-            <p className="text-sm font-bold leading-tight">Luxus</p>
-            <p className="text-xs text-muted-foreground">Parceiros</p>
-          </div>
-        )}
-      </div>
+  const handleLogout = async () => {
+    await logout();
+    router.push('/login');
+  };
 
-      <ScrollArea className="flex-1 py-4">
-        <nav className="space-y-1 px-3">
+  return (
+    <aside className="fixed left-0 top-0 z-40 flex h-screen w-[88px] flex-col items-center border-r border-white/5 bg-[#111827] py-5">
+      <Link
+        href="/dashboard"
+        className="mb-8 flex items-center justify-center"
+        title="Luxus Parceiros"
+      >
+        <LuxusLogo variant="icon" />
+      </Link>
+
+      <ScrollArea className="flex-1 w-full">
+        <nav className="flex flex-col items-center gap-2 px-3">
           {visibleItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
@@ -105,30 +102,41 @@ export function Sidebar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
+                  'flex h-11 w-11 items-center justify-center rounded-2xl transition-all duration-200',
                   isActive
-                    ? 'bg-primary text-primary-foreground shadow-soft'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                    ? 'bg-white/12 text-white shadow-inner'
+                    : 'text-white/45 hover:bg-white/8 hover:text-white/80',
                 )}
-                title={collapsed ? item.label : undefined}
+                title={item.label}
               >
-                <Icon className="h-5 w-5 shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
+                <Icon className="h-5 w-5" />
               </Link>
             );
           })}
         </nav>
       </ScrollArea>
 
-      <div className="border-t p-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-center"
-          onClick={() => setCollapsed(!collapsed)}
+      <div className="mt-4 flex flex-col items-center gap-3">
+        <button
+          type="button"
+          className="flex h-10 w-10 items-center justify-center rounded-2xl text-white/45 transition-colors hover:bg-white/8 hover:text-white/80"
+          title="Configurações"
         >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </Button>
+          <Settings className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex h-10 w-10 items-center justify-center rounded-2xl text-white/45 transition-colors hover:bg-red-500/15 hover:text-red-300"
+          title="Sair"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+        <Avatar className="h-10 w-10 border-2 border-white/10">
+          <AvatarFallback className="bg-primary/20 text-xs font-semibold text-primary">
+            {user ? getInitials(user.name) : 'LP'}
+          </AvatarFallback>
+        </Avatar>
       </div>
     </aside>
   );
