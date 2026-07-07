@@ -18,7 +18,10 @@ ARG NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm --filter @luxus/web build
+RUN pnpm --filter @luxus/types build \
+ && pnpm --filter @luxus/utils build \
+ && pnpm --filter @luxus/ui build \
+ && pnpm --filter @luxus/web build
 
 FROM node:20-alpine AS runner
 WORKDIR /app

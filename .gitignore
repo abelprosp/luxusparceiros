@@ -11,5 +11,6 @@ coverage
 .DS_Store
 *.tsbuildinfo
 apps/api/prisma/migrations/**/migration_lock.toml
-uploads
+/uploads
+apps/api/uploads
 *.pem
