@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "nest build && tsc -p prisma/tsconfig.seed.json",
     "dev": "nest start --watch",
     "start": "node dist/src/main",
     "start:prod": "node dist/src/main",
@@ -12,7 +12,8 @@
     "prisma": "prisma",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "ts-node prisma/seed.ts",
+    "prisma:seed": "prisma db seed",
+    "prisma:seed:dev": "ts-node prisma/seed.ts",
     "prisma:cleanup": "ts-node prisma/cleanup-demo-data.ts"
   },
   "dependencies": {
@@ -57,6 +58,6 @@
     "typescript": "^5.7.2"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "node dist/prisma/seed.js"
   }
 }
