@@ -21,20 +21,26 @@ RUN pnpm --filter @luxus/types build \
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
 
-COPY --from=builder /app/apps/api/dist ./dist
-COPY --from=builder /app/apps/api/package.json ./package.json
-COPY --from=builder /app/apps/api/prisma ./prisma
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser --system --uid 1001 nestjs
+
+# Copia monorepo completo para preservar symlinks do pnpm e dependências de runtime
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages/types/dist ./packages/types/dist
-COPY --from=builder /app/packages/types/package.json ./packages/types/package.json
-COPY --from=builder /app/packages/utils/dist ./packages/utils/dist
-COPY --from=builder /app/packages/utils/package.json ./packages/utils/package.json
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
+COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
+COPY docker/api-entrypoint.sh /app/entrypoint.sh
 
-RUN mkdir -p uploads && chown -R nestjs:nodejs uploads
+RUN chmod +x /app/entrypoint.sh \
+ && mkdir -p /app/apps/api/uploads \
+ && chown -R nestjs:nodejs /app
+
 USER nestjs
+WORKDIR /app/apps/api
 EXPOSE 3001
 
-# Fixar Prisma 6 — npx sem versão baixa Prisma 7, incompatível com o schema atual
-CMD ["sh", "-c", "npx prisma@6.19.3 migrate deploy && node dist/src/main.js"]
+ENTRYPOINT ["/app/entrypoint.sh"]

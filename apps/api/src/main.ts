@@ -36,10 +36,14 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document);
 
-  const port = configService.get<number>('PORT') ?? configService.get<number>('API_PORT', 3001);
+  const port = Number(process.env.PORT ?? configService.get('API_PORT') ?? 3001);
   await app.listen(port, '0.0.0.0');
 
   console.log(`API rodando na porta ${port}`);
+  console.log(`Health: http://0.0.0.0:${port}/api/health`);
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  console.error('Falha ao iniciar API:', error);
+  process.exit(1);
+});

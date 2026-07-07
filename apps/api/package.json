@@ -29,6 +29,7 @@
     "@nestjs/throttler": "^6.3.0",
     "@nestjs/websockets": "^10.4.15",
     "@prisma/client": "^6.1.0",
+    "prisma": "^6.1.0",
     "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
@@ -52,7 +53,6 @@
     "@types/node": "^22.10.2",
     "@types/passport-jwt": "^4.0.1",
     "@types/uuid": "^10.0.0",
-    "prisma": "^6.1.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.2"
   },
