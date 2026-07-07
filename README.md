@@ -75,12 +75,14 @@ pnpm --filter @luxus/mobile dev
 # URLs: API http://localhost:3001 | Web http://localhost:3000 | Mobile via Expo
 ```
 
-## Credenciais de Demo
+## Credenciais iniciais
 
 | Perfil | E-mail | Senha |
 |--------|--------|-------|
 | Administrador | admin@luxus.com.br | Luxus@2024 |
 | Parceiro | parceiro@demotelecom.com.br | Luxus@2024 |
+
+O seed cria apenas usuários e permissões. Operadoras, planos, estoque e demais dados devem ser cadastrados pelo painel.
 
 ## API Documentation
 
@@ -122,6 +124,48 @@ Swagger disponível em: `http://localhost:3001/api/docs`
 | Preto | `#0B0B0B` |
 | Branco | `#FFFFFF` |
 | Cinza claro | `#F5F5F7` |
+
+## Deploy na Railway
+
+O repositório é um monorepo. Crie **um projeto** na [Railway](https://railway.com) com os serviços abaixo.
+
+### 1. PostgreSQL
+
+Adicione o plugin **PostgreSQL** e copie a variável `DATABASE_URL` gerada.
+
+### 2. Serviço API
+
+- **Source:** GitHub `abelprosp/luxusparceiros`
+- **Builder:** Dockerfile → `docker/api.Dockerfile`
+- **Variáveis:**
+
+| Variável | Valor |
+|----------|-------|
+| `DATABASE_URL` | Referência ao Postgres |
+| `JWT_SECRET` | String aleatória (mín. 32 chars) |
+| `JWT_REFRESH_SECRET` | String aleatória (mín. 32 chars) |
+| `CORS_ORIGINS` | URL pública do Web (ex: `https://seu-web.up.railway.app`) |
+| `API_PORT` | `3001` (ou use `PORT` que a Railway injeta) |
+
+Após o primeiro deploy, rode o seed uma vez no shell da Railway:
+
+```bash
+npx prisma db seed
+```
+
+### 3. Serviço Web
+
+- **Builder:** Dockerfile → `docker/web.Dockerfile`
+- **Build args / variáveis de build:**
+
+| Variável | Valor |
+|----------|-------|
+| `NEXT_PUBLIC_API_URL` | URL pública da API |
+| `NEXT_PUBLIC_WS_URL` | URL pública da API (WebSocket) |
+
+### 4. Domínios
+
+Gere domínios públicos para API e Web nos dois serviços e atualize `CORS_ORIGINS` e `NEXT_PUBLIC_*`.
 
 ## Deploy com Docker
 

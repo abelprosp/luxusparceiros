@@ -1,0 +1,19 @@
+# Configuração padrão para o serviço API na Railway.
+# No painel, crie 2 serviços no mesmo projeto apontando para este repositório:
+#
+# Serviço API:
+#   Builder: Dockerfile
+#   Dockerfile path: docker/api.Dockerfile
+#
+# Serviço Web:
+#   Builder: Dockerfile
+#   Dockerfile path: docker/web.Dockerfile
+#   Build args: NEXT_PUBLIC_API_URL, NEXT_PUBLIC_WS_URL (URL pública da API)
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "docker/api.Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health"
+restartPolicyType = "ON_FAILURE"
