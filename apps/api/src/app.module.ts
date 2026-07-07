@@ -32,6 +32,7 @@ import { UploadsModule } from '@/modules/uploads/uploads.module';
 import { StockModule } from '@/modules/stock/stock.module';
 import { BranchesModule } from '@/modules/branches/branches.module';
 import { HealthController } from './health.controller';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -69,7 +70,7 @@ import { HealthController } from './health.controller';
     StockModule,
     BranchesModule,
   ],
-  controllers: [HealthController],
+  controllers: [AppController, HealthController],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
