@@ -26,6 +26,7 @@ import { CreateTicketDialog } from '@/components/tickets/create-ticket-dialog';
 import { EditTicketDialog } from '@/components/tickets/edit-ticket-dialog';
 import { TicketDetailDialog } from '@/components/tickets/ticket-detail-dialog';
 import { cn } from '@/lib/utils';
+import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 
 interface Ticket {
   id: string;
@@ -160,7 +161,7 @@ export default function ChamadosPage() {
         isPartner ? (
           <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
         ) : (
-          <div className="grid grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             {columns.map((col) => (
               <Skeleton key={col.status} className="h-96 rounded-xl" />
             ))}
@@ -169,58 +170,90 @@ export default function ChamadosPage() {
       ) : tickets.length === 0 ? (
         <EmptyState icon={MessageSquare} title="Nenhum chamado" description="Os chamados aparecerão aqui." />
       ) : isPartner ? (
-        <div className="rounded-xl border bg-card shadow-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Protocolo</TableHead>
-                <TableHead>Assunto</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Prioridade</TableHead>
-                <TableHead>Data</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tickets.map((ticket) => (
-                <TableRow
-                  key={ticket.id}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => openDetail(ticket.id)}
-                >
-                  <TableCell className="font-mono text-sm">{ticket.protocol}</TableCell>
-                  <TableCell className="font-medium">{ticket.subject}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {TICKET_CATEGORY_LABELS[ticket.category as keyof typeof TICKET_CATEGORY_LABELS] ?? ticket.category}
-                    </Badge>
-                  </TableCell>
-                  <TableCell><Badge>{TICKET_STATUS_LABELS[ticket.status]}</Badge></TableCell>
-                  <TableCell>
-                    <Badge variant={priorityVariant(ticket.priority)}>
-                      {TICKET_PRIORITY_LABELS[ticket.priority]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{formatDateTime(ticket.createdAt)}</TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openEdit(ticket.id);
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
+        <ResponsiveDataView
+          table={
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Protocolo</TableHead>
+                  <TableHead>Assunto</TableHead>
+                  <TableHead>Categoria</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Prioridade</TableHead>
+                  <TableHead>Data</TableHead>
+                  <TableHead className="w-12" />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {tickets.map((ticket) => (
+                  <TableRow
+                    key={ticket.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => openDetail(ticket.id)}
+                  >
+                    <TableCell className="font-mono text-sm">{ticket.protocol}</TableCell>
+                    <TableCell className="font-medium">{ticket.subject}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {TICKET_CATEGORY_LABELS[ticket.category as keyof typeof TICKET_CATEGORY_LABELS] ?? ticket.category}
+                      </Badge>
+                    </TableCell>
+                    <TableCell><Badge>{TICKET_STATUS_LABELS[ticket.status]}</Badge></TableCell>
+                    <TableCell>
+                      <Badge variant={priorityVariant(ticket.priority)}>
+                        {TICKET_PRIORITY_LABELS[ticket.priority]}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{formatDateTime(ticket.createdAt)}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEdit(ticket.id);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          }
+          mobile={tickets.map((ticket) => (
+            <MobileListCard
+              key={ticket.id}
+              title={ticket.subject}
+              subtitle={ticket.protocol}
+              meta={formatDateTime(ticket.createdAt)}
+              badges={
+                <>
+                  <Badge>{TICKET_STATUS_LABELS[ticket.status]}</Badge>
+                  <Badge variant={priorityVariant(ticket.priority)}>
+                    {TICKET_PRIORITY_LABELS[ticket.priority]}
+                  </Badge>
+                  <Badge variant="outline">
+                    {TICKET_CATEGORY_LABELS[ticket.category as keyof typeof TICKET_CATEGORY_LABELS] ?? ticket.category}
+                  </Badge>
+                </>
+              }
+              onClick={() => openDetail(ticket.id)}
+              actions={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => openEdit(ticket.id)}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              }
+            />
+          ))}
+        />
       ) : (
         <div className="flex gap-4 overflow-x-auto pb-4">
           {columns.map((col) => {
@@ -229,7 +262,7 @@ export default function ChamadosPage() {
             return (
               <div
                 key={col.status}
-                className="min-w-[280px] flex-1"
+                className="min-w-[260px] flex-1 sm:min-w-[280px]"
                 onDragOver={(e) => handleDragOver(e, col.status)}
                 onDragEnter={() => setDragOverColumn(col.status)}
                 onDragLeave={(e) => {

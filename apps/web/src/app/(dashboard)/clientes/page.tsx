@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { useToast } from '@/components/ui/toaster';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -190,40 +191,60 @@ export default function ClientesPage() {
           action={<Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Novo cliente</Button>}
         />
       ) : (
-        <div className="rounded-xl border bg-card shadow-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Documento</TableHead>
-                <TableHead>Telefone</TableHead>
-                <TableHead>E-mail</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.name}</TableCell>
-                  <TableCell>{formatDocument(c.document)}</TableCell>
-                  <TableCell>{formatPhone(c.phone)}</TableCell>
-                  <TableCell>{c.email || '-'}</TableCell>
-                  <TableCell>
-                    <Badge variant={c.isActive ? 'success' : 'secondary'}>
-                      {c.isActive ? 'Ativo' : 'Inativo'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button size="icon" variant="ghost" onClick={() => openEdit(c)} title="Editar">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
+        <ResponsiveDataView
+          table={
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Documento</TableHead>
+                  <TableHead>Telefone</TableHead>
+                  <TableHead>E-mail</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {items.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell>{formatDocument(c.document)}</TableCell>
+                    <TableCell>{formatPhone(c.phone)}</TableCell>
+                    <TableCell>{c.email || '-'}</TableCell>
+                    <TableCell>
+                      <Badge variant={c.isActive ? 'success' : 'secondary'}>
+                        {c.isActive ? 'Ativo' : 'Inativo'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button size="icon" variant="ghost" onClick={() => openEdit(c)} title="Editar">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          }
+          mobile={items.map((c) => (
+            <MobileListCard
+              key={c.id}
+              title={c.name}
+              subtitle={formatDocument(c.document)}
+              meta={`${formatPhone(c.phone)}${c.email ? ` · ${c.email}` : ''}`}
+              badges={
+                <Badge variant={c.isActive ? 'success' : 'secondary'}>
+                  {c.isActive ? 'Ativo' : 'Inativo'}
+                </Badge>
+              }
+              actions={
+                <Button size="icon" variant="ghost" onClick={() => openEdit(c)} title="Editar">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              }
+            />
+          ))}
+        />
       )}
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) { setEditing(null); setForm(emptyForm); } setDialogOpen(open); }}>

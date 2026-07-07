@@ -179,9 +179,9 @@ export default function DashboardPage() {
           <Filter className="h-4 w-4" />
           Filtros
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap">
           <Select value={partnerId} onValueChange={setPartnerId}>
-            <SelectTrigger className="h-11 w-48 rounded-2xl border border-border bg-muted text-foreground shadow-none">
+            <SelectTrigger className="h-11 w-full rounded-2xl border border-border bg-muted text-foreground shadow-none sm:w-48">
               <SelectValue placeholder="Parceiro" />
             </SelectTrigger>
             <SelectContent>
@@ -195,7 +195,7 @@ export default function DashboardPage() {
           </Select>
 
           <Select value={state} onValueChange={setState}>
-            <SelectTrigger className="h-11 w-40 rounded-2xl border border-border bg-muted text-foreground shadow-none">
+            <SelectTrigger className="h-11 w-full rounded-2xl border border-border bg-muted text-foreground shadow-none sm:w-40">
               <SelectValue placeholder="Região (UF)" />
             </SelectTrigger>
             <SelectContent>
@@ -209,7 +209,7 @@ export default function DashboardPage() {
           </Select>
 
           <Select value={campaignId} onValueChange={setCampaignId}>
-            <SelectTrigger className="h-11 w-48 rounded-2xl border border-border bg-muted text-foreground shadow-none">
+            <SelectTrigger className="h-11 w-full rounded-2xl border border-border bg-muted text-foreground shadow-none sm:w-48">
               <SelectValue placeholder="Campanha" />
             </SelectTrigger>
             <SelectContent>
@@ -223,7 +223,7 @@ export default function DashboardPage() {
           </Select>
 
           <Select value={operatorId} onValueChange={setOperatorId}>
-            <SelectTrigger className="h-11 w-44 rounded-2xl border border-border bg-muted text-foreground shadow-none">
+            <SelectTrigger className="h-11 w-full rounded-2xl border border-border bg-muted text-foreground shadow-none sm:w-44">
               <SelectValue placeholder="Operadora" />
             </SelectTrigger>
             <SelectContent>

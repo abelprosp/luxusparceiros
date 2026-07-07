@@ -17,7 +17,6 @@ import { validateEmail } from '@luxus/utils';
 import { useAuth, getRememberEmail } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Button, Input } from '@/components/ui';
-import { authApi } from '@/services/api';
 import { spacing, typography, radius } from '@/theme';
 
 export default function LoginScreen() {
@@ -68,19 +67,6 @@ export default function LoginScreen() {
       Alert.alert('Erro', err instanceof Error ? err.message : 'Falha ao fazer login');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleForgotPassword = async () => {
-    if (!email.trim() || !validateEmail(email)) {
-      Alert.alert('E-mail', 'Informe um e-mail válido para recuperar a senha');
-      return;
-    }
-    try {
-      await authApi.forgotPassword(email.trim());
-      Alert.alert('Enviado', 'Se o e-mail existir, você receberá instruções para redefinir a senha.');
-    } catch (err) {
-      Alert.alert('Erro', err instanceof Error ? err.message : 'Falha ao enviar recuperação');
     }
   };
 
@@ -138,31 +124,23 @@ export default function LoginScreen() {
             leftIcon={<Lock size={20} color={colors.textSecondary} />}
           />
 
-          <View style={styles.options}>
-            <TouchableOpacity
-              style={styles.rememberRow}
-              onPress={() => setRememberMe(!rememberMe)}
+          <TouchableOpacity
+            style={styles.rememberRow}
+            onPress={() => setRememberMe(!rememberMe)}
+          >
+            <View
+              style={[
+                styles.checkbox,
+                {
+                  borderColor: rememberMe ? colors.primary : colors.border,
+                  backgroundColor: rememberMe ? colors.primary : 'transparent',
+                },
+              ]}
             >
-              <View
-                style={[
-                  styles.checkbox,
-                  {
-                    borderColor: rememberMe ? colors.primary : colors.border,
-                    backgroundColor: rememberMe ? colors.primary : 'transparent',
-                  },
-                ]}
-              >
-                {rememberMe && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={[styles.rememberText, { color: colors.text }]}>Lembrar-me</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={handleForgotPassword}>
-              <Text style={[styles.forgotText, { color: colors.primary }]}>
-                Esqueci a senha
-              </Text>
-            </TouchableOpacity>
-          </View>
+              {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+            <Text style={[styles.rememberText, { color: colors.text }]}>Lembrar-me</Text>
+          </TouchableOpacity>
 
           <Button title="Entrar" onPress={handleLogin} loading={loading} fullWidth />
 
@@ -218,11 +196,6 @@ const styles = StyleSheet.create({
     ...typography.h3,
     marginBottom: spacing.xs,
   },
-  options: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
   rememberRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -243,10 +216,6 @@ const styles = StyleSheet.create({
   },
   rememberText: {
     ...typography.bodySmall,
-  },
-  forgotText: {
-    ...typography.bodySmall,
-    fontWeight: '600',
   },
   footer: {
     ...typography.caption,

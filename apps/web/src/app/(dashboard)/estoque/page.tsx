@@ -368,7 +368,7 @@ export default function EstoquePage() {
 
   const statusSelect = (
     <Select value={statusFilter} onValueChange={setStatusFilter}>
-      <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
+      <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Status" /></SelectTrigger>
       <SelectContent>
         <SelectItem value="all">Todos</SelectItem>
         {Object.values(LineStatus).map((s) => (
@@ -380,7 +380,7 @@ export default function EstoquePage() {
 
   const partnerSelect = !isPartner && partners.length > 0 ? (
     <Select value={partnerFilter} onValueChange={setPartnerFilter}>
-      <SelectTrigger className="w-44"><SelectValue placeholder="Parceiro" /></SelectTrigger>
+      <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Parceiro" /></SelectTrigger>
       <SelectContent>
         <SelectItem value="all">Todos parceiros</SelectItem>
         <SelectItem value="general">Estoque geral</SelectItem>
@@ -429,8 +429,8 @@ export default function EstoquePage() {
           </div>
         )}
 
-        <div className="mb-4 flex flex-1 flex-wrap gap-3">
-          <div className="relative max-w-xs flex-1">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <div className="relative flex-1 sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Buscar número..." className="pl-9" value={lineSearch} onChange={(e) => setLineSearch(e.target.value)} />
           </div>

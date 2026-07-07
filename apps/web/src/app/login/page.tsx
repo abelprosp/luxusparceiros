@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LuxusLogo } from '@/components/brand/luxus-logo';
 import {
@@ -201,24 +200,16 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="remember"
-                  checked={rememberMe}
-                  onCheckedChange={(checked) => setRememberMe(checked === true)}
-                  className="border-white/20 data-[state=checked]:border-primary data-[state=checked]:bg-primary"
-                />
-                <Label htmlFor="remember" className="text-sm font-normal text-white/60">
-                  Lembrar de mim
-                </Label>
-              </div>
-              <Link
-                href="/forgot-password"
-                className="text-xs text-white/50 transition-colors hover:text-primary"
-              >
-                Esqueceu a senha?
-              </Link>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="remember"
+                checked={rememberMe}
+                onCheckedChange={(checked) => setRememberMe(checked === true)}
+                className="border-white/20 data-[state=checked]:border-primary data-[state=checked]:bg-primary"
+              />
+              <Label htmlFor="remember" className="text-sm font-normal text-white/60">
+                Lembrar de mim
+              </Label>
             </div>
 
             <Button

@@ -103,8 +103,8 @@ export default function SolicitacoesPage() {
   return (
     <DashboardLayout title="Solicitações" description={isPartner ? 'Suas solicitações' : 'Gestão de solicitações dos parceiros'}>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center flex-1">
-          <div className="relative max-w-sm flex-1">
+        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1 sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Protocolo, descrição..."
@@ -123,7 +123,7 @@ export default function SolicitacoesPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="w-full sm:w-44">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>

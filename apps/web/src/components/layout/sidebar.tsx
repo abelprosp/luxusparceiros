@@ -2,67 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import {
-  LayoutDashboard,
-  Users,
-  Radio,
-  Package,
-  Warehouse,
-  ShoppingCart,
-  DollarSign,
-  MessageSquare,
-  Wallet,
-  Megaphone,
-  UserCog,
-  ClipboardList,
-  FileText,
-  User,
-  Store,
-  Settings,
-  LogOut,
-} from 'lucide-react';
+import { Settings, LogOut } from 'lucide-react';
 import { LuxusLogo } from '@/components/brand/luxus-logo';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/hooks/useAuth';
-import { canAccessRoute, isAttendantUser, isPartnerUser } from '@/lib/rbac';
 import { getInitials } from '@luxus/utils';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-
-const adminNavItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/parceiros', label: 'Parceiros', icon: Users },
-  { href: '/usuarios', label: 'Usuários', icon: UserCog },
-  { href: '/solicitacoes', label: 'Solicitações', icon: FileText },
-  { href: '/operadoras', label: 'Operadoras', icon: Radio },
-  { href: '/planos', label: 'Planos', icon: Package },
-  { href: '/estoque', label: 'Estoque', icon: Warehouse },
-  { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
-  { href: '/comissoes', label: 'Comissões', icon: DollarSign },
-  { href: '/chamados', label: 'Chamados', icon: MessageSquare },
-  { href: '/financeiro', label: 'Financeiro', icon: Wallet },
-  { href: '/campanhas', label: 'Campanhas', icon: Megaphone },
-  { href: '/auditoria', label: 'Auditoria', icon: ClipboardList },
-];
-
-const partnerNavItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/clientes', label: 'Clientes', icon: User },
-  { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
-  { href: '/filiais', label: 'Filiais', icon: Store },
-  { href: '/estoque', label: 'Estoque', icon: Warehouse },
-  { href: '/solicitacoes', label: 'Solicitações', icon: FileText },
-  { href: '/chamados', label: 'Chamados', icon: MessageSquare },
-  { href: '/comissoes', label: 'Comissões', icon: DollarSign },
-];
-
-const attendantNavItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/clientes', label: 'Clientes', icon: User },
-  { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
-  { href: '/solicitacoes', label: 'Solicitações', icon: FileText },
-  { href: '/chamados', label: 'Chamados', icon: MessageSquare },
-];
+import { getVisibleNavItems } from '@/components/layout/nav-config';
 
 function NavIcon({
   href,
@@ -95,12 +42,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const router = useRouter();
-  const navItems = isAttendantUser(user)
-    ? attendantNavItems
-    : isPartnerUser(user)
-      ? partnerNavItems
-      : adminNavItems;
-  const visibleItems = navItems.filter((item) => canAccessRoute(user, item.href));
+  const visibleItems = getVisibleNavItems(user);
   const isPerfilActive = pathname === '/perfil';
   const isConfigActive = pathname === '/configuracoes';
 
@@ -110,7 +52,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="fixed left-0 top-0 z-40 flex h-screen w-[88px] flex-col items-center border-r border-white/5 bg-[#111827] py-5">
+    <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[88px] flex-col items-center border-r border-white/5 bg-[#111827] py-5 lg:flex">
       <Link
         href="/dashboard"
         className="mb-8 flex items-center justify-center"
@@ -119,7 +61,7 @@ export function Sidebar() {
         <LuxusLogo variant="full" forceDark className="h-9 w-[72px] max-w-[72px]" />
       </Link>
 
-      <ScrollArea className="flex-1 w-full">
+      <ScrollArea className="w-full flex-1">
         <nav className="flex flex-col items-center gap-2 px-3">
           {visibleItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);

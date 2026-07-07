@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { useToast } from '@/components/ui/toaster';
 
 const ALL_PARTNERS = 'all';
@@ -175,45 +176,70 @@ export default function PlanosPage() {
       ) : items.length === 0 ? (
         <EmptyState icon={Package} title="Nenhum plano" description="Cadastre o primeiro plano." />
       ) : (
-        <div className="rounded-xl border bg-card shadow-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Operadora</TableHead>
-                <TableHead>Parceiro</TableHead>
-                <TableHead>Preço</TableHead>
-                <TableHead>Comissão</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.name}</TableCell>
-                  <TableCell>{p.operator?.name || '-'}</TableCell>
-                  <TableCell>{getPartnerLabel(p)}</TableCell>
-                  <TableCell>{formatCurrency(Number(p.price))}</TableCell>
-                  <TableCell>{formatCommission(p.commissionType ?? CommissionType.PERCENTAGE, Number(p.commissionValue ?? p.commission))}</TableCell>
-                  <TableCell><Badge variant={p.status ? 'success' : 'secondary'}>{p.status ? 'Ativo' : 'Inativo'}</Badge></TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={async () => { await api(`/plans/${p.id}`, { method: 'DELETE' }); load(); }}>
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                  </TableCell>
+        <ResponsiveDataView
+          table={
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Operadora</TableHead>
+                  <TableHead>Parceiro</TableHead>
+                  <TableHead>Preço</TableHead>
+                  <TableHead>Comissão</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {items.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell>{p.operator?.name || '-'}</TableCell>
+                    <TableCell>{getPartnerLabel(p)}</TableCell>
+                    <TableCell>{formatCurrency(Number(p.price))}</TableCell>
+                    <TableCell>{formatCommission(p.commissionType ?? CommissionType.PERCENTAGE, Number(p.commissionValue ?? p.commission))}</TableCell>
+                    <TableCell><Badge variant={p.status ? 'success' : 'secondary'}>{p.status ? 'Ativo' : 'Inativo'}</Badge></TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={async () => { await api(`/plans/${p.id}`, { method: 'DELETE' }); load(); }}>
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          }
+          mobile={items.map((p) => (
+            <MobileListCard
+              key={p.id}
+              title={p.name}
+              subtitle={`${p.operator?.name || '-'} · ${getPartnerLabel(p)}`}
+              meta={`${formatCurrency(Number(p.price))} · ${formatCommission(p.commissionType ?? CommissionType.PERCENTAGE, Number(p.commissionValue ?? p.commission))}`}
+              badges={
+                <Badge variant={p.status ? 'success' : 'secondary'}>
+                  {p.status ? 'Ativo' : 'Inativo'}
+                </Badge>
+              }
+              actions={
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={async () => { await api(`/plans/${p.id}`, { method: 'DELETE' }); load(); }}>
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
+              }
+            />
+          ))}
+        />
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? 'Editar' : 'Novo'} Plano</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2"><Label>Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>

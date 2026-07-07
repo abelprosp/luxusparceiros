@@ -43,7 +43,7 @@ export function NotificationsBell() {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-80" align="end">
+      <DropdownMenuContent className="w-[calc(100vw-2rem)] max-w-80" align="end">
         <div className="flex items-center justify-between px-2 py-1.5">
           <DropdownMenuLabel className="p-0">Notificações</DropdownMenuLabel>
           {unreadCount > 0 && (

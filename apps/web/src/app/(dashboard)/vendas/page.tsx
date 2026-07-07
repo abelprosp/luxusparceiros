@@ -21,6 +21,7 @@ import { useToast } from '@/components/ui/toaster';
 import { CreateSaleButton } from '@/components/sales/create-sale-dialog';
 import { ResubmitSaleDocumentsDialog } from '@/components/sales/resubmit-sale-documents-dialog';
 import { SaleDetailDialog } from '@/components/sales/sale-detail-dialog';
+import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerUser } from '@/lib/rbac';
 
@@ -150,13 +151,13 @@ export default function VendasPage() {
   return (
     <DashboardLayout title="Vendas" description={isPartner ? 'Suas vendas registradas' : 'Listagem e gestão de vendas'}>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-1 gap-3">
-          <div className="relative max-w-sm flex-1">
+        <div className="flex flex-col gap-3 sm:flex-1 sm:flex-row">
+          <div className="relative flex-1 sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Protocolo, cliente..." className="pl-9" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
           </div>
           <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
-            <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
               {Object.values(SaleStatus).map((s) => (
@@ -165,7 +166,7 @@ export default function VendasPage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <CreateSaleButton onSuccess={load} />
           {!isPartner && (
             <Button variant="outline"><Download className="mr-2 h-4 w-4" /> Exportar</Button>
@@ -183,100 +184,161 @@ export default function VendasPage() {
         />
       ) : (
         <>
-          <div className="rounded-xl border bg-card shadow-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Protocolo</TableHead>
-                  {!isPartner && <TableHead>Parceiro</TableHead>}
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Plano</TableHead>
-                  {!isPartner && <TableHead>Campanha</TableHead>}
-                  <TableHead>Valor</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Data</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((s) => (
-                  <TableRow
-                    key={s.id}
-                    className="cursor-pointer"
-                    onClick={() => setDetailSaleId(s.id)}
-                  >
-                    <TableCell className="font-mono text-sm">{s.protocol}</TableCell>
-                    {!isPartner && <TableCell>{s.partner?.name || '-'}</TableCell>}
-                    <TableCell>{s.client?.name || '-'}</TableCell>
-                    <TableCell>{s.plan?.name || '-'}</TableCell>
-                    {!isPartner && <TableCell>{s.campaign?.title || '-'}</TableCell>}
-                    <TableCell>{formatCurrency(Number(s.value))}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-1">
-                        <Badge variant={statusBadge(s.status)}>{SALE_STATUS_LABELS[s.status] ?? s.status}</Badge>
-                        {isPartner && s.status === SaleStatus.DOCUMENTS_PENDING && s.requiredDocuments?.length ? (
-                          <span className="text-xs text-amber-600">
-                            {s.requiredDocuments.filter((d) => !d.fulfilled).length} doc(s) pendente(s)
-                          </span>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell>{formatDate(s.createdAt)}</TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      {isPartner ? (
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => setDetailSaleId(s.id)}>
-                            <Eye className="mr-2 h-4 w-4" /> Ver
-                          </Button>
-                          {s.status === SaleStatus.DOCUMENTS_PENDING && (
-                            <Button size="sm" variant="outline" onClick={() => setResubmitSaleId(s.id)}>
-                              <Upload className="mr-2 h-4 w-4" /> Enviar docs
-                            </Button>
-                          )}
-                        </div>
-                      ) : (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setDetailSaleId(s.id)}>
-                              <Eye className="mr-2 h-4 w-4" /> Ver detalhes
-                            </DropdownMenuItem>
-                            {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
-                              <DropdownMenuItem onClick={() => handleApprove(s)}>
-                                <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
-                              </DropdownMenuItem>
-                            )}
-                            {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
-                              <DropdownMenuItem onClick={() => openAction(s, 'reject')}>
-                                <X className="mr-2 h-4 w-4 text-red-600" /> Rejeitar
-                              </DropdownMenuItem>
-                            )}
-                            {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING].includes(s.status) && (
-                              <DropdownMenuItem onClick={() => openAction(s, 'contest')}>
-                                <AlertTriangle className="mr-2 h-4 w-4 text-amber-600" /> Contestar
-                              </DropdownMenuItem>
-                            )}
-                            {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.CONTESTED].includes(s.status) && (
-                              <DropdownMenuItem onClick={() => openAction(s, 'documents')}>
-                                <FileText className="mr-2 h-4 w-4" /> Solicitar documentos
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </TableCell>
+          <ResponsiveDataView
+            table={
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Protocolo</TableHead>
+                    {!isPartner && <TableHead>Parceiro</TableHead>}
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Plano</TableHead>
+                    {!isPartner && <TableHead>Campanha</TableHead>}
+                    <TableHead>Valor</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Data</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="mt-4 flex items-center justify-between">
+                </TableHeader>
+                <TableBody>
+                  {items.map((s) => (
+                    <TableRow
+                      key={s.id}
+                      className="cursor-pointer"
+                      onClick={() => setDetailSaleId(s.id)}
+                    >
+                      <TableCell className="font-mono text-sm">{s.protocol}</TableCell>
+                      {!isPartner && <TableCell>{s.partner?.name || '-'}</TableCell>}
+                      <TableCell>{s.client?.name || '-'}</TableCell>
+                      <TableCell>{s.plan?.name || '-'}</TableCell>
+                      {!isPartner && <TableCell>{s.campaign?.title || '-'}</TableCell>}
+                      <TableCell>{formatCurrency(Number(s.value))}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <Badge variant={statusBadge(s.status)}>{SALE_STATUS_LABELS[s.status] ?? s.status}</Badge>
+                          {isPartner && s.status === SaleStatus.DOCUMENTS_PENDING && s.requiredDocuments?.length ? (
+                            <span className="text-xs text-amber-600">
+                              {s.requiredDocuments.filter((d) => !d.fulfilled).length} doc(s) pendente(s)
+                            </span>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell>{formatDate(s.createdAt)}</TableCell>
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        {isPartner ? (
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="ghost" onClick={() => setDetailSaleId(s.id)}>
+                              <Eye className="mr-2 h-4 w-4" /> Ver
+                            </Button>
+                            {s.status === SaleStatus.DOCUMENTS_PENDING && (
+                              <Button size="sm" variant="outline" onClick={() => setResubmitSaleId(s.id)}>
+                                <Upload className="mr-2 h-4 w-4" /> Enviar docs
+                              </Button>
+                            )}
+                          </div>
+                        ) : (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setDetailSaleId(s.id)}>
+                                <Eye className="mr-2 h-4 w-4" /> Ver detalhes
+                              </DropdownMenuItem>
+                              {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                                <DropdownMenuItem onClick={() => handleApprove(s)}>
+                                  <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
+                                </DropdownMenuItem>
+                              )}
+                              {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                                <DropdownMenuItem onClick={() => openAction(s, 'reject')}>
+                                  <X className="mr-2 h-4 w-4 text-red-600" /> Rejeitar
+                                </DropdownMenuItem>
+                              )}
+                              {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING].includes(s.status) && (
+                                <DropdownMenuItem onClick={() => openAction(s, 'contest')}>
+                                  <AlertTriangle className="mr-2 h-4 w-4 text-amber-600" /> Contestar
+                                </DropdownMenuItem>
+                              )}
+                              {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                                <DropdownMenuItem onClick={() => openAction(s, 'documents')}>
+                                  <FileText className="mr-2 h-4 w-4" /> Solicitar documentos
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            }
+            mobile={items.map((s) => (
+              <MobileListCard
+                key={s.id}
+                title={s.client?.name || s.protocol}
+                subtitle={`${s.protocol} · ${s.plan?.name || 'Sem plano'}`}
+                meta={`${formatCurrency(Number(s.value))} · ${formatDate(s.createdAt)}`}
+                badges={
+                  <>
+                    <Badge variant={statusBadge(s.status)}>{SALE_STATUS_LABELS[s.status] ?? s.status}</Badge>
+                    {!isPartner && s.partner?.name ? (
+                      <Badge variant="outline">{s.partner.name}</Badge>
+                    ) : null}
+                  </>
+                }
+                onClick={() => setDetailSaleId(s.id)}
+                actions={
+                  isPartner ? (
+                    <div className="flex flex-col gap-1">
+                      {s.status === SaleStatus.DOCUMENTS_PENDING && (
+                        <Button size="sm" variant="outline" onClick={() => setResubmitSaleId(s.id)}>
+                          <Upload className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setDetailSaleId(s.id)}>
+                          <Eye className="mr-2 h-4 w-4" /> Ver detalhes
+                        </DropdownMenuItem>
+                        {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                          <DropdownMenuItem onClick={() => handleApprove(s)}>
+                            <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
+                          </DropdownMenuItem>
+                        )}
+                        {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                          <DropdownMenuItem onClick={() => openAction(s, 'reject')}>
+                            <X className="mr-2 h-4 w-4 text-red-600" /> Rejeitar
+                          </DropdownMenuItem>
+                        )}
+                        {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING].includes(s.status) && (
+                          <DropdownMenuItem onClick={() => openAction(s, 'contest')}>
+                            <AlertTriangle className="mr-2 h-4 w-4 text-amber-600" /> Contestar
+                          </DropdownMenuItem>
+                        )}
+                        {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                          <DropdownMenuItem onClick={() => openAction(s, 'documents')}>
+                            <FileText className="mr-2 h-4 w-4" /> Solicitar documentos
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )
+                }
+              />
+            ))}
+          />
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">Página {page} de {totalPages}</p>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</Button>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Próxima</Button>
+              <Button variant="outline" size="sm" className="flex-1 sm:flex-none" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</Button>
+              <Button variant="outline" size="sm" className="flex-1 sm:flex-none" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Próxima</Button>
             </div>
           </div>
         </>
