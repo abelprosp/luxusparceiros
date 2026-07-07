@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
@@ -8,6 +7,8 @@ import { cn } from '@/lib/utils';
 interface LuxusLogoProps {
   variant?: 'full' | 'icon';
   className?: string;
+  /** Forçar versão do logo em fundos escuros (login, sidebar) */
+  forceDark?: boolean;
 }
 
 const LOGO_SOURCES = {
@@ -15,7 +16,7 @@ const LOGO_SOURCES = {
   dark: '/logo-luxus-parceiros-dark.png',
 } as const;
 
-export function LuxusLogo({ variant = 'full', className }: LuxusLogoProps) {
+export function LuxusLogo({ variant = 'full', className, forceDark = false }: LuxusLogoProps) {
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -23,29 +24,36 @@ export function LuxusLogo({ variant = 'full', className }: LuxusLogoProps) {
     setMounted(true);
   }, []);
 
-  const src = mounted && resolvedTheme === 'dark' ? LOGO_SOURCES.dark : LOGO_SOURCES.light;
+  const useDarkLogo = forceDark || (mounted && resolvedTheme === 'dark');
+  const src = useDarkLogo ? LOGO_SOURCES.dark : LOGO_SOURCES.light;
+
+  if (!mounted) {
+    return (
+      <div
+        className={cn(
+          variant === 'icon' ? 'h-11 w-11' : 'h-12 w-[180px]',
+          'animate-pulse rounded-2xl bg-muted',
+          className,
+        )}
+      />
+    );
+  }
 
   if (variant === 'icon') {
     return (
-      <Image
+      <img
         src={src}
         alt="Luxus Parceiros"
-        width={44}
-        height={44}
-        className={cn('h-11 w-11 rounded-2xl object-cover object-left', className)}
-        priority
+        className={cn('h-11 w-11 rounded-2xl object-contain', className)}
       />
     );
   }
 
   return (
-    <Image
+    <img
       src={src}
       alt="Luxus Parceiros"
-      width={240}
-      height={64}
       className={cn('h-12 w-auto max-w-[220px] object-contain', className)}
-      priority
     />
   );
 }

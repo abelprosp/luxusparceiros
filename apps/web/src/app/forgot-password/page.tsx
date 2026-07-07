@@ -11,7 +11,7 @@ export default function ForgotPasswordPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 flex justify-center">
-            <LuxusLogo variant="icon" />
+            <LuxusLogo variant="icon" forceDark />
           </div>
           <CardTitle>Recuperar senha</CardTitle>
           <CardDescription>

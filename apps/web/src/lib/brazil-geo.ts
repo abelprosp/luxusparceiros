@@ -85,18 +85,17 @@ export function formatPartnerLocation(city?: string | null, state?: string | nul
   return parts.length > 0 ? parts.join(' - ') : 'Localização não informada';
 }
 
-export function getPartnerCoords(state?: string | null, indexInState = 0) {
+export function getPartnerLatLng(state?: string | null, indexInState = 0) {
   if (!state) return null;
   const normalized = state.trim().toUpperCase();
   const base = BR_STATE_COORDS[normalized];
   if (!base) return null;
 
-  const { x, y } = projectLatLng(base.lat, base.lng);
   const angle = (indexInState * 137.5 * Math.PI) / 180;
-  const radius = indexInState === 0 ? 0 : 10 + indexInState * 4;
+  const radius = indexInState === 0 ? 0 : 0.12 + indexInState * 0.06;
   return {
-    x: x + Math.cos(angle) * radius,
-    y: y + Math.sin(angle) * radius,
+    lat: base.lat + Math.sin(angle) * radius,
+    lng: base.lng + Math.cos(angle) * radius,
     state: normalized,
     capital: base.capital,
   };

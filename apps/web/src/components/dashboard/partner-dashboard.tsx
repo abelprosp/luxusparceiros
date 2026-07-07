@@ -125,7 +125,7 @@ export function PartnerDashboard() {
               {Math.round(data.goalProgress)}%
             </span>
           </div>
-          <div className="mt-5 h-3 w-full overflow-hidden rounded-full bg-[#f0efeb]">
+          <div className="mt-5 h-3 w-full overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-primary transition-all"
               style={{ width: `${Math.min(100, data.goalProgress)}%` }}
@@ -160,7 +160,7 @@ export function PartnerDashboard() {
               data.topProducts.slice(0, 5).map((item, index) => (
                 <div
                   key={item.name}
-                  className="flex items-center justify-between rounded-2xl bg-[#f8f7f4] px-4 py-3"
+                  className="flex items-center justify-between rounded-2xl bg-muted px-4 py-3"
                 >
                   <div className="flex items-center gap-3">
                     <Badge variant={index === 0 ? 'default' : 'secondary'} className="rounded-full">
@@ -187,7 +187,7 @@ export function PartnerDashboard() {
               data.topOperators.slice(0, 5).map((item, index) => (
                 <div
                   key={item.name}
-                  className="flex items-center justify-between rounded-2xl bg-[#f8f7f4] px-4 py-3"
+                  className="flex items-center justify-between rounded-2xl bg-muted px-4 py-3"
                 >
                   <div className="flex items-center gap-3">
                     <Badge variant={index === 0 ? 'default' : 'secondary'} className="rounded-full">

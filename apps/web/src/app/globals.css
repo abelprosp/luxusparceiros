@@ -85,4 +85,13 @@
   .bento-card-dark {
     @apply rounded-2xl border-0 bg-[#0f172a] text-white shadow-[0_8px_24px_rgba(15,23,42,0.18)];
   }
+
+  .leaflet-container {
+    font: inherit;
+  }
+
+  .partner-map-marker {
+    background: transparent !important;
+    border: none !important;
+  }
 }

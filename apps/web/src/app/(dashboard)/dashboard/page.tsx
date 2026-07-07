@@ -181,7 +181,7 @@ export default function DashboardPage() {
         </div>
         <div className="flex flex-wrap gap-3">
           <Select value={partnerId} onValueChange={setPartnerId}>
-            <SelectTrigger className="h-11 w-48 rounded-2xl border-0 bg-[#f8f7f4] shadow-none">
+            <SelectTrigger className="h-11 w-48 rounded-2xl border border-border bg-muted text-foreground shadow-none">
               <SelectValue placeholder="Parceiro" />
             </SelectTrigger>
             <SelectContent>
@@ -195,7 +195,7 @@ export default function DashboardPage() {
           </Select>
 
           <Select value={state} onValueChange={setState}>
-            <SelectTrigger className="h-11 w-40 rounded-2xl border-0 bg-[#f8f7f4] shadow-none">
+            <SelectTrigger className="h-11 w-40 rounded-2xl border border-border bg-muted text-foreground shadow-none">
               <SelectValue placeholder="Região (UF)" />
             </SelectTrigger>
             <SelectContent>
@@ -209,7 +209,7 @@ export default function DashboardPage() {
           </Select>
 
           <Select value={campaignId} onValueChange={setCampaignId}>
-            <SelectTrigger className="h-11 w-48 rounded-2xl border-0 bg-[#f8f7f4] shadow-none">
+            <SelectTrigger className="h-11 w-48 rounded-2xl border border-border bg-muted text-foreground shadow-none">
               <SelectValue placeholder="Campanha" />
             </SelectTrigger>
             <SelectContent>
@@ -223,7 +223,7 @@ export default function DashboardPage() {
           </Select>
 
           <Select value={operatorId} onValueChange={setOperatorId}>
-            <SelectTrigger className="h-11 w-44 rounded-2xl border-0 bg-[#f8f7f4] shadow-none">
+            <SelectTrigger className="h-11 w-44 rounded-2xl border border-border bg-muted text-foreground shadow-none">
               <SelectValue placeholder="Operadora" />
             </SelectTrigger>
             <SelectContent>
@@ -292,7 +292,7 @@ export default function DashboardPage() {
                   data.ranking.slice(0, 5).map((item, index) => (
                     <div
                       key={item.partnerId}
-                      className="flex items-center justify-between rounded-2xl bg-[#f8f7f4] px-4 py-3"
+                      className="flex items-center justify-between rounded-2xl bg-muted px-4 py-3"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <Badge variant={index === 0 ? 'default' : 'secondary'} className="rounded-full">
@@ -321,7 +321,7 @@ export default function DashboardPage() {
                   {data.campaignPerformance!.map((c) => (
                     <div
                       key={c.campaignId}
-                      className="rounded-2xl bg-[#f8f7f4] px-4 py-3"
+                      className="rounded-2xl bg-muted px-4 py-3"
                     >
                       <p className="truncate text-sm font-medium">{c.title}</p>
                       <div className="mt-2 flex items-center justify-between text-sm">

@@ -84,7 +84,7 @@ export default function LoginPage() {
         <div className="absolute bottom-20 left-10 h-56 w-56 rounded-full bg-primary-light/10 blur-3xl" />
 
         <div className="relative z-10">
-          <LuxusLogo variant="full" className="[&_img]:rounded-2xl" />
+          <LuxusLogo variant="full" forceDark />
         </div>
 
         <div className="relative z-10 space-y-8">
@@ -142,7 +142,7 @@ export default function LoginPage() {
       <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 sm:px-10">
         <div className="w-full max-w-md">
           <div className="mb-8 lg:hidden">
-            <LuxusLogo variant="full" />
+            <LuxusLogo variant="full" forceDark />
           </div>
 
           <div className="mb-8 space-y-2">

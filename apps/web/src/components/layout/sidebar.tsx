@@ -89,7 +89,7 @@ export function Sidebar() {
         className="mb-8 flex items-center justify-center"
         title="Luxus Parceiros"
       >
-        <LuxusLogo variant="icon" />
+        <LuxusLogo variant="icon" forceDark />
       </Link>
 
       <ScrollArea className="flex-1 w-full">
