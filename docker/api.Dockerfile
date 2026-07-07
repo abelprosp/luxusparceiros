@@ -29,4 +29,4 @@ COPY --from=builder /app/node_modules ./node_modules
 RUN mkdir -p uploads && chown -R nestjs:nodejs uploads
 USER nestjs
 EXPOSE 3001
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
+CMD ["sh", "-c", "npx prisma@6 migrate deploy && node dist/src/main.js"]
