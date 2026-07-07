@@ -69,7 +69,7 @@ export default function LoginPage() {
               <Zap className="h-6 w-6 text-white" />
             </div>
             <CardTitle className="text-2xl font-bold">Entrar</CardTitle>
-            <CardDescription>Acesse sua conta administrativa</CardDescription>
+            <CardDescription>Acesse sua conta de parceiro</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">

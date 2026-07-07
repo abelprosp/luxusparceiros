@@ -19,13 +19,17 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
+  User,
+  Store,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { canAccessRoute, isPartnerUser } from '@/lib/rbac';
 
-const navItems = [
+const adminNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/parceiros', label: 'Parceiros', icon: Users },
   { href: '/operadoras', label: 'Operadoras', icon: Radio },
@@ -41,9 +45,24 @@ const navItems = [
   { href: '/solicitacoes', label: 'Solicitações', icon: FileText },
 ];
 
+const partnerNavItems = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/clientes', label: 'Clientes', icon: User },
+  { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
+  { href: '/filiais', label: 'Filiais', icon: Store },
+  { href: '/estoque', label: 'Estoque', icon: Warehouse },
+  { href: '/solicitacoes', label: 'Solicitações', icon: FileText },
+  { href: '/chamados', label: 'Chamados', icon: MessageSquare },
+  { href: '/comissoes', label: 'Comissões', icon: DollarSign },
+  { href: '/perfil', label: 'Perfil', icon: UserCog },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
+  const { user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+  const navItems = isPartnerUser(user) ? partnerNavItems : adminNavItems;
+  const visibleItems = navItems.filter((item) => canAccessRoute(user, item.href));
 
   return (
     <aside
@@ -66,7 +85,7 @@ export function Sidebar() {
 
       <ScrollArea className="flex-1 py-4">
         <nav className="space-y-1 px-3">
-          {navItems.map((item) => {
+          {visibleItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
             return (

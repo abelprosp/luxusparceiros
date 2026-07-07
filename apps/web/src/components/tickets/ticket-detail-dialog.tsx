@@ -12,6 +12,7 @@ import {
 import { formatDateTime } from '@luxus/utils';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
+import { isPartnerUser } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -133,7 +134,8 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated }: 
               <Badge variant="outline">{TICKET_CATEGORY_LABELS[ticket.category as keyof typeof TICKET_CATEGORY_LABELS] ?? ticket.category}</Badge>
               <Badge variant="secondary">{TICKET_PRIORITY_LABELS[ticket.priority]}</Badge>
             </div>
-            {ticket.partner && <p className="text-xs text-muted-foreground">Parceiro: {ticket.partner.name}</p>}
+            {ticket.partner && !isPartnerUser(user) && <p className="text-xs text-muted-foreground">Parceiro: {ticket.partner.name}</p>}
+            {!isPartnerUser(user) && (
             <div className="space-y-2 rounded-lg border p-3">
               <Label>Status</Label>
               <div className="flex gap-2">
@@ -148,6 +150,7 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated }: 
                 <Button size="sm" onClick={handleStatus} disabled={sending}>Salvar</Button>
               </div>
             </div>
+            )}
             <div className="min-h-0 flex-1">
               <Label className="mb-2 block">Mensagens</Label>
               <ScrollArea className="h-48 rounded-lg border p-3">

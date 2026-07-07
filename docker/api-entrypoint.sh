@@ -12,8 +12,5 @@ fi
 echo "[entrypoint] Running prisma migrate deploy..."
 prisma migrate deploy --schema=./prisma/schema.prisma
 
-echo "[entrypoint] Running database seed..."
-node dist/prisma/seed.js
-
 echo "[entrypoint] Starting API on port ${PORT:-3001}..."
 exec node dist/src/main.js

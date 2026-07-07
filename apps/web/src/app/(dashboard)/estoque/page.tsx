@@ -17,6 +17,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/components/ui/toaster';
+import { useAuth } from '@/hooks/useAuth';
+import { isPartnerUser } from '@/lib/rbac';
+import { formatPhone } from '@luxus/utils';
 
 interface SimCard {
   id: string;
@@ -78,6 +81,9 @@ export default function EstoquePage() {
   const [savingLine, setSavingLine] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isPartner = isPartnerUser(user);
+  const [reserving, setReserving] = useState<string | null>(null);
 
   const loadChips = useCallback(async () => {
     setLoading(true);
@@ -98,7 +104,8 @@ export default function EstoquePage() {
   const loadLines = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getPaginated<Line>('/lines', {
+      const path = isPartner ? '/stock/lines' : '/lines';
+      const res = await getPaginated<Line>(path, {
         search: lineSearch || undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
         limit: 50,
@@ -109,14 +116,19 @@ export default function EstoquePage() {
     } finally {
       setLoading(false);
     }
-  }, [lineSearch, statusFilter]);
+  }, [lineSearch, statusFilter, isPartner]);
 
   useEffect(() => {
+    if (isPartner) {
+      loadLines();
+      return;
+    }
     if (tab === 'chips') loadChips();
     else loadLines();
-  }, [tab, loadChips, loadLines]);
+  }, [tab, loadChips, loadLines, isPartner]);
 
   useEffect(() => {
+    if (isPartner) return;
     Promise.all([
       getPaginated<Operator>('/operators', { limit: 100 }),
       getPaginated<Plan>('/plans', { limit: 200 }),
@@ -128,7 +140,20 @@ export default function EstoquePage() {
         setPartners(pts.data);
       })
       .catch(() => {});
-  }, []);
+  }, [isPartner]);
+
+  const handleReserve = async (lineId: string) => {
+    setReserving(lineId);
+    try {
+      await api(`/stock/lines/${lineId}/reserve`, { method: 'POST' });
+      toast({ title: 'Linha reservada', variant: 'success' });
+      loadLines();
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao reservar', variant: 'destructive' });
+    } finally {
+      setReserving(null);
+    }
+  };
 
   const filteredPlans = plans.filter((p) => p.operatorId === lineForm.operatorId);
 
@@ -197,6 +222,45 @@ export default function EstoquePage() {
       </SelectContent>
     </Select>
   );
+
+  if (isPartner) {
+    return (
+      <DashboardLayout title="Estoque" description="Linhas disponíveis do parceiro">
+        <div className="mb-4 flex flex-1 gap-3">
+          <div className="relative max-w-xs flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input placeholder="Buscar número..." className="pl-9" value={lineSearch} onChange={(e) => setLineSearch(e.target.value)} />
+          </div>
+          {statusSelect}
+        </div>
+
+        {loading ? (
+          <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+        ) : lines.length === 0 ? (
+          <EmptyState icon={Smartphone} title="Nenhuma linha no estoque" description="As linhas do parceiro aparecerão aqui." />
+        ) : (
+          <div className="space-y-3">
+            {lines.map((l) => (
+              <div key={l.id} className="flex items-center justify-between rounded-xl border bg-card p-4 shadow-card">
+                <div>
+                  <p className="font-mono font-semibold">{formatPhone(l.number)}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {l.operator?.name} · {l.plan?.name ?? 'Sem plano'}
+                  </p>
+                  <Badge variant="outline" className="mt-1">{l.status}</Badge>
+                </div>
+                {l.status === 'AVAILABLE' && (
+                  <Button size="sm" onClick={() => handleReserve(l.id)} disabled={reserving === l.id}>
+                    {reserving === l.id ? 'Reservando...' : 'Reservar'}
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout title="Estoque" description="Gestão de chips, linhas e ICCIDs">

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { ContractFormat, DocumentType } from '@luxus/types';
 import { api, getPaginated, uploadFile } from '@/lib/api';
+import { useAuth } from '@/hooks/useAuth';
+import { isPartnerUser } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -51,6 +53,8 @@ interface CreateSaleDialogProps {
 
 export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDialogProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isPartner = isPartnerUser(user);
   const [saving, setSaving] = useState(false);
   const [operators, setOperators] = useState<Operator[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -74,16 +78,14 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
 
   useEffect(() => {
     if (!open) return;
-    Promise.all([
-      getPaginated<Operator>('/operators', { limit: 100 }),
-      getPaginated<Plan>('/plans', { limit: 200 }),
-      getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' }),
-    ]).then(([ops, pls, pts]) => {
-      setOperators(ops.data);
-      setPlans(pls.data);
-      setPartners(pts.data);
-    });
-  }, [open]);
+    getPaginated<Operator>('/operators', { limit: 100 }).then((ops) => setOperators(ops.data));
+    const plansPath = isPartner ? '/plans/available' : '/plans';
+    getPaginated<Plan>(plansPath, { limit: 200 }).then((pls) => setPlans(pls.data));
+    if (!isPartner) {
+      getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' }).then((pts) => setPartners(pts.data));
+    }
+    if (isPartner && user?.partnerId) setPartnerId(user.partnerId);
+  }, [open, isPartner, user?.partnerId]);
 
   const filteredPlans = plans.filter((p) => p.operatorId === operatorId);
 
@@ -191,15 +193,17 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-muted-foreground">Dados da linha vendida</h3>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2 sm:col-span-2">
-                <Label>Parceiro *</Label>
-                <Select value={partnerId} onValueChange={setPartnerId}>
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>
-                    {partners.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+              {!isPartner && (
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Parceiro *</Label>
+                  <Select value={partnerId} onValueChange={setPartnerId}>
+                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      {partners.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Operadora *</Label>
                 <Select value={operatorId} onValueChange={(v) => { setOperatorId(v); setPlanId(''); setValue(''); }}>

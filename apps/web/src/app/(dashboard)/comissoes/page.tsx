@@ -16,6 +16,9 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/components/ui/toaster';
+import { useAuth } from '@/hooks/useAuth';
+import { isPartnerUser } from '@/lib/rbac';
+import { Card, CardContent } from '@/components/ui/card';
 
 interface Commission {
   id: string;
@@ -44,6 +47,9 @@ export default function ComissoesPage() {
   const [confirmNotes, setConfirmNotes] = useState('');
   const [confirming, setConfirming] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isPartner = isPartnerUser(user);
+  const [summary, setSummary] = useState({ forecast: 0, approved: 0, paid: 0, total: 0 });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,8 +60,12 @@ export default function ComissoesPage() {
         limit: 50,
       });
       setItems(res.data);
+      if (isPartner) {
+        const summaryData = await api<{ forecast: number; approved: number; paid: number; total: number }>('/commissions/summary');
+        setSummary(summaryData);
+      }
     } catch { setItems([]); } finally { setLoading(false); }
-  }, [search, statusFilter]);
+  }, [search, statusFilter, isPartner]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -94,7 +104,29 @@ export default function ComissoesPage() {
   };
 
   return (
-    <DashboardLayout title="Comissões" description="Gestão de comissões dos parceiros">
+    <DashboardLayout title="Comissões" description={isPartner ? 'Extrato e previsões' : 'Gestão de comissões dos parceiros'}>
+      {isPartner && (
+        <div className="mb-6 grid gap-4 sm:grid-cols-3">
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Previsão</p>
+              <p className="text-2xl font-bold text-primary">{formatCurrency(summary.forecast)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Aprovadas</p>
+              <p className="text-2xl font-bold">{formatCurrency(summary.approved)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Confirmadas</p>
+              <p className="text-2xl font-bold">{formatCurrency(summary.paid)}</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -120,36 +152,38 @@ export default function ComissoesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Parceiro</TableHead>
+                {!isPartner && <TableHead>Parceiro</TableHead>}
                 <TableHead>Venda</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead>%</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Data</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                {!isPartner && <TableHead className="text-right">Ações</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell>{c.partner?.name || '-'}</TableCell>
+                  {!isPartner && <TableCell>{c.partner?.name || '-'}</TableCell>}
                   <TableCell className="font-mono text-sm">{c.sale?.protocol || '-'}</TableCell>
                   <TableCell className="font-semibold">{formatCurrency(Number(c.value))}</TableCell>
                   <TableCell>{c.percentage}%</TableCell>
                   <TableCell><Badge variant="outline">{STATUS_LABELS[c.status] ?? c.status}</Badge></TableCell>
                   <TableCell>{formatDate(c.createdAt)}</TableCell>
-                  <TableCell className="text-right space-x-1">
-                    {c.status === CommissionStatus.FORECAST && (
-                      <Button size="sm" variant="outline" onClick={() => handleApprove(c.id)}>
-                        <CheckCircle className="mr-1 h-3 w-3" /> Aprovar
-                      </Button>
-                    )}
-                    {c.status === CommissionStatus.APPROVED && (
-                      <Button size="sm" variant="outline" onClick={() => openConfirmDialog(c.id)}>
-                        <CheckCheck className="mr-1 h-3 w-3" /> Confirmar pagamento
-                      </Button>
-                    )}
-                  </TableCell>
+                  {!isPartner && (
+                    <TableCell className="text-right space-x-1">
+                      {c.status === CommissionStatus.FORECAST && (
+                        <Button size="sm" variant="outline" onClick={() => handleApprove(c.id)}>
+                          <CheckCircle className="mr-1 h-3 w-3" /> Aprovar
+                        </Button>
+                      )}
+                      {c.status === CommissionStatus.APPROVED && (
+                        <Button size="sm" variant="outline" onClick={() => openConfirmDialog(c.id)}>
+                          <CheckCheck className="mr-1 h-3 w-3" /> Confirmar pagamento
+                        </Button>
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

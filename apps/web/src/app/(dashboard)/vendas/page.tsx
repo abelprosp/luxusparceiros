@@ -19,6 +19,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/components/ui/toaster';
 import { CreateSaleButton } from '@/components/sales/create-sale-dialog';
+import { useAuth } from '@/hooks/useAuth';
+import { isPartnerUser } from '@/lib/rbac';
 
 interface Sale {
   id: string;
@@ -60,6 +62,8 @@ export default function VendasPage() {
   const [docMessage, setDocMessage] = useState('');
   const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isPartner = isPartnerUser(user);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -133,7 +137,7 @@ export default function VendasPage() {
   };
 
   return (
-    <DashboardLayout title="Vendas" description="Listagem e gestão de vendas">
+    <DashboardLayout title="Vendas" description={isPartner ? 'Suas vendas registradas' : 'Listagem e gestão de vendas'}>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 gap-3">
           <div className="relative max-w-sm flex-1">
@@ -152,7 +156,9 @@ export default function VendasPage() {
         </div>
         <div className="flex gap-2">
           <CreateSaleButton onSuccess={load} />
-          <Button variant="outline"><Download className="mr-2 h-4 w-4" /> Exportar</Button>
+          {!isPartner && (
+            <Button variant="outline"><Download className="mr-2 h-4 w-4" /> Exportar</Button>
+          )}
         </div>
       </div>
 
@@ -167,56 +173,58 @@ export default function VendasPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Protocolo</TableHead>
-                  <TableHead>Parceiro</TableHead>
+                  {!isPartner && <TableHead>Parceiro</TableHead>}
                   <TableHead>Cliente</TableHead>
                   <TableHead>Plano</TableHead>
-                  <TableHead>Campanha</TableHead>
+                  {!isPartner && <TableHead>Campanha</TableHead>}
                   <TableHead>Valor</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Data</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
+                  {!isPartner && <TableHead className="text-right">Ações</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="font-mono text-sm">{s.protocol}</TableCell>
-                    <TableCell>{s.partner?.name || '-'}</TableCell>
+                    {!isPartner && <TableCell>{s.partner?.name || '-'}</TableCell>}
                     <TableCell>{s.client?.name || '-'}</TableCell>
                     <TableCell>{s.plan?.name || '-'}</TableCell>
-                    <TableCell>{s.campaign?.title || '-'}</TableCell>
+                    {!isPartner && <TableCell>{s.campaign?.title || '-'}</TableCell>}
                     <TableCell>{formatCurrency(Number(s.value))}</TableCell>
                     <TableCell><Badge variant={statusBadge(s.status)}>{SALE_STATUS_LABELS[s.status] ?? s.status}</Badge></TableCell>
                     <TableCell>{formatDate(s.createdAt)}</TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
-                            <DropdownMenuItem onClick={() => handleApprove(s)}>
-                              <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
-                            </DropdownMenuItem>
-                          )}
-                          {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
-                            <DropdownMenuItem onClick={() => openAction(s, 'reject')}>
-                              <X className="mr-2 h-4 w-4 text-red-600" /> Rejeitar
-                            </DropdownMenuItem>
-                          )}
-                          {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING].includes(s.status) && (
-                            <DropdownMenuItem onClick={() => openAction(s, 'contest')}>
-                              <AlertTriangle className="mr-2 h-4 w-4 text-amber-600" /> Contestar
-                            </DropdownMenuItem>
-                          )}
-                          {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.CONTESTED].includes(s.status) && (
-                            <DropdownMenuItem onClick={() => openAction(s, 'documents')}>
-                              <FileText className="mr-2 h-4 w-4" /> Solicitar documentos
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+                    {!isPartner && (
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                              <DropdownMenuItem onClick={() => handleApprove(s)}>
+                                <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
+                              </DropdownMenuItem>
+                            )}
+                            {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                              <DropdownMenuItem onClick={() => openAction(s, 'reject')}>
+                                <X className="mr-2 h-4 w-4 text-red-600" /> Rejeitar
+                              </DropdownMenuItem>
+                            )}
+                            {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING].includes(s.status) && (
+                              <DropdownMenuItem onClick={() => openAction(s, 'contest')}>
+                                <AlertTriangle className="mr-2 h-4 w-4 text-amber-600" /> Contestar
+                              </DropdownMenuItem>
+                            )}
+                            {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                              <DropdownMenuItem onClick={() => openAction(s, 'documents')}>
+                                <FileText className="mr-2 h-4 w-4" /> Solicitar documentos
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

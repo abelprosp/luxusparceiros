@@ -4,6 +4,7 @@ import { Bell, LogOut, Moon, Sun, User } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { isPartnerUser } from '@/lib/rbac';
 import { getInitials } from '@luxus/utils';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ export function Header({ title, description }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
   const router = useRouter();
+  const isPartner = isPartnerUser(user);
 
   const handleLogout = async () => {
     await logout();
@@ -78,7 +80,7 @@ export function Header({ title, description }: HeaderProps) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push(isPartner ? '/perfil' : '/dashboard')}>
               <User className="mr-2 h-4 w-4" />
               Meu perfil
             </DropdownMenuItem>

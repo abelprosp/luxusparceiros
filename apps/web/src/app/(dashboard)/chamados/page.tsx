@@ -18,6 +18,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/toaster';
+import { useAuth } from '@/hooks/useAuth';
+import { isPartnerUser } from '@/lib/rbac';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TICKET_CATEGORY_LABELS } from '@luxus/types';
 import { CreateTicketDialog } from '@/components/tickets/create-ticket-dialog';
 import { TicketDetailDialog } from '@/components/tickets/ticket-detail-dialog';
 import { cn } from '@/lib/utils';
@@ -49,6 +53,8 @@ const priorityVariant = (p: TicketPriority) => {
 
 export default function ChamadosPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isPartner = isPartnerUser(user);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -86,7 +92,7 @@ export default function ChamadosPage() {
   };
 
   return (
-    <DashboardLayout title="Chamados" description="Quadro Kanban de atendimento">
+    <DashboardLayout title="Chamados" description={isPartner ? 'Seus chamados de suporte' : 'Quadro Kanban de atendimento'}>
       <div className="mb-6 flex justify-end">
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
@@ -95,13 +101,56 @@ export default function ChamadosPage() {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-5 gap-4">
-          {columns.map((col) => (
-            <Skeleton key={col.status} className="h-96 rounded-xl" />
-          ))}
-        </div>
+        isPartner ? (
+          <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+        ) : (
+          <div className="grid grid-cols-5 gap-4">
+            {columns.map((col) => (
+              <Skeleton key={col.status} className="h-96 rounded-xl" />
+            ))}
+          </div>
+        )
       ) : tickets.length === 0 ? (
-        <EmptyState icon={MessageSquare} title="Nenhum chamado" description="Os chamados aparecerão no quadro Kanban." />
+        <EmptyState icon={MessageSquare} title="Nenhum chamado" description="Os chamados aparecerão aqui." />
+      ) : isPartner ? (
+        <div className="rounded-xl border bg-card shadow-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Protocolo</TableHead>
+                <TableHead>Assunto</TableHead>
+                <TableHead>Categoria</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Prioridade</TableHead>
+                <TableHead>Data</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tickets.map((ticket) => (
+                <TableRow
+                  key={ticket.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => openDetail(ticket.id)}
+                >
+                  <TableCell className="font-mono text-sm">{ticket.protocol}</TableCell>
+                  <TableCell className="font-medium">{ticket.subject}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline">
+                      {TICKET_CATEGORY_LABELS[ticket.category as keyof typeof TICKET_CATEGORY_LABELS] ?? ticket.category}
+                    </Badge>
+                  </TableCell>
+                  <TableCell><Badge>{TICKET_STATUS_LABELS[ticket.status]}</Badge></TableCell>
+                  <TableCell>
+                    <Badge variant={priorityVariant(ticket.priority)}>
+                      {TICKET_PRIORITY_LABELS[ticket.priority]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{formatDateTime(ticket.createdAt)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       ) : (
         <div className="flex gap-4 overflow-x-auto pb-4">
           {columns.map((col) => {

@@ -22,6 +22,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { CreateRequestDialog } from '@/components/requests/create-request-dialog';
 import { RequestDetailDialog } from '@/components/requests/request-detail-dialog';
 import { useToast } from '@/components/ui/toaster';
+import { useAuth } from '@/hooks/useAuth';
+import { isPartnerUser } from '@/lib/rbac';
 
 interface Request {
   id: string;
@@ -36,6 +38,8 @@ interface Request {
 
 export default function SolicitacoesPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isPartner = isPartnerUser(user);
   const [items, setItems] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -97,7 +101,7 @@ export default function SolicitacoesPage() {
   };
 
   return (
-    <DashboardLayout title="Solicitações" description="Gestão de solicitações dos parceiros">
+    <DashboardLayout title="Solicitações" description={isPartner ? 'Suas solicitações' : 'Gestão de solicitações dos parceiros'}>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center flex-1">
           <div className="relative max-w-sm flex-1">
@@ -133,10 +137,12 @@ export default function SolicitacoesPage() {
           </Select>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleExport}>
-            <Download className="mr-2 h-4 w-4" />
-            Exportar CSV
-          </Button>
+          {!isPartner && (
+            <Button variant="outline" onClick={handleExport}>
+              <Download className="mr-2 h-4 w-4" />
+              Exportar CSV
+            </Button>
+          )}
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Nova solicitação
@@ -160,7 +166,7 @@ export default function SolicitacoesPage() {
                 <TableRow>
                   <TableHead>Protocolo</TableHead>
                   <TableHead>Tipo</TableHead>
-                  <TableHead>Parceiro</TableHead>
+                  {!isPartner && <TableHead>Parceiro</TableHead>}
                   <TableHead>Cliente</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Data</TableHead>
@@ -177,7 +183,7 @@ export default function SolicitacoesPage() {
                     <TableCell>
                       <Badge variant="outline">{REQUEST_TYPE_LABELS[r.type]}</Badge>
                     </TableCell>
-                    <TableCell>{r.partner?.name || '-'}</TableCell>
+                    {!isPartner && <TableCell>{r.partner?.name || '-'}</TableCell>}
                     <TableCell>{r.client?.name || '-'}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">{REQUEST_STATUS_LABELS[r.status]}</Badge>
