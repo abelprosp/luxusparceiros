@@ -133,7 +133,6 @@ export default function DashboardPage() {
   };
 
   const data = metrics || fallbackMetrics;
-  const showMockData = !hasFilters;
 
   if (isPartner) {
     return (
@@ -236,7 +235,6 @@ export default function DashboardPage() {
               value={data.activePartners}
               description={`${data.totalPartners} total`}
               icon={Users}
-              trend={showMockData ? { value: 12, label: 'vs mês anterior' } : undefined}
             />
             <MetricsCard
               title="Linhas Disponíveis"
@@ -247,7 +245,6 @@ export default function DashboardPage() {
               title="Receita"
               value={formatCurrency(data.revenue)}
               icon={TrendingUp}
-              trend={showMockData ? { value: 8, label: 'vs mês anterior' } : undefined}
             />
             <MetricsCard
               title="Comissões"
@@ -259,20 +256,7 @@ export default function DashboardPage() {
           <div className="mt-6 grid gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <SalesChart
-                data={
-                  data.salesChart.length > 0
-                    ? data.salesChart
-                    : showMockData
-                      ? [
-                          { date: 'Jan', value: 120 },
-                          { date: 'Fev', value: 180 },
-                          { date: 'Mar', value: 150 },
-                          { date: 'Abr', value: 220 },
-                          { date: 'Mai', value: 280 },
-                          { date: 'Jun', value: 310 },
-                        ]
-                      : []
-                }
+                data={data.salesChart}
                 title="Vendas nos últimos 30 dias"
               />
             </div>
@@ -285,18 +269,8 @@ export default function DashboardPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {(data.ranking.length > 0
-                  ? data.ranking
-                  : showMockData
-                    ? [
-                        { partnerId: '1', partnerName: 'Parceiro Alpha', sales: 145 },
-                        { partnerId: '2', partnerName: 'Parceiro Beta', sales: 128 },
-                        { partnerId: '3', partnerName: 'Parceiro Gamma', sales: 96 },
-                      ]
-                    : []
-                )
-                  .slice(0, 5)
-                  .map((item, index) => (
+                {data.ranking.length > 0 ? (
+                  data.ranking.slice(0, 5).map((item, index) => (
                     <div
                       key={item.partnerId}
                       className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2"
@@ -311,10 +285,10 @@ export default function DashboardPage() {
                         {item.sales} vendas
                       </span>
                     </div>
-                  ))}
-                {data.ranking.length === 0 && !showMockData && (
+                  ))
+                ) : (
                   <p className="py-4 text-center text-sm text-muted-foreground">
-                    Nenhum dado para os filtros selecionados
+                    Nenhum parceiro com vendas no período
                   </p>
                 )}
               </CardContent>
@@ -366,23 +340,13 @@ export default function DashboardPage() {
                       Mapa do Brasil — em breve
                     </p>
                     <div className="mt-4 flex flex-wrap justify-center gap-2">
-                      {(data.partnersByState.length > 0
-                        ? data.partnersByState
-                        : showMockData
-                          ? [
-                              { state: 'SP', count: 45 },
-                              { state: 'RJ', count: 32 },
-                              { state: 'MG', count: 28 },
-                              { state: 'RS', count: 18 },
-                            ]
-                          : []
-                      ).map((s) => (
+                      {data.partnersByState.map((s) => (
                         <Badge key={s.state} variant="outline">
                           {s.state}: {s.count}
                         </Badge>
                       ))}
                     </div>
-                    {data.partnersByState.length === 0 && !showMockData && (
+                    {data.partnersByState.length === 0 && (
                       <p className="mt-4 text-sm text-muted-foreground">
                         Nenhum parceiro encontrado
                       </p>

@@ -28,7 +28,7 @@ export default function OperadorasPage() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Operator | null>(null);
-  const [form, setForm] = useState({ name: '', slug: '', description: '' });
+  const [form, setForm] = useState({ name: '', description: '' });
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -64,7 +64,7 @@ export default function OperadorasPage() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <Button onClick={() => { setEditing(null); setForm({ name: '', slug: '', description: '' }); setDialogOpen(true); }}>
+        <Button onClick={() => { setEditing(null); setForm({ name: '', description: '' }); setDialogOpen(true); }}>
           <Plus className="mr-2 h-4 w-4" /> Nova Operadora
         </Button>
       </div>
@@ -91,7 +91,7 @@ export default function OperadorasPage() {
                   <TableCell>{op.slug}</TableCell>
                   <TableCell><Badge variant={op.status ? 'success' : 'secondary'}>{op.status ? 'Ativa' : 'Inativa'}</Badge></TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={() => { setEditing(op); setForm({ name: op.name, slug: op.slug, description: op.description || '' }); setDialogOpen(true); }}>
+                    <Button variant="ghost" size="icon" onClick={() => { setEditing(op); setForm({ name: op.name, description: op.description || '' }); setDialogOpen(true); }}>
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" onClick={async () => { await api(`/operators/${op.id}`, { method: 'DELETE' }); load(); }}>
@@ -109,8 +109,11 @@ export default function OperadorasPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>{editing ? 'Editar' : 'Nova'} Operadora</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="space-y-2"><Label>Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Slug</Label><Input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} /></div>
+            <div className="space-y-2">
+              <Label>Nome</Label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <p className="text-xs text-muted-foreground">O slug é gerado automaticamente a partir do nome.</p>
+            </div>
             <div className="space-y-2"><Label>Descrição</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
           </div>
           <DialogFooter>
