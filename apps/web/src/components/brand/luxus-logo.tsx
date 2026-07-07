@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
+import logoLight from '@/assets/logos/logo-light.jpg';
+import logoDark from '@/assets/logos/logo-dark.jpg';
 
 interface LuxusLogoProps {
   variant?: 'full' | 'icon';
@@ -10,11 +12,6 @@ interface LuxusLogoProps {
   /** Forçar versão do logo em fundos escuros (login, sidebar) */
   forceDark?: boolean;
 }
-
-const LOGO_SOURCES = {
-  light: '/logo-luxus-parceiros-light.png',
-  dark: '/logo-luxus-parceiros-dark.png',
-} as const;
 
 export function LuxusLogo({ variant = 'full', className, forceDark = false }: LuxusLogoProps) {
   const { resolvedTheme } = useTheme();
@@ -25,7 +22,7 @@ export function LuxusLogo({ variant = 'full', className, forceDark = false }: Lu
   }, []);
 
   const useDarkLogo = forceDark || (mounted && resolvedTheme === 'dark');
-  const src = useDarkLogo ? LOGO_SOURCES.dark : LOGO_SOURCES.light;
+  const logo = useDarkLogo ? logoDark : logoLight;
 
   if (!mounted) {
     return (
@@ -42,8 +39,10 @@ export function LuxusLogo({ variant = 'full', className, forceDark = false }: Lu
   if (variant === 'icon') {
     return (
       <img
-        src={src}
+        src={logo.src}
         alt="Luxus Parceiros"
+        width={logo.width}
+        height={logo.height}
         className={cn('h-11 w-11 rounded-2xl object-contain', className)}
       />
     );
@@ -51,8 +50,10 @@ export function LuxusLogo({ variant = 'full', className, forceDark = false }: Lu
 
   return (
     <img
-      src={src}
+      src={logo.src}
       alt="Luxus Parceiros"
+      width={logo.width}
+      height={logo.height}
       className={cn('h-12 w-auto max-w-[220px] object-contain', className)}
     />
   );
