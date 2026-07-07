@@ -24,6 +24,7 @@ export const ROUTE_PERMISSIONS: Record<string, Permission> = {
   '/auditoria': PERMISSIONS.AUDIT_READ,
   '/solicitacoes': PERMISSIONS.REQUESTS_READ,
   '/perfil': PERMISSIONS.DASHBOARD_READ,
+  '/configuracoes': PERMISSIONS.DASHBOARD_READ,
 };
 
 export function getUserPermissions(user: AuthUser | null): string[] {

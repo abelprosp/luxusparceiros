@@ -8,6 +8,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Image,
+  useColorScheme,
 } from 'react-native';
 import { Redirect } from 'expo-router';
 import { Mail, Lock, Fingerprint } from 'lucide-react-native';
@@ -22,6 +24,11 @@ export default function LoginScreen() {
   const { login, loginWithBiometric, isAuthenticated, biometricAvailable, biometricEnabled } =
     useAuth();
   const { colors } = useTheme();
+  const colorScheme = useColorScheme();
+  const logoSource =
+    colorScheme === 'dark'
+      ? require('../../assets/logos/logo-dark.png')
+      : require('../../assets/logos/logo-light.png');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -99,10 +106,7 @@ export default function LoginScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
-            <Text style={styles.logoText}>L</Text>
-          </View>
-          <Text style={[styles.brand, { color: colors.text }]}>Luxus Parceiros</Text>
+          <Image source={logoSource} style={styles.logo} resizeMode="contain" />
           <Text style={[styles.tagline, { color: colors.textSecondary }]}>
             Portal premium para parceiros
           </Text>
@@ -197,21 +201,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
-  logoContainer: {
-    width: 72,
+  logo: {
+    width: 240,
     height: 72,
-    borderRadius: radius.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoText: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  brand: {
-    ...typography.h1,
-    fontSize: 26,
   },
   tagline: {
     ...typography.bodySmall,

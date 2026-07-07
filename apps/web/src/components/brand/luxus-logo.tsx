@@ -3,13 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
-import logoLight from '@/assets/logos/logo-light.jpg';
-import logoDark from '@/assets/logos/logo-dark.jpg';
+import logoForDarkBg from '@/assets/logos/logo-light.png';
+import logoForLightBg from '@/assets/logos/logo-dark.png';
 
 interface LuxusLogoProps {
   variant?: 'full' | 'icon';
   className?: string;
-  /** Forçar versão do logo em fundos escuros (login, sidebar) */
+  /** Forçar versão para fundos escuros (login, sidebar) */
   forceDark?: boolean;
 }
 
@@ -21,29 +21,17 @@ export function LuxusLogo({ variant = 'full', className, forceDark = false }: Lu
     setMounted(true);
   }, []);
 
-  const useDarkLogo = forceDark || (mounted && resolvedTheme === 'dark');
-  const logo = useDarkLogo ? logoDark : logoLight;
+  const useDarkBackgroundLogo = forceDark || (mounted && resolvedTheme === 'dark');
+  const logo = useDarkBackgroundLogo ? logoForDarkBg : logoForLightBg;
 
   if (!mounted) {
     return (
       <div
         className={cn(
-          variant === 'icon' ? 'h-11 w-11' : 'h-12 w-[180px]',
-          'animate-pulse rounded-2xl bg-muted',
+          variant === 'icon' ? 'h-10 w-10' : 'h-10 w-[140px]',
+          'animate-pulse rounded-xl bg-muted',
           className,
         )}
-      />
-    );
-  }
-
-  if (variant === 'icon') {
-    return (
-      <img
-        src={logo.src}
-        alt="Luxus Parceiros"
-        width={logo.width}
-        height={logo.height}
-        className={cn('h-11 w-11 rounded-2xl object-contain', className)}
       />
     );
   }
@@ -54,7 +42,11 @@ export function LuxusLogo({ variant = 'full', className, forceDark = false }: Lu
       alt="Luxus Parceiros"
       width={logo.width}
       height={logo.height}
-      className={cn('h-12 w-auto max-w-[220px] object-contain', className)}
+      className={cn(
+        'object-contain',
+        variant === 'icon' ? 'h-10 w-10' : 'h-10 w-auto max-w-[200px]',
+        className,
+      )}
     />
   );
 }
