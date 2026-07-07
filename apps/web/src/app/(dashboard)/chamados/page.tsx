@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GripVertical, MessageSquare, Plus } from 'lucide-react';
+import { GripVertical, MessageSquare, Pencil, Plus } from 'lucide-react';
 import {
   TicketStatus,
   TicketPriority,
@@ -23,6 +23,7 @@ import { isPartnerUser } from '@/lib/rbac';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { TICKET_CATEGORY_LABELS } from '@luxus/types';
 import { CreateTicketDialog } from '@/components/tickets/create-ticket-dialog';
+import { EditTicketDialog } from '@/components/tickets/edit-ticket-dialog';
 import { TicketDetailDialog } from '@/components/tickets/ticket-detail-dialog';
 import { cn } from '@/lib/utils';
 
@@ -60,6 +61,8 @@ export default function ChamadosPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<TicketStatus | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
@@ -134,6 +137,11 @@ export default function ChamadosPage() {
     if (ticketId) void moveTicket(ticketId, status);
   };
 
+  const openEdit = (id: string) => {
+    setEditId(id);
+    setEditOpen(true);
+  };
+
   const openDetail = (id: string) => {
     setSelectedId(id);
     setDetailOpen(true);
@@ -171,6 +179,7 @@ export default function ChamadosPage() {
                 <TableHead>Status</TableHead>
                 <TableHead>Prioridade</TableHead>
                 <TableHead>Data</TableHead>
+                <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -194,6 +203,19 @@ export default function ChamadosPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>{formatDateTime(ticket.createdAt)}</TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEdit(ticket.id);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -259,9 +281,22 @@ export default function ChamadosPage() {
                                     <span className="truncate font-mono text-xs text-muted-foreground">
                                       {ticket.protocol}
                                     </span>
-                                    <Badge variant={priorityVariant(ticket.priority)} className="shrink-0 text-[10px]">
-                                      {TICKET_PRIORITY_LABELS[ticket.priority]}
-                                    </Badge>
+                                    <div className="flex shrink-0 items-center gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openEdit(ticket.id);
+                                        }}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Badge variant={priorityVariant(ticket.priority)} className="text-[10px]">
+                                        {TICKET_PRIORITY_LABELS[ticket.priority]}
+                                      </Badge>
+                                    </div>
                                   </div>
                                   <p className="text-sm font-medium leading-tight">{ticket.subject}</p>
                                   {ticket.partner && (
@@ -291,6 +326,16 @@ export default function ChamadosPage() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         onUpdated={load}
+        onEdit={(id) => {
+          setDetailOpen(false);
+          openEdit(id);
+        }}
+      />
+      <EditTicketDialog
+        ticketId={editId}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSuccess={load}
       />
     </DashboardLayout>
   );

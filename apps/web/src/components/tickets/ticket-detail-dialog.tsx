@@ -23,6 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/toaster';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { Pencil } from 'lucide-react';
 
 interface TicketMessage {
   id: string;
@@ -49,9 +50,10 @@ interface TicketDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUpdated: () => void;
+  onEdit?: (ticketId: string) => void;
 }
 
-export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated }: TicketDetailDialogProps) {
+export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, onEdit }: TicketDetailDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.SUPERVISOR;
@@ -198,9 +200,19 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated }: 
         ) : (
           <p className="text-sm text-muted-foreground">Chamado não encontrado.</p>
         )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>
-          <Button onClick={handleMessage} disabled={sending || !message.trim()}>Enviar</Button>
+        <DialogFooter className="gap-2 sm:justify-between">
+          <div>
+            {ticket && onEdit && (
+              <Button variant="outline" size="sm" onClick={() => onEdit(ticket.id)}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Editar
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>
+            <Button onClick={handleMessage} disabled={sending || !message.trim()}>Enviar</Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
