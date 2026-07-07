@@ -1,13 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { PartnerStatus } from '@prisma/client';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
-import { PaginationDto } from '@/common/dto/pagination.dto';
 import { PartnersService } from './partners.service';
 import {
   CreatePartnerDto,
+  PartnersQueryDto,
   ResetPartnerPasswordDto,
   SetPartnerPlansDto,
   SuspendPartnerDto,
@@ -23,12 +22,12 @@ export class PartnersController {
   @Get()
   @RequirePermissions(PERMISSIONS.PARTNERS_READ)
   @ApiOperation({ summary: 'Listar parceiros' })
-  findAll(@Query() pagination: PaginationDto, @Query('status') status?: PartnerStatus) {
+  findAll(@Query() query: PartnersQueryDto) {
     return this.partnersService.findAll({
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      search: pagination.search,
-      status,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      search: query.search,
+      status: query.status,
     });
   }
 

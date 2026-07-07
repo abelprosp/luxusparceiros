@@ -1,12 +1,10 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CampaignStatus } from '@prisma/client';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
-import { PaginationDto } from '@/common/dto/pagination.dto';
 import { CampaignsService } from './campaigns.service';
-import { CreateCampaignDto, UpdateCampaignDto } from './dto/campaign.dto';
+import { CampaignsQueryDto, CreateCampaignDto, UpdateCampaignDto } from './dto/campaign.dto';
 
 @ApiTags('Campaigns')
 @ApiBearerAuth()
@@ -17,12 +15,12 @@ export class CampaignsController {
   @Get()
   @RequirePermissions(PERMISSIONS.CAMPAIGNS_READ)
   @ApiOperation({ summary: 'Listar campanhas' })
-  findAll(@Query() pagination: PaginationDto, @Query('status') status?: CampaignStatus) {
+  findAll(@Query() query: CampaignsQueryDto) {
     return this.campaignsService.findAll({
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      search: pagination.search,
-      status,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      search: query.search,
+      status: query.status,
     });
   }
 

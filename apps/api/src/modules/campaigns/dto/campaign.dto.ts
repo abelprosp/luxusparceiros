@@ -3,6 +3,7 @@ import { IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString } from 'cl
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CampaignStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
+import { PaginationDto } from '@/common/dto/pagination.dto';
 
 export class CreateCampaignDto {
   @ApiProperty()
@@ -55,6 +56,13 @@ export class CreateCampaignDto {
 }
 
 export class UpdateCampaignDto extends PartialType(CreateCampaignDto) {
+  @ApiPropertyOptional({ enum: CampaignStatus })
+  @IsOptional()
+  @IsEnum(CampaignStatus)
+  status?: CampaignStatus;
+}
+
+export class CampaignsQueryDto extends PaginationDto {
   @ApiPropertyOptional({ enum: CampaignStatus })
   @IsOptional()
   @IsEnum(CampaignStatus)

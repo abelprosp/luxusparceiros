@@ -128,21 +128,34 @@ export default function EstoquePage() {
   }, [tab, loadChips, loadLines, isPartner]);
 
   const loadFormOptions = useCallback(async () => {
-    try {
-      const [opsRes, plsRes, ptsRes] = await Promise.all([
-        getPaginated<Operator>('/operators', { limit: 100 }),
-        getPaginated<Plan>('/plans', { limit: 100 }),
-        getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' }),
-      ]);
-      setOperators(opsRes.data);
-      setPlans(plsRes.data);
-      setPartners(ptsRes.data);
-    } catch (err) {
+    const [opsRes, plsRes, ptsRes] = await Promise.allSettled([
+      getPaginated<Operator>('/operators', { limit: 100 }),
+      getPaginated<Plan>('/plans', { limit: 100 }),
+      getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' }),
+    ]);
+
+    if (opsRes.status === 'fulfilled') {
+      setOperators(opsRes.value.data);
+    } else {
       toast({
-        title: 'Erro ao carregar opções',
-        description: err instanceof Error ? err.message : 'Falha ao buscar operadoras, planos e parceiros',
+        title: 'Erro ao carregar operadoras',
+        description: opsRes.reason instanceof Error ? opsRes.reason.message : 'Falha na requisição',
         variant: 'destructive',
       });
+    }
+
+    if (plsRes.status === 'fulfilled') {
+      setPlans(plsRes.value.data);
+    } else {
+      toast({
+        title: 'Erro ao carregar planos',
+        description: plsRes.reason instanceof Error ? plsRes.reason.message : 'Falha na requisição',
+        variant: 'destructive',
+      });
+    }
+
+    if (ptsRes.status === 'fulfilled') {
+      setPartners(ptsRes.value.data);
     }
   }, [toast]);
 

@@ -13,6 +13,7 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DocumentType, PartnerStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
+import { PaginationDto } from '@/common/dto/pagination.dto';
 
 export class CreatePartnerUserDto {
   @ApiProperty()
@@ -178,4 +179,11 @@ export class ResetPartnerPasswordDto {
   @IsString()
   @MinLength(6)
   password: string;
+}
+
+export class PartnersQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ enum: PartnerStatus })
+  @IsOptional()
+  @IsEnum(PartnerStatus)
+  status?: PartnerStatus;
 }
