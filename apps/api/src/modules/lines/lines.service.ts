@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { LineStatus, Prisma } from '@prisma/client';
-import { AuthUser } from '@luxus/types';
+import { AuthUser, UserRole } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { MESSAGES } from '@/common/constants/messages';
@@ -24,11 +24,22 @@ export class LinesService {
     user: AuthUser,
     params: { page: number; limit: number; search?: string; status?: LineStatus; partnerId?: string },
   ) {
-    const partnerId = resolvePartnerId(user, params.partnerId);
     const where: Prisma.LineWhereInput = {};
-    if (partnerId) where.partnerId = partnerId;
     if (params.status) where.status = params.status;
     if (params.search) where.number = { contains: params.search };
+
+    if (user.role === UserRole.PARTNER) {
+      if (!user.partnerId) {
+        throw new ForbiddenException(MESSAGES.PARTNER_SCOPE_REQUIRED);
+      }
+      where.OR = [
+        { partnerId: user.partnerId },
+        { partnerId: null, status: LineStatus.AVAILABLE },
+      ];
+    } else {
+      const partnerId = resolvePartnerId(user, params.partnerId);
+      if (partnerId) where.partnerId = partnerId;
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.line.findMany({

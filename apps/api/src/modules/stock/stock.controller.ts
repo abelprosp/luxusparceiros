@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { StockMovementType } from '@prisma/client';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
 import { PaginationDto } from '@/common/dto/pagination.dto';
+import { LinesService } from '@/modules/lines/lines.service';
+import { LinesQueryDto, ReserveLineDto } from '@/modules/lines/dto/line.dto';
 import { StockService } from './stock.service';
 import { CreateStockMovementDto } from './dto/stock.dto';
 
@@ -12,7 +14,34 @@ import { CreateStockMovementDto } from './dto/stock.dto';
 @ApiBearerAuth()
 @Controller('stock')
 export class StockController {
-  constructor(private stockService: StockService) {}
+  constructor(
+    private stockService: StockService,
+    private linesService: LinesService,
+  ) {}
+
+  @Get('lines')
+  @RequirePermissions(PERMISSIONS.STOCK_READ)
+  @ApiOperation({ summary: 'Listar linhas do estoque do parceiro' })
+  findLines(@CurrentUser() user: AuthUser, @Query() query: LinesQueryDto) {
+    return this.linesService.findAll(user, {
+      page: query.page ?? 1,
+      limit: query.limit ?? 50,
+      search: query.search,
+      status: query.status,
+      partnerId: query.partnerId,
+    });
+  }
+
+  @Post('lines/:id/reserve')
+  @RequirePermissions(PERMISSIONS.STOCK_READ)
+  @ApiOperation({ summary: 'Reservar linha do estoque' })
+  reserveLine(
+    @Param('id') id: string,
+    @Body() dto: ReserveLineDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.linesService.reserve(id, dto, user);
+  }
 
   @Get('movements')
   @RequirePermissions(PERMISSIONS.STOCK_READ)

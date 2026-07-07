@@ -2,6 +2,7 @@ import { PartialType } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LineStatus } from '@prisma/client';
+import { PaginationDto } from '@/common/dto/pagination.dto';
 
 export class CreateLineDto {
   @ApiProperty()
@@ -41,6 +42,18 @@ export class UpdateLineDto extends PartialType(CreateLineDto) {
 }
 
 export class ReserveLineDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
+}
+
+export class LinesQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ enum: LineStatus })
+  @IsOptional()
+  @IsEnum(LineStatus)
+  status?: LineStatus;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
