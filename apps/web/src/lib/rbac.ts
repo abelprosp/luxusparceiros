@@ -51,3 +51,12 @@ export function isAdminUser(user: AuthUser | null): boolean {
 export function isPartnerUser(user: AuthUser | null): boolean {
   return user?.role === UserRole.PARTNER;
 }
+
+export function isAttendantUser(user: AuthUser | null): boolean {
+  return user?.role === UserRole.ATTENDANT;
+}
+
+/** Parceiro mestre ou filial vinculada ao parceiro. */
+export function isPartnerScopedUser(user: AuthUser | null): boolean {
+  return isPartnerUser(user) || isAttendantUser(user);
+}

@@ -1,12 +1,10 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { LineStatus } from '@prisma/client';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
-import { PaginationDto } from '@/common/dto/pagination.dto';
 import { SimCardsService } from './sim-cards.service';
-import { CreateSimCardDto, TransferSimCardsDto, UpdateSimCardDto } from './dto/sim-card.dto';
+import { CreateSimCardDto, SimCardsQueryDto, TransferSimCardsDto, UpdateSimCardDto } from './dto/sim-card.dto';
 
 @ApiTags('Sim Cards')
 @ApiBearerAuth()
@@ -19,16 +17,15 @@ export class SimCardsController {
   @ApiOperation({ summary: 'Listar chips' })
   findAll(
     @CurrentUser() user: AuthUser,
-    @Query() pagination: PaginationDto,
-    @Query('status') status?: LineStatus,
-    @Query('partnerId') partnerId?: string,
+    @Query() query: SimCardsQueryDto,
   ) {
     return this.simCardsService.findAll(user, {
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      search: pagination.search,
-      status,
-      partnerId,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      search: query.search,
+      status: query.status,
+      partnerId: query.partnerId,
+      generalOnly: query.generalOnly,
     });
   }
 

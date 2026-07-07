@@ -2,6 +2,7 @@ import { io, Socket } from 'socket.io-client';
 import { getAccessToken, WS_URL } from './api';
 
 let socket: Socket | null = null;
+let handlers: SocketEventHandlers = {};
 
 export type SocketEventHandlers = {
   onDashboardUpdate?: (data: unknown) => void;
@@ -12,8 +13,31 @@ export type SocketEventHandlers = {
   onDisconnect?: () => void;
 };
 
-export function connectSocket(handlers: SocketEventHandlers = {}): Socket {
-  if (socket?.connected) return socket;
+function attachHandlers(sock: Socket) {
+  sock.off('connect');
+  sock.off('disconnect');
+  sock.off('dashboard:update');
+  sock.off('notification:new');
+  sock.off('notification');
+  sock.off('ticket:message');
+  sock.off('sale:update');
+
+  sock.on('connect', () => handlers.onConnect?.());
+  sock.on('disconnect', () => handlers.onDisconnect?.());
+  sock.on('dashboard:update', (data) => handlers.onDashboardUpdate?.(data));
+  sock.on('notification:new', (data) => handlers.onNotification?.(data));
+  sock.on('notification', (data) => handlers.onNotification?.(data));
+  sock.on('ticket:message', (data) => handlers.onTicketMessage?.(data));
+  sock.on('sale:update', (data) => handlers.onSaleUpdate?.(data));
+}
+
+export function connectSocket(newHandlers: SocketEventHandlers = {}): Socket {
+  handlers = { ...handlers, ...newHandlers };
+
+  if (socket?.connected) {
+    attachHandlers(socket);
+    return socket;
+  }
 
   const token = getAccessToken();
 
@@ -26,30 +50,7 @@ export function connectSocket(handlers: SocketEventHandlers = {}): Socket {
     reconnectionDelay: 2000,
   });
 
-  socket.on('connect', () => {
-    handlers.onConnect?.();
-  });
-
-  socket.on('disconnect', () => {
-    handlers.onDisconnect?.();
-  });
-
-  socket.on('dashboard:update', (data) => {
-    handlers.onDashboardUpdate?.(data);
-  });
-
-  socket.on('notification', (data) => {
-    handlers.onNotification?.(data);
-  });
-
-  socket.on('ticket:message', (data) => {
-    handlers.onTicketMessage?.(data);
-  });
-
-  socket.on('sale:update', (data) => {
-    handlers.onSaleUpdate?.(data);
-  });
-
+  attachHandlers(socket);
   return socket;
 }
 
@@ -58,6 +59,7 @@ export function disconnectSocket(): void {
     socket.disconnect();
     socket = null;
   }
+  handlers = {};
 }
 
 export function getSocket(): Socket | null {

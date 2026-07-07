@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal, Upload } from 'lucide-react';
+import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal, Upload, Eye } from 'lucide-react';
 import { SaleStatus, DocumentType, SALE_STATUS_LABELS } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
@@ -20,6 +20,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useToast } from '@/components/ui/toaster';
 import { CreateSaleButton } from '@/components/sales/create-sale-dialog';
 import { ResubmitSaleDocumentsDialog } from '@/components/sales/resubmit-sale-documents-dialog';
+import { SaleDetailDialog } from '@/components/sales/sale-detail-dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerUser } from '@/lib/rbac';
 
@@ -63,6 +64,7 @@ export default function VendasPage() {
   const [docMessage, setDocMessage] = useState('');
   const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
   const [resubmitSaleId, setResubmitSaleId] = useState<string | null>(null);
+  const [detailSaleId, setDetailSaleId] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const isPartner = isPartnerUser(user);
@@ -198,7 +200,11 @@ export default function VendasPage() {
               </TableHeader>
               <TableBody>
                 {items.map((s) => (
-                  <TableRow key={s.id}>
+                  <TableRow
+                    key={s.id}
+                    className="cursor-pointer"
+                    onClick={() => setDetailSaleId(s.id)}
+                  >
                     <TableCell className="font-mono text-sm">{s.protocol}</TableCell>
                     {!isPartner && <TableCell>{s.partner?.name || '-'}</TableCell>}
                     <TableCell>{s.client?.name || '-'}</TableCell>
@@ -216,21 +222,27 @@ export default function VendasPage() {
                       </div>
                     </TableCell>
                     <TableCell>{formatDate(s.createdAt)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       {isPartner ? (
-                        s.status === SaleStatus.DOCUMENTS_PENDING ? (
-                          <Button size="sm" variant="outline" onClick={() => setResubmitSaleId(s.id)}>
-                            <Upload className="mr-2 h-4 w-4" /> Enviar docs
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="ghost" onClick={() => setDetailSaleId(s.id)}>
+                            <Eye className="mr-2 h-4 w-4" /> Ver
                           </Button>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">—</span>
-                        )
+                          {s.status === SaleStatus.DOCUMENTS_PENDING && (
+                            <Button size="sm" variant="outline" onClick={() => setResubmitSaleId(s.id)}>
+                              <Upload className="mr-2 h-4 w-4" /> Enviar docs
+                            </Button>
+                          )}
+                        </div>
                       ) : (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setDetailSaleId(s.id)}>
+                              <Eye className="mr-2 h-4 w-4" /> Ver detalhes
+                            </DropdownMenuItem>
                             {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
                               <DropdownMenuItem onClick={() => handleApprove(s)}>
                                 <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
@@ -320,6 +332,12 @@ export default function VendasPage() {
         open={!!resubmitSaleId}
         onOpenChange={(open) => { if (!open) setResubmitSaleId(null); }}
         onSuccess={load}
+      />
+
+      <SaleDetailDialog
+        saleId={detailSaleId}
+        open={!!detailSaleId}
+        onOpenChange={(open) => { if (!open) setDetailSaleId(null); }}
       />
     </DashboardLayout>
   );

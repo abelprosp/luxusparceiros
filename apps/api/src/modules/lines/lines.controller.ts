@@ -25,6 +25,7 @@ export class LinesController {
       search: query.search,
       status: query.status,
       partnerId: query.partnerId,
+      generalOnly: query.generalOnly,
     });
   }
 

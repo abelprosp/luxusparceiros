@@ -15,7 +15,7 @@ import { PlansService } from '@/modules/plans/plans.service';
 import { EventsGateway } from '@/gateway/events.gateway';
 import { MESSAGES } from '@/common/constants/messages';
 import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
-import { assertBranchBelongsToPartner } from '@/common/utils/branch-scope';
+import { assertBranchBelongsToPartner, resolveBranchId } from '@/common/utils/branch-scope';
 import {
   ContestSaleDto,
   CreateSaleDto,
@@ -105,9 +105,10 @@ export class SalesService {
     },
   ) {
     const partnerId = resolvePartnerId(user, params.partnerId);
+    const branchId = resolveBranchId(user, params.branchId);
     const where: Prisma.SaleWhereInput = {};
     if (partnerId) where.partnerId = partnerId;
-    if (params.branchId) where.branchId = params.branchId;
+    if (branchId) where.branchId = branchId;
     if (params.campaignId) where.campaignId = params.campaignId;
     if (params.status) where.status = params.status;
     if (params.search) {
@@ -158,12 +159,16 @@ export class SalesService {
     });
     if (!sale) throw new NotFoundException(MESSAGES.NOT_FOUND);
     assertPartnerAccess(user, sale.partnerId);
+    if (user.branchId && sale.branchId !== user.branchId) {
+      throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
     return sale;
   }
 
   async create(dto: CreateSaleDto, user: AuthUser) {
     const partnerId = resolvePartnerId(user, dto.partnerId);
     if (!partnerId) throw new ForbiddenException('Parceiro é obrigatório');
+    const branchId = resolveBranchId(user, dto.branchId);
 
     if (!dto.clientId && !dto.client) {
       throw new BadRequestException('Informe o cliente ou os dados para cadastro');
@@ -204,7 +209,7 @@ export class SalesService {
           state: dto.client.state,
           zipCode: dto.client.zipCode,
           partnerId,
-          branchId: dto.branchId,
+          branchId,
         },
       });
       clientId = createdClient.id;
@@ -225,8 +230,8 @@ export class SalesService {
       }
     }
 
-    if (dto.branchId) {
-      await assertBranchBelongsToPartner(this.prisma, dto.branchId, partnerId);
+    if (branchId) {
+      await assertBranchBelongsToPartner(this.prisma, branchId, partnerId);
     }
 
     const plan = await this.prisma.plan.findUnique({ where: { id: dto.planId } });
@@ -271,7 +276,7 @@ export class SalesService {
       data: {
         protocol: generateProtocol('VND'),
         partnerId,
-        branchId: dto.branchId,
+        branchId,
         clientId,
         operatorId: dto.operatorId,
         planId: dto.planId,

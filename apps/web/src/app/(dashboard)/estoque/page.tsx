@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, Upload, Warehouse, Download, Plus, Smartphone } from 'lucide-react';
-import { LineStatus } from '@luxus/types';
-import { formatDate } from '@luxus/utils';
-import { api, API_URL, getPaginated } from '@/lib/api';
+import { LineStatus, LINE_STATUS_LABELS } from '@luxus/types';
+import { formatDate, formatPhone } from '@luxus/utils';
+import { api, downloadAuthenticatedFile, getPaginated } from '@/lib/api';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,17 +16,17 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toaster';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerUser } from '@/lib/rbac';
-import { formatPhone } from '@luxus/utils';
 
 interface SimCard {
   id: string;
   iccid: string;
   status: LineStatus;
-  operator?: { name: string };
-  partner?: { name: string };
+  operator?: { id: string; name: string };
+  partner?: { id: string; name: string };
   batchNumber?: string;
   createdAt: string;
 }
@@ -37,7 +37,7 @@ interface Line {
   status: LineStatus;
   operator?: { id: string; name: string };
   plan?: { id: string; name: string };
-  partner?: { id: string; name: string };
+  partner?: { id: string; name: string } | null;
   createdAt: string;
 }
 
@@ -57,12 +57,44 @@ interface Partner {
   name: string;
 }
 
+interface AdminStockSummary {
+  chipsTotal: number;
+  chipsAvailable: number;
+  linesTotal: number;
+  linesAvailable: number;
+  linesGeneral: number;
+}
+
+interface PartnerStockSummary {
+  myAvailable: number;
+  myReserved: number;
+  generalAvailable: number;
+  totalLines: number;
+  chips: number;
+}
+
 const emptyLineForm = {
   number: '',
   operatorId: '',
   planId: '',
   partnerId: '',
 };
+
+function statusBadgeVariant(status: LineStatus) {
+  if (status === LineStatus.AVAILABLE) return 'success' as const;
+  if (status === LineStatus.RESERVED) return 'warning' as const;
+  if ([LineStatus.USED, LineStatus.ACTIVATED].includes(status)) return 'secondary' as const;
+  if ([LineStatus.BLOCKED, LineStatus.CANCELLED].includes(status)) return 'destructive' as const;
+  return 'outline' as const;
+}
+
+function LineStatusBadge({ status }: { status: LineStatus }) {
+  return (
+    <Badge variant={statusBadgeVariant(status)}>
+      {LINE_STATUS_LABELS[status] ?? status}
+    </Badge>
+  );
+}
 
 export default function EstoquePage() {
   const [tab, setTab] = useState('chips');
@@ -72,51 +104,96 @@ export default function EstoquePage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
-  const [iccid, setIccid] = useState('');
+  const [chipSearch, setChipSearch] = useState('');
   const [lineSearch, setLineSearch] = useState('');
+  const [debouncedChipSearch, setDebouncedChipSearch] = useState('');
+  const [debouncedLineSearch, setDebouncedLineSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [partnerFilter, setPartnerFilter] = useState('all');
   const [importing, setImporting] = useState(false);
   const [lineDialogOpen, setLineDialogOpen] = useState(false);
   const [lineForm, setLineForm] = useState(emptyLineForm);
   const [savingLine, setSavingLine] = useState(false);
+  const [adminSummary, setAdminSummary] = useState<AdminStockSummary | null>(null);
+  const [partnerSummary, setPartnerSummary] = useState<PartnerStockSummary | null>(null);
+  const [assigningChip, setAssigningChip] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const isPartner = isPartnerUser(user);
   const [reserving, setReserving] = useState<string | null>(null);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedChipSearch(chipSearch), 300);
+    return () => clearTimeout(timer);
+  }, [chipSearch]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedLineSearch(lineSearch), 300);
+    return () => clearTimeout(timer);
+  }, [lineSearch]);
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const data = await api<AdminStockSummary | PartnerStockSummary>('/stock/summary');
+      if (isPartner) setPartnerSummary(data as PartnerStockSummary);
+      else setAdminSummary(data as AdminStockSummary);
+    } catch {
+      if (isPartner) setPartnerSummary(null);
+      else setAdminSummary(null);
+    }
+  }, [isPartner]);
+
   const loadChips = useCallback(async () => {
     setLoading(true);
     try {
       const res = await getPaginated<SimCard>('/sim-cards', {
-        search: iccid || undefined,
+        search: debouncedChipSearch || undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
+        partnerId: partnerFilter !== 'all' && partnerFilter !== 'general' ? partnerFilter : undefined,
+        generalOnly: partnerFilter === 'general' ? true : undefined,
         limit: 50,
       });
       setItems(res.data);
-    } catch {
+    } catch (err) {
       setItems([]);
+      toast({
+        title: 'Erro ao carregar chips',
+        description: err instanceof Error ? err.message : 'Falha na requisição',
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
-  }, [iccid, statusFilter]);
+  }, [debouncedChipSearch, statusFilter, partnerFilter, toast]);
 
   const loadLines = useCallback(async () => {
     setLoading(true);
     try {
       const path = isPartner ? '/stock/lines' : '/lines';
       const res = await getPaginated<Line>(path, {
-        search: lineSearch || undefined,
+        search: debouncedLineSearch || undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
+        partnerId: !isPartner && partnerFilter !== 'all' && partnerFilter !== 'general' ? partnerFilter : undefined,
+        generalOnly: !isPartner && partnerFilter === 'general' ? true : undefined,
         limit: 50,
       });
       setLines(res.data);
-    } catch {
+    } catch (err) {
       setLines([]);
+      toast({
+        title: 'Erro ao carregar linhas',
+        description: err instanceof Error ? err.message : 'Falha na requisição',
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
-  }, [lineSearch, statusFilter, isPartner]);
+  }, [debouncedLineSearch, statusFilter, partnerFilter, isPartner, toast]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
   useEffect(() => {
     if (isPartner) {
@@ -128,36 +205,14 @@ export default function EstoquePage() {
   }, [tab, loadChips, loadLines, isPartner]);
 
   const loadFormOptions = useCallback(async () => {
-    const [opsRes, plsRes, ptsRes] = await Promise.allSettled([
+    const [opsRes, ptsRes] = await Promise.allSettled([
       getPaginated<Operator>('/operators', { limit: 100 }),
-      getPaginated<Plan>('/plans', { limit: 100 }),
-      getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' }),
+      getPaginated<Partner>('/partners', { limit: 100 }),
     ]);
 
-    if (opsRes.status === 'fulfilled') {
-      setOperators(opsRes.value.data);
-    } else {
-      toast({
-        title: 'Erro ao carregar operadoras',
-        description: opsRes.reason instanceof Error ? opsRes.reason.message : 'Falha na requisição',
-        variant: 'destructive',
-      });
-    }
-
-    if (plsRes.status === 'fulfilled') {
-      setPlans(plsRes.value.data);
-    } else {
-      toast({
-        title: 'Erro ao carregar planos',
-        description: plsRes.reason instanceof Error ? plsRes.reason.message : 'Falha na requisição',
-        variant: 'destructive',
-      });
-    }
-
-    if (ptsRes.status === 'fulfilled') {
-      setPartners(ptsRes.value.data);
-    }
-  }, [toast]);
+    if (opsRes.status === 'fulfilled') setOperators(opsRes.value.data);
+    if (ptsRes.status === 'fulfilled') setPartners(ptsRes.value.data);
+  }, []);
 
   useEffect(() => {
     if (isPartner) return;
@@ -169,12 +224,23 @@ export default function EstoquePage() {
     loadFormOptions();
   }, [isPartner, lineDialogOpen, loadFormOptions]);
 
+  useEffect(() => {
+    if (!lineForm.operatorId) {
+      setPlans([]);
+      return;
+    }
+    getPaginated<Plan>('/plans', { limit: 100, operatorId: lineForm.operatorId })
+      .then((res) => setPlans(res.data))
+      .catch(() => setPlans([]));
+  }, [lineForm.operatorId]);
+
   const handleReserve = async (lineId: string) => {
     setReserving(lineId);
     try {
       await api(`/stock/lines/${lineId}/reserve`, { method: 'POST' });
-      toast({ title: 'Linha reservada', variant: 'success' });
+      toast({ title: 'Linha reservada', description: 'A linha agora está vinculada ao seu parceiro.', variant: 'success' });
       loadLines();
+      loadSummary();
     } catch (err) {
       toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao reservar', variant: 'destructive' });
     } finally {
@@ -182,7 +248,22 @@ export default function EstoquePage() {
     }
   };
 
-  const filteredPlans = plans.filter((p) => p.operatorId === lineForm.operatorId);
+  const handleAssignChip = async (chipId: string, partnerId: string | null) => {
+    setAssigningChip(chipId);
+    try {
+      await api(`/sim-cards/${chipId}`, {
+        method: 'PATCH',
+        body: { partnerId: partnerId || undefined },
+      });
+      toast({ title: 'Chip atualizado', variant: 'success' });
+      loadChips();
+      loadSummary();
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao atribuir', variant: 'destructive' });
+    } finally {
+      setAssigningChip(null);
+    }
+  };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -191,21 +272,32 @@ export default function EstoquePage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const token = localStorage.getItem('luxus_access_token') || sessionStorage.getItem('luxus_access_token');
-      const res = await fetch(`${API_URL}/stock/import`, {
+      const result = await api<{ imported: number; errors: string[] }>('/stock/import', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-      if (!res.ok) throw new Error('Falha na importação');
-      toast({ title: 'CSV importado com sucesso', variant: 'success' });
+      const errorMsg = result.errors?.length ? ` ${result.errors.length} erro(s).` : '';
+      toast({
+        title: 'Importação concluída',
+        description: `${result.imported} item(ns) importado(s).${errorMsg}`,
+        variant: result.errors?.length ? 'destructive' : 'success',
+      });
       loadChips();
       loadLines();
+      loadSummary();
     } catch (err) {
       toast({ title: 'Erro na importação', description: err instanceof Error ? err.message : 'Falha', variant: 'destructive' });
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      await downloadAuthenticatedFile('/stock/export', 'estoque.csv');
+    } catch (err) {
+      toast({ title: 'Erro na exportação', description: err instanceof Error ? err.message : 'Falha', variant: 'destructive' });
     }
   };
 
@@ -230,6 +322,7 @@ export default function EstoquePage() {
       setLineForm(emptyLineForm);
       setTab('lines');
       loadLines();
+      loadSummary();
     } catch (err) {
       toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao cadastrar', variant: 'destructive' });
     } finally {
@@ -237,23 +330,72 @@ export default function EstoquePage() {
     }
   };
 
+  const filteredPlans = plans.filter((p) => p.operatorId === lineForm.operatorId);
+
   const statusSelect = (
     <Select value={statusFilter} onValueChange={setStatusFilter}>
       <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
       <SelectContent>
         <SelectItem value="all">Todos</SelectItem>
-        <SelectItem value="AVAILABLE">Disponível</SelectItem>
-        <SelectItem value="RESERVED">Reservado</SelectItem>
-        <SelectItem value="USED">Usado</SelectItem>
-        <SelectItem value="ACTIVATED">Ativado</SelectItem>
+        {Object.values(LineStatus).map((s) => (
+          <SelectItem key={s} value={s}>{LINE_STATUS_LABELS[s]}</SelectItem>
+        ))}
       </SelectContent>
     </Select>
   );
 
+  const partnerSelect = !isPartner && partners.length > 0 ? (
+    <Select value={partnerFilter} onValueChange={setPartnerFilter}>
+      <SelectTrigger className="w-44"><SelectValue placeholder="Parceiro" /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">Todos parceiros</SelectItem>
+        <SelectItem value="general">Estoque geral</SelectItem>
+        {partners.map((p) => (
+          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  ) : null;
+
   if (isPartner) {
+    const sortedLines = [...lines].sort((a, b) => {
+      const aGeneral = !a.partner?.id && a.status === LineStatus.AVAILABLE ? 0 : 1;
+      const bGeneral = !b.partner?.id && b.status === LineStatus.AVAILABLE ? 0 : 1;
+      return aGeneral - bGeneral;
+    });
+
     return (
-      <DashboardLayout title="Estoque" description="Linhas disponíveis do parceiro">
-        <div className="mb-4 flex flex-1 gap-3">
+      <DashboardLayout title="Estoque" description="Linhas disponíveis e reservadas do parceiro">
+        {partnerSummary && (
+          <div className="mb-6 grid gap-4 sm:grid-cols-4">
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Estoque geral</p>
+                <p className="text-2xl font-bold text-primary">{partnerSummary.generalAvailable}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Minhas disponíveis</p>
+                <p className="text-2xl font-bold">{partnerSummary.myAvailable}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Reservadas</p>
+                <p className="text-2xl font-bold">{partnerSummary.myReserved}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Meus chips</p>
+                <p className="text-2xl font-bold">{partnerSummary.chips}</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        <div className="mb-4 flex flex-1 flex-wrap gap-3">
           <div className="relative max-w-xs flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Buscar número..." className="pl-9" value={lineSearch} onChange={(e) => setLineSearch(e.target.value)} />
@@ -263,26 +405,43 @@ export default function EstoquePage() {
 
         {loading ? (
           <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
-        ) : lines.length === 0 ? (
-          <EmptyState icon={Smartphone} title="Nenhuma linha no estoque" description="As linhas do parceiro aparecerão aqui." />
+        ) : sortedLines.length === 0 ? (
+          <EmptyState
+            icon={Smartphone}
+            title="Nenhuma linha no estoque"
+            description="Linhas do estoque geral ou já vinculadas ao seu parceiro aparecerão aqui."
+          />
         ) : (
           <div className="space-y-3">
-            {lines.map((l) => (
-              <div key={l.id} className="flex items-center justify-between rounded-xl border bg-card p-4 shadow-card">
-                <div>
-                  <p className="font-mono font-semibold">{formatPhone(l.number)}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {l.operator?.name} · {l.plan?.name ?? 'Sem plano'}
-                  </p>
-                  <Badge variant="outline" className="mt-1">{l.status}</Badge>
+            {sortedLines.map((l) => {
+              const isGeneral = !l.partner?.id;
+              const canReserve = isGeneral && l.status === LineStatus.AVAILABLE;
+              return (
+                <div key={l.id} className="flex items-center justify-between rounded-xl border bg-card p-4 shadow-card">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-mono font-semibold">{formatPhone(l.number)}</p>
+                      {isGeneral ? (
+                        <Badge variant="outline">Estoque geral</Badge>
+                      ) : (
+                        <Badge variant="secondary">Minha linha</Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {l.operator?.name} · {l.plan?.name ?? 'Sem plano'}
+                    </p>
+                    <div className="mt-1">
+                      <LineStatusBadge status={l.status} />
+                    </div>
+                  </div>
+                  {canReserve && (
+                    <Button size="sm" onClick={() => handleReserve(l.id)} disabled={reserving === l.id}>
+                      {reserving === l.id ? 'Reservando...' : 'Reservar'}
+                    </Button>
+                  )}
                 </div>
-                {l.status === 'AVAILABLE' && (
-                  <Button size="sm" onClick={() => handleReserve(l.id)} disabled={reserving === l.id}>
-                    {reserving === l.id ? 'Reservando...' : 'Reservar'}
-                  </Button>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </DashboardLayout>
@@ -291,6 +450,41 @@ export default function EstoquePage() {
 
   return (
     <DashboardLayout title="Estoque" description="Gestão de chips, linhas e ICCIDs">
+      {adminSummary && (
+        <div className="mb-6 grid gap-4 sm:grid-cols-5">
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Chips</p>
+              <p className="text-2xl font-bold">{adminSummary.chipsTotal}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Chips disponíveis</p>
+              <p className="text-2xl font-bold text-primary">{adminSummary.chipsAvailable}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Linhas</p>
+              <p className="text-2xl font-bold">{adminSummary.linesTotal}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Linhas disponíveis</p>
+              <p className="text-2xl font-bold">{adminSummary.linesAvailable}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Estoque geral</p>
+              <p className="text-2xl font-bold">{adminSummary.linesGeneral}</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <Tabs value={tab} onValueChange={setTab}>
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <TabsList>
@@ -310,7 +504,7 @@ export default function EstoquePage() {
                   <Upload className="mr-2 h-4 w-4" />
                   {importing ? 'Importando...' : 'Importar CSV'}
                 </Button>
-                <Button variant="outline" onClick={() => api('/stock/export', { method: 'GET' })}>
+                <Button variant="outline" onClick={handleExport}>
                   <Download className="mr-2 h-4 w-4" /> Exportar
                 </Button>
               </>
@@ -319,18 +513,19 @@ export default function EstoquePage() {
         </div>
 
         <TabsContent value="chips">
-          <div className="mb-4 flex flex-1 gap-3">
+          <div className="mb-4 flex flex-1 flex-wrap gap-3">
             <div className="relative max-w-xs flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Buscar ICCID..." className="pl-9" value={iccid} onChange={(e) => setIccid(e.target.value)} />
+              <Input placeholder="Buscar ICCID..." className="pl-9" value={chipSearch} onChange={(e) => setChipSearch(e.target.value)} />
             </div>
             {statusSelect}
+            {partnerSelect}
           </div>
 
           {loading ? (
             <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
           ) : items.length === 0 ? (
-            <EmptyState icon={Warehouse} title="Estoque vazio" description="Importe chips via CSV." />
+            <EmptyState icon={Warehouse} title="Estoque vazio" description="Importe chips via CSV ou cadastre manualmente." />
           ) : (
             <div className="rounded-xl border bg-card shadow-card">
               <Table>
@@ -342,6 +537,7 @@ export default function EstoquePage() {
                     <TableHead>Status</TableHead>
                     <TableHead>Lote</TableHead>
                     <TableHead>Data</TableHead>
+                    <TableHead className="text-right">Atribuir</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -349,10 +545,31 @@ export default function EstoquePage() {
                     <TableRow key={s.id}>
                       <TableCell className="font-mono text-sm">{s.iccid}</TableCell>
                       <TableCell>{s.operator?.name || '-'}</TableCell>
-                      <TableCell>{s.partner?.name || '-'}</TableCell>
-                      <TableCell><Badge variant="outline">{s.status}</Badge></TableCell>
+                      <TableCell>{s.partner?.name || 'Estoque geral'}</TableCell>
+                      <TableCell><LineStatusBadge status={s.status} /></TableCell>
                       <TableCell>{s.batchNumber || '-'}</TableCell>
                       <TableCell>{formatDate(s.createdAt)}</TableCell>
+                      <TableCell className="text-right">
+                        {s.status === LineStatus.AVAILABLE ? (
+                          <Select
+                            value={s.partner?.id ?? 'none'}
+                            disabled={assigningChip === s.id}
+                            onValueChange={(v) => handleAssignChip(s.id, v === 'none' ? null : v)}
+                          >
+                            <SelectTrigger className="w-36 h-8">
+                              <SelectValue placeholder="Parceiro" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Estoque geral</SelectItem>
+                              {partners.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -362,12 +579,13 @@ export default function EstoquePage() {
         </TabsContent>
 
         <TabsContent value="lines">
-          <div className="mb-4 flex flex-1 gap-3">
+          <div className="mb-4 flex flex-1 flex-wrap gap-3">
             <div className="relative max-w-xs flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input placeholder="Buscar número..." className="pl-9" value={lineSearch} onChange={(e) => setLineSearch(e.target.value)} />
             </div>
             {statusSelect}
+            {partnerSelect}
           </div>
 
           {loading ? (
@@ -399,11 +617,11 @@ export default function EstoquePage() {
                 <TableBody>
                   {lines.map((l) => (
                     <TableRow key={l.id}>
-                      <TableCell className="font-mono text-sm">{l.number}</TableCell>
+                      <TableCell className="font-mono text-sm">{formatPhone(l.number)}</TableCell>
                       <TableCell>{l.operator?.name || '-'}</TableCell>
                       <TableCell>{l.plan?.name || '-'}</TableCell>
-                      <TableCell>{l.partner?.name || '-'}</TableCell>
-                      <TableCell><Badge variant="outline">{l.status}</Badge></TableCell>
+                      <TableCell>{l.partner?.name || 'Estoque geral'}</TableCell>
+                      <TableCell><LineStatusBadge status={l.status} /></TableCell>
                       <TableCell>{formatDate(l.createdAt)}</TableCell>
                     </TableRow>
                   ))}
@@ -437,9 +655,7 @@ export default function EstoquePage() {
                 <SelectTrigger><SelectValue placeholder="Selecione a operadora" /></SelectTrigger>
                 <SelectContent>
                   {operators.length === 0 ? (
-                    <SelectItem value="__empty" disabled>
-                      Nenhuma operadora cadastrada
-                    </SelectItem>
+                    <SelectItem value="__empty" disabled>Nenhuma operadora cadastrada</SelectItem>
                   ) : (
                     operators.map((op) => (
                       <SelectItem key={op.id} value={op.id}>{op.name}</SelectItem>
@@ -447,9 +663,6 @@ export default function EstoquePage() {
                   )}
                 </SelectContent>
               </Select>
-              {operators.length === 0 && (
-                <p className="text-xs text-muted-foreground">Cadastre operadoras em Operadoras antes de criar linhas.</p>
-              )}
             </div>
             <div className="space-y-2">
               <Label>Plano</Label>
@@ -461,20 +674,11 @@ export default function EstoquePage() {
                 <SelectTrigger><SelectValue placeholder="Opcional" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Nenhum</SelectItem>
-                  {filteredPlans.length === 0 && lineForm.operatorId ? (
-                    <SelectItem value="__no_plans" disabled>
-                      Nenhum plano para esta operadora
-                    </SelectItem>
-                  ) : (
-                    filteredPlans.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))
-                  )}
+                  {filteredPlans.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              {lineForm.operatorId && filteredPlans.length === 0 && (
-                <p className="text-xs text-muted-foreground">Cadastre planos em Planos vinculados à operadora selecionada.</p>
-              )}
             </div>
             <div className="space-y-2">
               <Label>Parceiro</Label>
@@ -490,9 +694,6 @@ export default function EstoquePage() {
                   ))}
                 </SelectContent>
               </Select>
-              {partners.length === 0 && (
-                <p className="text-xs text-muted-foreground">Nenhum parceiro ativo cadastrado. Use estoque geral ou cadastre em Parceiros.</p>
-              )}
             </div>
           </div>
           <DialogFooter>

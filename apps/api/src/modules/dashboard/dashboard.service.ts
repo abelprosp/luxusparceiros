@@ -8,6 +8,7 @@ import {
 } from '@prisma/client';
 import { AuthUser, DashboardAdminMetrics, DashboardPartnerMetrics, UserRole } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
+import { resolveBranchId } from '@/common/utils/branch-scope';
 import { DashboardFiltersDto } from './dto/dashboard-filters.dto';
 
 @Injectable()
@@ -120,12 +121,13 @@ export class DashboardService {
     };
   }
 
-  async getPartnerMetrics(user: AuthUser, branchId?: string): Promise<DashboardPartnerMetrics> {
+  async getPartnerMetrics(user: AuthUser, requestedBranchId?: string): Promise<DashboardPartnerMetrics> {
     if (!user.partnerId) {
       return this.emptyPartnerMetrics();
     }
 
     const partnerId = user.partnerId;
+    const branchId = resolveBranchId(user, requestedBranchId);
     const saleFilter: { partnerId: string; branchId?: string } = { partnerId };
     if (branchId) saleFilter.branchId = branchId;
     const now = new Date();
@@ -222,11 +224,11 @@ export class DashboardService {
     };
   }
 
-  async getMetrics(user: AuthUser, branchId?: string) {
+  async getMetrics(user: AuthUser, requestedBranchId?: string) {
     if ([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.FINANCIAL].includes(user.role)) {
       return this.getAdminMetrics();
     }
-    return this.getPartnerMetrics(user, branchId);
+    return this.getPartnerMetrics(user, requestedBranchId);
   }
 
   private buildSaleWhere(filters: DashboardFiltersDto, since?: Date): Prisma.SaleWhereInput {

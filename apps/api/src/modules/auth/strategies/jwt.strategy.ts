@@ -25,6 +25,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       include: {
         permissions: { include: { permission: true } },
         partner: true,
+        branch: true,
       },
     });
 
@@ -45,6 +46,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       name: user.name,
       role: user.role,
       partnerId: user.partnerId ?? undefined,
+      branchId: user.branchId ?? undefined,
       permissions,
     };
   }

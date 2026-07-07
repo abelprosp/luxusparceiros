@@ -2,6 +2,7 @@ import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validato
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { StockMovementType } from '@prisma/client';
 import { Type } from 'class-transformer';
+import { PaginationDto } from '@/common/dto/pagination.dto';
 
 export class CreateStockMovementDto {
   @ApiProperty({ enum: StockMovementType })
@@ -39,4 +40,23 @@ export class CreateStockMovementDto {
   @IsOptional()
   @IsString()
   notes?: string;
+}
+
+export class StockMovementsQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ enum: StockMovementType })
+  @IsOptional()
+  @IsEnum(StockMovementType)
+  type?: StockMovementType;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
+}
+
+export class ImportStockDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  operatorId?: string;
 }

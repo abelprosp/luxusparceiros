@@ -79,6 +79,8 @@ const emptyBranchForm = {
   address: '',
   city: '',
   state: '',
+  login: '',
+  password: '',
 };
 
 export default function ParceirosPage() {
@@ -203,6 +205,10 @@ export default function ParceirosPage() {
 
   const handleSaveBranch = async () => {
     if (!selected) return;
+    if (!branchForm.login || !branchForm.password) {
+      toast({ title: 'Informe login e senha de acesso da filial', variant: 'destructive' });
+      return;
+    }
     try {
       await api(`/branches/partner/${selected.id}`, { method: 'POST', body: branchForm });
       toast({ title: 'Filial criada', variant: 'success' });
@@ -433,6 +439,11 @@ export default function ParceirosPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label>Cidade</Label><Input value={branchForm.city} onChange={(e) => setBranchForm({ ...branchForm, city: e.target.value })} /></div>
               <div className="space-y-2"><Label>UF</Label><Input value={branchForm.state} onChange={(e) => setBranchForm({ ...branchForm, state: e.target.value })} /></div>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+              <p className="text-sm font-medium">Acesso da filial</p>
+              <div className="space-y-2"><Label>Login (e-mail)</Label><Input type="email" value={branchForm.login} onChange={(e) => setBranchForm({ ...branchForm, login: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Senha</Label><Input type="password" value={branchForm.password} onChange={(e) => setBranchForm({ ...branchForm, password: e.target.value })} /></div>
             </div>
           </div>
           <DialogFooter>

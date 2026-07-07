@@ -245,6 +245,7 @@ export interface BranchItem {
   status: string;
   parentPartnerId: string;
   createdAt: string;
+  users?: { id: string; email: string; isActive: boolean }[];
   _count?: { sales: number; clients: number };
 }
 

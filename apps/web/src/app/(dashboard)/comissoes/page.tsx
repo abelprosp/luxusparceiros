@@ -54,18 +54,49 @@ export default function ComissoesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getPaginated<Commission>('/commissions', {
+      const listPromise = getPaginated<Commission>('/commissions', {
         search: search || undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
         limit: 50,
       });
-      setItems(res.data);
+
       if (isPartner) {
-        const summaryData = await api<{ forecast: number; approved: number; paid: number; total: number }>('/commissions/summary');
-        setSummary(summaryData);
+        const [listResult, summaryResult] = await Promise.allSettled([
+          listPromise,
+          api<{ forecast: number; approved: number; paid: number; total: number }>('/commissions/summary'),
+        ]);
+
+        if (listResult.status === 'fulfilled') {
+          setItems(listResult.value.data);
+        } else {
+          setItems([]);
+          toast({
+            title: 'Erro ao carregar comissões',
+            description: listResult.reason instanceof Error ? listResult.reason.message : 'Falha na requisição',
+            variant: 'destructive',
+          });
+        }
+
+        if (summaryResult.status === 'fulfilled') {
+          setSummary(summaryResult.value);
+        } else {
+          setSummary({ forecast: 0, approved: 0, paid: 0, total: 0 });
+        }
+      } else {
+        const res = await listPromise;
+        setItems(res.data);
       }
-    } catch { setItems([]); } finally { setLoading(false); }
-  }, [search, statusFilter, isPartner]);
+    } catch (err) {
+      setItems([]);
+      toast({
+        title: 'Erro ao carregar comissões',
+        description: err instanceof Error ? err.message : 'Falha na requisição',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [search, statusFilter, isPartner, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -146,7 +177,15 @@ export default function ComissoesPage() {
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
       ) : items.length === 0 ? (
-        <EmptyState icon={DollarSign} title="Nenhuma comissão" description="As comissões aparecerão aqui." />
+        <EmptyState
+          icon={DollarSign}
+          title="Nenhuma comissão"
+          description={
+            isPartner
+              ? 'As comissões aparecem aqui após o admin aprovar suas vendas.'
+              : 'As comissões aparecerão aqui.'
+          }
+        />
       ) : (
         <div className="rounded-xl border bg-card shadow-card">
           <Table>
@@ -167,7 +206,7 @@ export default function ComissoesPage() {
                   {!isPartner && <TableCell>{c.partner?.name || '-'}</TableCell>}
                   <TableCell className="font-mono text-sm">{c.sale?.protocol || '-'}</TableCell>
                   <TableCell className="font-semibold">{formatCurrency(Number(c.value))}</TableCell>
-                  <TableCell>{c.percentage}%</TableCell>
+                  <TableCell>{Number(c.percentage) > 0 ? `${c.percentage}%` : '—'}</TableCell>
                   <TableCell><Badge variant="outline">{STATUS_LABELS[c.status] ?? c.status}</Badge></TableCell>
                   <TableCell>{formatDate(c.createdAt)}</TableCell>
                   {!isPartner && (

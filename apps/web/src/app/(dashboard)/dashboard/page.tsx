@@ -16,6 +16,7 @@ import { UserRole, type DashboardAdminMetrics } from '@luxus/types';
 import { formatCurrency } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
+import { isPartnerScopedUser } from '@/lib/rbac';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { PartnerDashboard } from '@/components/dashboard/partner-dashboard';
 import { MetricsCard } from '@/components/charts/metrics-card';
@@ -69,7 +70,7 @@ const fallbackMetrics: DashboardAdminMetrics = {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const isPartner = user?.role === UserRole.PARTNER;
+  const isPartnerScoped = isPartnerScopedUser(user);
   const [metrics, setMetrics] = useState<DashboardAdminMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [partnerId, setPartnerId] = useState('all');
@@ -87,7 +88,7 @@ export default function DashboardPage() {
     operatorId !== 'all';
 
   useEffect(() => {
-    if (isPartner) return;
+    if (isPartnerScoped) return;
     Promise.all([
       getPaginated<PartnerOption>('/partners', { limit: 100, status: 'ACTIVE' }),
       getPaginated<CampaignOption>('/campaigns', { limit: 100 }),
@@ -99,7 +100,7 @@ export default function DashboardPage() {
         setOperators(operatorsRes.data);
       })
       .catch(() => {});
-  }, [isPartner]);
+  }, [isPartnerScoped]);
 
   const loadMetrics = useCallback(async () => {
     setLoading(true);
@@ -121,9 +122,9 @@ export default function DashboardPage() {
   }, [partnerId, state, campaignId, operatorId]);
 
   useEffect(() => {
-    if (isPartner) return;
+    if (isPartnerScoped) return;
     loadMetrics();
-  }, [isPartner, loadMetrics]);
+  }, [isPartnerScoped, loadMetrics]);
 
   const clearFilters = () => {
     setPartnerId('all');
@@ -134,7 +135,7 @@ export default function DashboardPage() {
 
   const data = metrics || fallbackMetrics;
 
-  if (isPartner) {
+  if (isPartnerScoped) {
     return (
       <DashboardLayout
         title="Dashboard"

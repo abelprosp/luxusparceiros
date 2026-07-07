@@ -22,7 +22,14 @@ export class LinesService {
 
   async findAll(
     user: AuthUser,
-    params: { page: number; limit: number; search?: string; status?: LineStatus; partnerId?: string },
+    params: {
+      page: number;
+      limit: number;
+      search?: string;
+      status?: LineStatus;
+      partnerId?: string;
+      generalOnly?: boolean;
+    },
   ) {
     const where: Prisma.LineWhereInput = {};
     if (params.status) where.status = params.status;
@@ -38,7 +45,8 @@ export class LinesService {
       ];
     } else {
       const partnerId = resolvePartnerId(user, params.partnerId);
-      if (partnerId) where.partnerId = partnerId;
+      if (params.generalOnly) where.partnerId = null;
+      else if (partnerId) where.partnerId = partnerId;
     }
 
     const [data, total] = await Promise.all([

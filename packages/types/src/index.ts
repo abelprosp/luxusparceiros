@@ -202,6 +202,9 @@ export interface AuthUser {
   name: string;
   role: UserRole;
   partnerId?: string;
+  partnerName?: string;
+  branchId?: string;
+  branchName?: string;
   permissions: string[];
 }
 
@@ -287,6 +290,7 @@ export interface JwtPayload {
   email: string;
   role: UserRole;
   partnerId?: string;
+  branchId?: string;
   permissions: string[];
 }
 
@@ -372,14 +376,15 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     PERMISSIONS.DASHBOARD_READ,
   ],
   [UserRole.ATTENDANT]: [
-    PERMISSIONS.BRANCHES_READ,
     PERMISSIONS.CLIENTS_READ,
     PERMISSIONS.CLIENTS_WRITE,
     PERMISSIONS.SALES_READ,
+    PERMISSIONS.SALES_WRITE,
     PERMISSIONS.TICKETS_READ,
     PERMISSIONS.TICKETS_WRITE,
     PERMISSIONS.REQUESTS_READ,
     PERMISSIONS.REQUESTS_WRITE,
+    PERMISSIONS.DASHBOARD_READ,
   ],
   [UserRole.FINANCIAL]: [
     PERMISSIONS.COMMISSIONS_READ,
@@ -401,6 +406,15 @@ export const SALE_STATUS_LABELS: Record<SaleStatus, string> = {
   [SaleStatus.CANCELLED]: 'Cancelada',
   [SaleStatus.CONTESTED]: 'Contestada',
   [SaleStatus.DOCUMENTS_PENDING]: 'Docs pendentes',
+};
+
+export const LINE_STATUS_LABELS: Record<LineStatus, string> = {
+  [LineStatus.AVAILABLE]: 'Disponível',
+  [LineStatus.RESERVED]: 'Reservada',
+  [LineStatus.USED]: 'Utilizada',
+  [LineStatus.BLOCKED]: 'Bloqueada',
+  [LineStatus.ACTIVATED]: 'Ativada',
+  [LineStatus.CANCELLED]: 'Cancelada',
 };
 
 export const REQUEST_TYPE_LABELS: Record<RequestType, string> = {

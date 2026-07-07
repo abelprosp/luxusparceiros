@@ -23,6 +23,8 @@ export default function EditarFilialScreen() {
     address: '',
     city: '',
     state: '',
+    login: '',
+    password: '',
   });
 
   useEffect(() => {
@@ -39,6 +41,8 @@ export default function EditarFilialScreen() {
           address: b.address ?? '',
           city: b.city ?? '',
           state: b.state ?? '',
+          login: b.users?.[0]?.email ?? '',
+          password: '',
         });
       }
     });
@@ -46,9 +50,30 @@ export default function EditarFilialScreen() {
 
   const handleSubmit = async () => {
     if (!id) return;
+    if (!form.name || !form.document || !form.email || !form.phone) {
+      Alert.alert('Atenção', 'Preencha nome, documento, e-mail e telefone');
+      return;
+    }
+    if (form.password && form.password.length < 6) {
+      Alert.alert('Atenção', 'A senha deve ter no mínimo 6 caracteres');
+      return;
+    }
+
+    const payload: Record<string, string> = {
+      name: form.name,
+      document: form.document,
+      email: form.email,
+      phone: form.phone,
+      address: form.address,
+      city: form.city,
+      state: form.state,
+    };
+    if (form.login) payload.login = form.login;
+    if (form.password) payload.password = form.password;
+
     setLoading(true);
     try {
-      await branchesApi.update(id, form);
+      await branchesApi.update(id, payload);
       Alert.alert('Sucesso', 'Filial atualizada', [{ text: 'OK', onPress: () => router.back() }]);
     } catch (err) {
       Alert.alert('Erro', err instanceof Error ? err.message : 'Falha ao atualizar');
@@ -59,7 +84,7 @@ export default function EditarFilialScreen() {
 
   const handleDeactivate = () => {
     if (!id || branch?.status === 'INACTIVE') return;
-    Alert.alert('Desativar filial', 'A filial ficará inativa e não poderá receber novas vendas.', [
+    Alert.alert('Desativar filial', 'A filial ficará inativa e o login será bloqueado.', [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Desativar',
@@ -89,7 +114,7 @@ export default function EditarFilialScreen() {
       );
       return;
     }
-    Alert.alert('Excluir filial', 'Esta ação não pode ser desfeita.', [
+    Alert.alert('Excluir filial', 'Esta ação remove a filial e o login de acesso.', [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Excluir',
@@ -117,11 +142,14 @@ export default function EditarFilialScreen() {
 
           <Input label="Nome" value={form.name} onChangeText={(v) => setForm({ ...form, name: v })} />
           <Input label="Documento" value={form.document} onChangeText={(v) => setForm({ ...form, document: v })} />
-          <Input label="E-mail" value={form.email} onChangeText={(v) => setForm({ ...form, email: v })} />
+          <Input label="E-mail de contato" value={form.email} onChangeText={(v) => setForm({ ...form, email: v })} />
           <Input label="Telefone" value={form.phone} onChangeText={(v) => setForm({ ...form, phone: v })} />
           <Input label="Endereço" value={form.address} onChangeText={(v) => setForm({ ...form, address: v })} />
           <Input label="Cidade" value={form.city} onChangeText={(v) => setForm({ ...form, city: v })} />
           <Input label="UF" value={form.state} onChangeText={(v) => setForm({ ...form, state: v })} maxLength={2} autoCapitalize="characters" />
+
+          <Input label="Login (e-mail)" value={form.login} onChangeText={(v) => setForm({ ...form, login: v })} keyboardType="email-address" autoCapitalize="none" />
+          <Input label="Nova senha" value={form.password} onChangeText={(v) => setForm({ ...form, password: v })} secureTextEntry placeholder="Deixe em branco para manter" />
 
           <Button title="Salvar alterações" onPress={handleSubmit} loading={loading} fullWidth />
 

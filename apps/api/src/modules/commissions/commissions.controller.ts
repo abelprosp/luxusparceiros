@@ -1,12 +1,10 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CommissionStatus } from '@prisma/client';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
-import { PaginationDto } from '@/common/dto/pagination.dto';
 import { CommissionsService } from './commissions.service';
-import { ApproveCommissionDto, PayCommissionDto } from './dto/commission.dto';
+import { ApproveCommissionDto, CommissionsQueryDto, PayCommissionDto } from './dto/commission.dto';
 
 @ApiTags('Commissions')
 @ApiBearerAuth()
@@ -14,20 +12,26 @@ import { ApproveCommissionDto, PayCommissionDto } from './dto/commission.dto';
 export class CommissionsController {
   constructor(private commissionsService: CommissionsService) {}
 
+  @Get('summary')
+  @RequirePermissions(PERMISSIONS.COMMISSIONS_READ)
+  @ApiOperation({ summary: 'Resumo de comissões do parceiro' })
+  getSummary(@CurrentUser() user: AuthUser) {
+    return this.commissionsService.getSummary(user);
+  }
+
   @Get()
   @RequirePermissions(PERMISSIONS.COMMISSIONS_READ)
   @ApiOperation({ summary: 'Listar comissões' })
   findAll(
     @CurrentUser() user: AuthUser,
-    @Query() pagination: PaginationDto,
-    @Query('status') status?: CommissionStatus,
-    @Query('partnerId') partnerId?: string,
+    @Query() query: CommissionsQueryDto,
   ) {
     return this.commissionsService.findAll(user, {
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      status,
-      partnerId,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      search: query.search,
+      status: query.status,
+      partnerId: query.partnerId,
     });
   }
 

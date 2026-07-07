@@ -104,7 +104,7 @@ export async function api<T>(
   ...(customHeaders as Record<string, string>),
   };
 
-  if (body !== undefined) {
+  if (body !== undefined && !(body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
 
@@ -115,10 +115,13 @@ export async function api<T>(
     }
   }
 
+  const requestBody =
+    body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body);
+
   const res = await fetch(buildUrl(path, params), {
     ...rest,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: requestBody,
   });
 
   if (res.status === 401 && auth) {
@@ -128,7 +131,7 @@ export async function api<T>(
       const retry = await fetch(buildUrl(path, params), {
         ...rest,
         headers,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        body: requestBody,
       });
       return handleResponse<T>(retry);
     }
@@ -232,6 +235,54 @@ export async function uploadFile(
   }
 
   return handleResponse<unknown>(res);
+}
+
+export async function downloadAuthenticatedFile(path: string, filename: string): Promise<void> {
+  const token = await getValidToken();
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(
+      (data as ApiResponse)?.error || (data as ApiResponse)?.message || 'Falha no download',
+      res.status,
+      data,
+    );
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+export function getUploadFetchUrl(documentUrl: string): string {
+  const filename = documentUrl.replace(/^\/uploads\//, '').split('/').pop() ?? documentUrl;
+  return `${API_URL}/uploads/${encodeURIComponent(filename)}`;
+}
+
+export async function fetchAuthenticatedFile(documentUrl: string): Promise<Blob | null> {
+  const token = await getValidToken();
+  const res = await fetch(getUploadFetchUrl(documentUrl), {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return null;
+  return res.blob();
+}
+
+export async function openAuthenticatedFile(documentUrl: string, filename?: string): Promise<void> {
+  const blob = await fetchAuthenticatedFile(documentUrl);
+  if (!blob) throw new ApiError('Arquivo não encontrado', 404);
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.target = '_blank';
+  if (filename) anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
 export { API_URL, API_BASE, WS_URL };

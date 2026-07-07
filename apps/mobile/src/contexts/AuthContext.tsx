@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Alert } from 'react-native';
 import type { AuthUser, LoginRequest } from '@luxus/types';
 import {
   login as authLogin,
@@ -12,6 +13,15 @@ import {
   initAuthService,
 } from '@/services/auth';
 import { connectSocket, disconnectSocket } from '@/services/socket';
+
+const notificationHandler = {
+  onNotification: (data: unknown) => {
+    const notification = data as { title?: string; message?: string };
+    if (notification?.title) {
+      Alert.alert(notification.title, notification.message ?? '');
+    }
+  },
+};
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -48,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setBiometricEnabledState(enabled);
         if (session) {
           setUser(session);
-          connectSocket();
+          connectSocket(notificationHandler);
         }
       } finally {
         setIsLoading(false);
@@ -61,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (credentials: LoginRequest) => {
     const result = await authLogin(credentials);
     setUser(result.user);
-    connectSocket();
+    connectSocket(notificationHandler);
   }, []);
 
   const logout = useCallback(async () => {
@@ -74,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const session = await biometricLogin();
     if (session) {
       setUser(session);
-      connectSocket();
+      connectSocket(notificationHandler);
     }
   }, []);
 

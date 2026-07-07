@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Search, User } from 'lucide-react';
+import { Plus, Search, User, Pencil } from 'lucide-react';
 import { DocumentType } from '@luxus/types';
 import { formatDocument, formatPhone } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
@@ -10,11 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/components/ui/toaster';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface Client {
   id: string;
@@ -22,6 +23,15 @@ interface Client {
   document: string;
   phone: string;
   email?: string;
+  rg?: string;
+  address?: string;
+  addressNumber?: string;
+  complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  notes?: string;
   isActive: boolean;
   createdAt: string;
 }
@@ -39,6 +49,8 @@ const emptyForm = {
   city: '',
   state: '',
   zipCode: '',
+  notes: '',
+  isActive: 'true',
 };
 
 export default function ClientesPage() {
@@ -46,6 +58,7 @@ export default function ClientesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<Client | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
@@ -70,23 +83,76 @@ export default function ClientesPage() {
     return () => clearTimeout(timer);
   }, [load]);
 
-  const handleCreate = async () => {
+  const openCreate = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setDialogOpen(true);
+  };
+
+  const openEdit = async (client: Client) => {
+    setSaving(true);
+    try {
+      const full = await api<Client>(`/clients/${client.id}`);
+      setEditing(full);
+      setForm({
+        name: full.name,
+        document: full.document,
+        rg: full.rg ?? '',
+        email: full.email ?? '',
+        phone: full.phone,
+        address: full.address ?? '',
+        addressNumber: full.addressNumber ?? '',
+        complement: full.complement ?? '',
+        neighborhood: full.neighborhood ?? '',
+        city: full.city ?? '',
+        state: full.state ?? '',
+        zipCode: full.zipCode ?? '',
+        notes: full.notes ?? '',
+        isActive: full.isActive ? 'true' : 'false',
+      });
+      setDialogOpen(true);
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao carregar cliente', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSave = async () => {
     if (!form.name || !form.document || !form.phone) {
       toast({ title: 'Preencha nome, CPF e telefone', variant: 'destructive' });
       return;
     }
+
+    const payload = {
+      name: form.name,
+      document: form.document.replace(/\D/g, ''),
+      documentType: DocumentType.CPF,
+      rg: form.rg || undefined,
+      email: form.email || undefined,
+      phone: form.phone,
+      address: form.address || undefined,
+      addressNumber: form.addressNumber || undefined,
+      complement: form.complement || undefined,
+      neighborhood: form.neighborhood || undefined,
+      city: form.city || undefined,
+      state: form.state || undefined,
+      zipCode: form.zipCode || undefined,
+      notes: form.notes || undefined,
+      ...(editing && { isActive: form.isActive === 'true' }),
+    };
+
     setSaving(true);
     try {
-      await api('/clients', {
-        method: 'POST',
-        body: {
-          ...form,
-          document: form.document.replace(/\D/g, ''),
-          documentType: DocumentType.CPF,
-        },
-      });
-      toast({ title: 'Cliente cadastrado', variant: 'success' });
+      if (editing) {
+        await api(`/clients/${editing.id}`, { method: 'PATCH', body: payload });
+        toast({ title: 'Cliente atualizado', variant: 'success' });
+      } else {
+        await api('/clients', { method: 'POST', body: payload });
+        toast({ title: 'Cliente cadastrado', variant: 'success' });
+      }
       setDialogOpen(false);
+      setEditing(null);
       setForm(emptyForm);
       load();
     } catch (err) {
@@ -108,7 +174,7 @@ export default function ClientesPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <Button onClick={() => setDialogOpen(true)}>
+        <Button onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
           Novo cliente
         </Button>
@@ -121,7 +187,7 @@ export default function ClientesPage() {
           icon={User}
           title="Nenhum cliente"
           description="Cadastre seu primeiro cliente para começar."
-          action={<Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo cliente</Button>}
+          action={<Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Novo cliente</Button>}
         />
       ) : (
         <div className="rounded-xl border bg-card shadow-card">
@@ -133,6 +199,7 @@ export default function ClientesPage() {
                 <TableHead>Telefone</TableHead>
                 <TableHead>E-mail</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -147,6 +214,11 @@ export default function ClientesPage() {
                       {c.isActive ? 'Ativo' : 'Inativo'}
                     </Badge>
                   </TableCell>
+                  <TableCell className="text-right">
+                    <Button size="icon" variant="ghost" onClick={() => openEdit(c)} title="Editar">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -154,10 +226,13 @@ export default function ClientesPage() {
         </div>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) { setEditing(null); setForm(emptyForm); } setDialogOpen(open); }}>
         <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Novo cliente</DialogTitle>
+            <DialogTitle>{editing ? 'Editar cliente' : 'Novo cliente'}</DialogTitle>
+            <DialogDescription>
+              {editing ? 'Atualize os dados do cliente.' : 'Preencha os dados para cadastrar um novo cliente.'}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
@@ -185,6 +260,22 @@ export default function ClientesPage() {
               <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
             </div>
             <div className="space-y-2">
+              <Label>Número</Label>
+              <Input value={form.addressNumber} onChange={(e) => setForm({ ...form, addressNumber: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Complemento</Label>
+              <Input value={form.complement} onChange={(e) => setForm({ ...form, complement: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Bairro</Label>
+              <Input value={form.neighborhood} onChange={(e) => setForm({ ...form, neighborhood: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>CEP</Label>
+              <Input value={form.zipCode} onChange={(e) => setForm({ ...form, zipCode: e.target.value })} />
+            </div>
+            <div className="space-y-2">
               <Label>Cidade</Label>
               <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
             </div>
@@ -192,11 +283,27 @@ export default function ClientesPage() {
               <Label>UF</Label>
               <Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} maxLength={2} />
             </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Observações</Label>
+              <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            </div>
+            {editing && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Status</Label>
+                <Select value={form.isActive} onValueChange={(v) => setForm({ ...form, isActive: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">Ativo</SelectItem>
+                    <SelectItem value="false">Inativo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCreate} disabled={saving}>
-              {saving ? 'Salvando...' : 'Cadastrar'}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? 'Salvando...' : editing ? 'Salvar alterações' : 'Cadastrar'}
             </Button>
           </DialogFooter>
         </DialogContent>

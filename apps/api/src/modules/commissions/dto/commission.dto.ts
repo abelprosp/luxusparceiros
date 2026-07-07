@@ -1,5 +1,7 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { CommissionStatus } from '@prisma/client';
+import { PaginationDto } from '@/common/dto/pagination.dto';
 
 export class ApproveCommissionDto {
   @ApiPropertyOptional()
@@ -14,4 +16,16 @@ export class PayCommissionDto {
   @IsOptional()
   @IsString()
   notes?: string;
+}
+
+export class CommissionsQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ enum: CommissionStatus })
+  @IsOptional()
+  @IsEnum(CommissionStatus)
+  status?: CommissionStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
 }

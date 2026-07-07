@@ -1,14 +1,25 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { StockMovementType } from '@prisma/client';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Response } from 'express';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
-import { PaginationDto } from '@/common/dto/pagination.dto';
 import { LinesService } from '@/modules/lines/lines.service';
 import { LinesQueryDto, ReserveLineDto } from '@/modules/lines/dto/line.dto';
 import { StockService } from './stock.service';
-import { CreateStockMovementDto } from './dto/stock.dto';
+import { CreateStockMovementDto, ImportStockDto, StockMovementsQueryDto } from './dto/stock.dto';
 
 @ApiTags('Stock')
 @ApiBearerAuth()
@@ -18,6 +29,23 @@ export class StockController {
     private stockService: StockService,
     private linesService: LinesService,
   ) {}
+
+  @Get('summary')
+  @RequirePermissions(PERMISSIONS.STOCK_READ)
+  @ApiOperation({ summary: 'Resumo do estoque' })
+  getSummary(@CurrentUser() user: AuthUser) {
+    return this.stockService.getSummary(user);
+  }
+
+  @Get('export')
+  @RequirePermissions(PERMISSIONS.STOCK_READ)
+  @ApiOperation({ summary: 'Exportar estoque em CSV' })
+  async exportCsv(@CurrentUser() user: AuthUser, @Res() res: Response) {
+    const csv = await this.stockService.exportCsv(user);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="estoque.csv"');
+    res.send(csv);
+  }
 
   @Get('lines')
   @RequirePermissions(PERMISSIONS.STOCK_READ)
@@ -29,6 +57,7 @@ export class StockController {
       search: query.search,
       status: query.status,
       partnerId: query.partnerId,
+      generalOnly: query.generalOnly,
     });
   }
 
@@ -48,15 +77,13 @@ export class StockController {
   @ApiOperation({ summary: 'Listar movimentações de estoque' })
   findAll(
     @CurrentUser() user: AuthUser,
-    @Query() pagination: PaginationDto,
-    @Query('type') type?: StockMovementType,
-    @Query('partnerId') partnerId?: string,
+    @Query() query: StockMovementsQueryDto,
   ) {
     return this.stockService.findAll(user, {
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      type,
-      partnerId,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      type: query.type,
+      partnerId: query.partnerId,
     });
   }
 
@@ -70,11 +97,25 @@ export class StockController {
   @Post('import')
   @RequirePermissions(PERMISSIONS.STOCK_WRITE)
   @ApiOperation({ summary: 'Importar estoque via CSV' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        operatorId: { type: 'string' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
   importCsv(
-    @Body('csv') csv: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: ImportStockDto,
     @CurrentUser() user: AuthUser,
-    @Body('operatorId') operatorId?: string,
   ) {
-    return this.stockService.importCsv(csv, user, operatorId);
+    if (!file) {
+      throw new BadRequestException('Arquivo CSV é obrigatório');
+    }
+    return this.stockService.importCsv(file.buffer.toString('utf-8'), user, dto.operatorId);
   }
 }

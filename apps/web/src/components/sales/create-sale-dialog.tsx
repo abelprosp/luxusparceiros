@@ -5,7 +5,7 @@ import { Plus } from 'lucide-react';
 import { ContractFormat, DocumentType } from '@luxus/types';
 import { api, getPaginated, uploadFile } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
-import { isPartnerUser } from '@/lib/rbac';
+import { isPartnerScopedUser } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,7 +54,7 @@ interface CreateSaleDialogProps {
 export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
-  const isPartner = isPartnerUser(user);
+  const isPartnerScoped = isPartnerScopedUser(user);
   const [saving, setSaving] = useState(false);
   const [operators, setOperators] = useState<Operator[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -82,7 +82,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     const load = async () => {
       const results = await Promise.allSettled([
         getPaginated<Operator>('/operators', { limit: 100 }),
-        ...(isPartner ? [] : [getPaginated<Partner>('/partners', { limit: 100 })]),
+        ...(isPartnerScoped ? [] : [getPaginated<Partner>('/partners', { limit: 100 })]),
       ]);
 
       const [opsResult, ptsResult] = results;
@@ -91,14 +91,14 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       } else {
         setOperators([]);
       }
-      if (!isPartner && ptsResult?.status === 'fulfilled') {
+      if (!isPartnerScoped && ptsResult?.status === 'fulfilled') {
         setPartners(ptsResult.value.data);
       }
     };
 
     void load();
 
-    if (isPartner) {
+    if (isPartnerScoped) {
       if (user?.partnerId) {
         setPartnerId(user.partnerId);
       } else {
@@ -109,7 +109,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
         });
       }
     }
-  }, [open, isPartner, user?.partnerId, toast]);
+  }, [open, isPartnerScoped, user?.partnerId, toast]);
 
   useEffect(() => {
     if (!open || !operatorId) {
@@ -117,16 +117,16 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       return;
     }
 
-    const plansPath = isPartner ? '/plans/available' : '/plans';
+    const plansPath = isPartnerScoped ? '/plans/available' : '/plans';
     getPaginated<Plan>(plansPath, { limit: 100, operatorId })
       .then((pls) => setPlans(pls.data))
       .catch(() => setPlans([]));
-  }, [open, operatorId, isPartner]);
+  }, [open, operatorId, isPartnerScoped]);
 
   const filteredPlans = plans.filter((p) => p.operatorId === operatorId);
 
   const reset = () => {
-    setPartnerId(isPartner && user?.partnerId ? user.partnerId : '');
+    setPartnerId(isPartnerScoped && user?.partnerId ? user.partnerId : '');
     setOperatorId('');
     setPlanId('');
     setValue('');
@@ -144,7 +144,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
   };
 
   const handleSave = async () => {
-    if (isPartner && !user?.partnerId) {
+    if (isPartnerScoped && !user?.partnerId) {
       toast({
         title: 'Conta sem parceiro vinculado',
         description: 'Não é possível registrar vendas sem vínculo com um parceiro.',
@@ -193,6 +193,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
         method: 'POST',
         body: {
           partnerId,
+          branchId: user?.branchId,
           operatorId,
           planId,
           value: parseFloat(value) || filteredPlans.find((p) => p.id === planId)?.price,
@@ -237,7 +238,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-muted-foreground">Dados da linha vendida</h3>
             <div className="grid gap-3 sm:grid-cols-2">
-              {!isPartner && (
+              {!isPartnerScoped && (
                 <div className="space-y-2 sm:col-span-2">
                   <Label>Parceiro *</Label>
                   <Select value={partnerId} onValueChange={setPartnerId}>

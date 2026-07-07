@@ -1,12 +1,10 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AuthUser } from '@luxus/types';
+import { AuthUser, UserRole } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { PaginationDto } from '@/common/dto/pagination.dto';
-import { NotificationsService } from './notifications.service';
-import { CreateNotificationDto } from './dto/notification.dto';
 import { Roles } from '@/common/decorators/roles.decorator';
-import { UserRole } from '@luxus/types';
+import { NotificationsService } from './notifications.service';
+import { CreateNotificationDto, NotificationsQueryDto } from './dto/notification.dto';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
@@ -18,13 +16,12 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Listar notificações do usuário' })
   findAll(
     @CurrentUser() user: AuthUser,
-    @Query() pagination: PaginationDto,
-    @Query('isRead') isRead?: string,
+    @Query() query: NotificationsQueryDto,
   ) {
     return this.notificationsService.findAll(user, {
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      isRead: isRead === undefined ? undefined : isRead === 'true',
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      isRead: query.isRead,
     });
   }
 

@@ -57,6 +57,7 @@ export class NotificationsService {
       },
     });
     this.eventsGateway.emitToUser(dto.userId, 'notification:new', notification);
+    this.eventsGateway.emitToUser(dto.userId, 'notification', notification);
     return notification;
   }
 
@@ -65,7 +66,7 @@ export class NotificationsService {
     data: { type: NotificationType; title: string; message: string; data?: Record<string, unknown> },
   ) {
     const users = await this.prisma.user.findMany({
-      where: { partnerId, isActive: true },
+      where: { partnerId, isActive: true, notificationsEnabled: true },
       select: { id: true },
     });
 
@@ -86,10 +87,12 @@ export class NotificationsService {
 
   async markAsRead(id: string, user: AuthUser) {
     await this.findOne(id, user);
-    return this.prisma.notification.update({
+    const updated = await this.prisma.notification.update({
       where: { id },
       data: { isRead: true, readAt: new Date() },
     });
+    this.eventsGateway.emitToUser(user.id, 'notification:read', { id });
+    return updated;
   }
 
   async markAllAsRead(user: AuthUser) {
@@ -97,6 +100,7 @@ export class NotificationsService {
       where: { userId: user.id, isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
+    this.eventsGateway.emitToUser(user.id, 'notification:read-all', { updated: result.count });
     return { updated: result.count };
   }
 

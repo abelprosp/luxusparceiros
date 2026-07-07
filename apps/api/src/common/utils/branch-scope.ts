@@ -1,6 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
-import { AuthUser } from '@luxus/types';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { AuthUser, UserRole } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
+import { MESSAGES } from '../constants/messages';
 
 export async function assertBranchBelongsToPartner(
   prisma: PrismaService,
@@ -15,10 +16,24 @@ export async function assertBranchBelongsToPartner(
   }
 }
 
+export function resolveBranchId(user: AuthUser, requestedBranchId?: string): string | undefined {
+  if (user.role === UserRole.ATTENDANT) {
+    if (!user.branchId) {
+      throw new ForbiddenException('Usuário de filial sem vínculo');
+    }
+    if (requestedBranchId && requestedBranchId !== user.branchId) {
+      throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
+    return user.branchId;
+  }
+  return requestedBranchId;
+}
+
 export function applyBranchFilter(
   user: AuthUser,
   branchId?: string,
 ): { branchId?: string } | Record<string, never> {
-  if (branchId) return { branchId };
+  const resolved = resolveBranchId(user, branchId);
+  if (resolved) return { branchId: resolved };
   return {};
 }

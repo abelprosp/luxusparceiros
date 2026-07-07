@@ -1,5 +1,5 @@
 import { PartialType } from '@nestjs/swagger';
-import { IsEmail, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BranchStatus } from '@prisma/client';
 
@@ -34,6 +34,15 @@ export class CreateBranchDto {
   @IsOptional()
   @IsString()
   state?: string;
+
+  @ApiProperty({ description: 'E-mail de login da filial' })
+  @IsEmail({}, { message: 'Login deve ser um e-mail válido' })
+  login: string;
+
+  @ApiProperty({ description: 'Senha de acesso da filial' })
+  @IsString()
+  @MinLength(6, { message: 'Senha deve ter no mínimo 6 caracteres' })
+  password: string;
 }
 
 export class UpdateBranchDto extends PartialType(CreateBranchDto) {

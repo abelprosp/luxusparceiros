@@ -8,6 +8,7 @@ import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { MESSAGES } from '@/common/constants/messages';
+import { resolveBranchId } from '@/common/utils/branch-scope';
 import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
 import { CreateClientDto, UpdateClientDto } from './dto/client.dto';
 
@@ -20,11 +21,13 @@ export class ClientsService {
 
   async findAll(
     user: AuthUser,
-    params: { page: number; limit: number; search?: string; partnerId?: string },
+    params: { page: number; limit: number; search?: string; partnerId?: string; branchId?: string },
   ) {
     const partnerId = resolvePartnerId(user, params.partnerId);
+    const branchId = resolveBranchId(user, params.branchId);
     const where: Prisma.ClientWhereInput = {};
     if (partnerId) where.partnerId = partnerId;
+    if (branchId) where.branchId = branchId;
     if (params.search) {
       where.OR = [
         { name: { contains: params.search, mode: 'insensitive' } },
@@ -57,6 +60,9 @@ export class ClientsService {
     });
     if (!client) throw new NotFoundException(MESSAGES.NOT_FOUND);
     assertPartnerAccess(user, client.partnerId);
+    if (user.branchId && client.branchId !== user.branchId) {
+      throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
     return client;
   }
 
@@ -65,9 +71,10 @@ export class ClientsService {
     if (!partnerId) {
       throw new ForbiddenException('Parceiro é obrigatório para criar cliente');
     }
+    const branchId = resolveBranchId(user, dto.branchId);
 
     const client = await this.prisma.client.create({
-      data: { ...dto, partnerId },
+      data: { ...dto, partnerId, branchId },
       include: { partner: { select: { id: true, name: true } } },
     });
 

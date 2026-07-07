@@ -9,6 +9,9 @@ export interface StoredUser {
   name: string;
   role: string;
   partnerId?: string;
+  partnerName?: string;
+  branchId?: string;
+  branchName?: string;
   permissions: string[];
 }
 

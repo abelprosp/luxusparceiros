@@ -8,7 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
-import { AuthTokens, AuthUser, JwtPayload, ROLE_PERMISSIONS } from '@luxus/types';
+import { AuthUser, AuthTokens, JwtPayload, ROLE_PERMISSIONS, UserRole } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { MESSAGES } from '@/common/constants/messages';
@@ -31,6 +31,7 @@ export class AuthService {
       include: {
         permissions: { include: { permission: true } },
         partner: true,
+        branch: true,
       },
     });
 
@@ -46,8 +47,27 @@ export class AuthService {
       throw new UnauthorizedException(MESSAGES.PARTNER_SUSPENDED);
     }
 
+    if (user.role === UserRole.ATTENDANT) {
+      if (!user.branchId || !user.branch || !user.partnerId) {
+        throw new UnauthorizedException('Usuário de filial sem vínculo com o parceiro');
+      }
+      if (user.branch.parentPartnerId !== user.partnerId) {
+        throw new UnauthorizedException('Filial não vinculada ao parceiro mestre');
+      }
+      if (user.branch.status !== 'ACTIVE') {
+        throw new UnauthorizedException('Filial inativa. Contate o parceiro.');
+      }
+    }
+
     const permissions = this.getUserPermissions(user);
-    const tokens = await this.generateTokens(user.id, user.email, user.role, user.partnerId, permissions);
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      user.role,
+      user.partnerId,
+      user.branchId,
+      permissions,
+    );
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -68,14 +88,7 @@ export class AuthService {
 
     return {
       ...tokens,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role as AuthUser['role'],
-        partnerId: user.partnerId ?? undefined,
-        permissions,
-      },
+      user: this.toAuthUser(user, permissions),
     };
   }
 
@@ -95,6 +108,7 @@ export class AuthService {
       stored.user.email,
       stored.user.role,
       stored.user.partnerId,
+      stored.user.branchId,
       permissions,
     );
 
@@ -165,23 +179,49 @@ export class AuthService {
   async me(userId: string): Promise<AuthUser & { phone?: string; avatar?: string; theme: string }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { permissions: { include: { permission: true } } },
+      include: {
+        permissions: { include: { permission: true } },
+        partner: true,
+        branch: true,
+      },
     });
 
     if (!user) {
       throw new NotFoundException(MESSAGES.NOT_FOUND);
     }
 
+    const permissions = this.getUserPermissions(user);
+    return {
+      ...this.toAuthUser(user, permissions),
+      phone: user.phone ?? undefined,
+      avatar: user.avatar ?? undefined,
+      theme: user.theme,
+    };
+  }
+
+  private toAuthUser(
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      role: string;
+      partnerId: string | null;
+      branchId: string | null;
+      partner?: { name: string } | null;
+      branch?: { name: string } | null;
+    },
+    permissions: string[],
+  ): AuthUser {
     return {
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role as AuthUser['role'],
       partnerId: user.partnerId ?? undefined,
-      permissions: this.getUserPermissions(user),
-      phone: user.phone ?? undefined,
-      avatar: user.avatar ?? undefined,
-      theme: user.theme,
+      partnerName: user.partner?.name,
+      branchId: user.branchId ?? undefined,
+      branchName: user.branch?.name,
+      permissions,
     };
   }
 
@@ -199,6 +239,7 @@ export class AuthService {
     email: string,
     role: string,
     partnerId: string | null,
+    branchId: string | null,
     permissions: string[],
   ): Promise<AuthTokens> {
     const payload: JwtPayload = {
@@ -206,6 +247,7 @@ export class AuthService {
       email,
       role: role as JwtPayload['role'],
       partnerId: partnerId ?? undefined,
+      branchId: branchId ?? undefined,
       permissions,
     };
 

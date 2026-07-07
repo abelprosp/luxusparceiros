@@ -1,10 +1,10 @@
 'use client';
 
-import { Bell, LogOut, Moon, Sun, User } from 'lucide-react';
+import { LogOut, Moon, Sun, User } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { isPartnerUser } from '@/lib/rbac';
+import { isAttendantUser, isPartnerUser } from '@/lib/rbac';
 import { getInitials } from '@luxus/utils';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
+import { NotificationsBell } from '@/components/notifications/notifications-bell';
 
 interface HeaderProps {
   title?: string;
@@ -28,6 +28,15 @@ export function Header({ title, description }: HeaderProps) {
   const { user, logout } = useAuth();
   const router = useRouter();
   const isPartner = isPartnerUser(user);
+  const isAttendant = isAttendantUser(user);
+  const contextLabel = isAttendant
+    ? [user?.branchName, user?.partnerName ? `Parceiro: ${user.partnerName}` : null].filter(Boolean).join(' · ')
+    : isPartner && user?.partnerName
+      ? `Parceiro: ${user.partnerName}`
+      : null;
+  const subtitle = isAttendant && contextLabel
+    ? (description ? `${contextLabel} — ${description}` : contextLabel)
+    : description ?? contextLabel ?? null;
 
   const handleLogout = async () => {
     await logout();
@@ -38,8 +47,8 @@ export function Header({ title, description }: HeaderProps) {
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-background/80 px-6 backdrop-blur-md">
       <div>
         {title && <h1 className="text-xl font-semibold tracking-tight">{title}</h1>}
-        {description && (
-          <p className="text-sm text-muted-foreground">{description}</p>
+        {(description || contextLabel) && (
+          <p className="text-sm text-muted-foreground">{subtitle}</p>
         )}
       </div>
 
@@ -55,12 +64,7 @@ export function Header({ title, description }: HeaderProps) {
           <span className="sr-only">Alternar tema</span>
         </Button>
 
-        <Button variant="ghost" size="icon" className="relative rounded-full">
-          <Bell className="h-5 w-5" />
-          <Badge className="absolute -right-0.5 -top-0.5 h-5 w-5 rounded-full p-0 text-[10px]">
-            3
-          </Badge>
-        </Button>
+        <NotificationsBell />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

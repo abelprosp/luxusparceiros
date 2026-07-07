@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { CommissionStatus, Prisma, Sale } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
-import { calculateCommission } from '@luxus/utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
@@ -25,12 +24,24 @@ export class CommissionsService {
 
   async findAll(
     user: AuthUser,
-    params: { page: number; limit: number; status?: CommissionStatus; partnerId?: string },
+    params: {
+      page: number;
+      limit: number;
+      search?: string;
+      status?: CommissionStatus;
+      partnerId?: string;
+    },
   ) {
     const partnerId = resolvePartnerId(user, params.partnerId);
     const where: Prisma.CommissionWhereInput = {};
     if (partnerId) where.partnerId = partnerId;
     if (params.status) where.status = params.status;
+    if (params.search) {
+      where.OR = [
+        { sale: { protocol: { contains: params.search, mode: 'insensitive' } } },
+        { partner: { name: { contains: params.search, mode: 'insensitive' } } },
+      ];
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.commission.findMany({
@@ -47,6 +58,35 @@ export class CommissionsService {
     ]);
 
     return { data, meta: { total, page: params.page, limit: params.limit, totalPages: Math.ceil(total / params.limit) } };
+  }
+
+  async getSummary(user: AuthUser) {
+    const partnerId = resolvePartnerId(user);
+    const [forecast, approved, paid] = await Promise.all([
+      this.prisma.commission.aggregate({
+        where: { partnerId, status: CommissionStatus.FORECAST },
+        _sum: { value: true },
+      }),
+      this.prisma.commission.aggregate({
+        where: { partnerId, status: CommissionStatus.APPROVED },
+        _sum: { value: true },
+      }),
+      this.prisma.commission.aggregate({
+        where: { partnerId, status: CommissionStatus.PAID },
+        _sum: { value: true },
+      }),
+    ]);
+
+    const forecastValue = Number(forecast._sum.value ?? 0);
+    const approvedValue = Number(approved._sum.value ?? 0);
+    const paidValue = Number(paid._sum.value ?? 0);
+
+    return {
+      forecast: forecastValue,
+      approved: approvedValue,
+      paid: paidValue,
+      total: forecastValue + approvedValue + paidValue,
+    };
   }
 
   async findOne(id: string, user: AuthUser) {
@@ -70,7 +110,7 @@ export class CommissionsService {
     if (existing) return existing;
 
     const percentage = Number(sale.commissionRate);
-    const value = calculateCommission(Number(sale.value), percentage);
+    const value = Number(sale.commissionValue);
 
     const commission = await this.prisma.commission.create({
       data: {

@@ -20,11 +20,19 @@ export class SimCardsService {
 
   async findAll(
     user: AuthUser,
-    params: { page: number; limit: number; search?: string; status?: LineStatus; partnerId?: string },
+    params: {
+      page: number;
+      limit: number;
+      search?: string;
+      status?: LineStatus;
+      partnerId?: string;
+      generalOnly?: boolean;
+    },
   ) {
     const partnerId = resolvePartnerId(user, params.partnerId);
     const where: Prisma.SimCardWhereInput = {};
-    if (partnerId) where.partnerId = partnerId;
+    if (params.generalOnly) where.partnerId = null;
+    else if (partnerId) where.partnerId = partnerId;
     if (params.status) where.status = params.status;
     if (params.search) where.iccid = { contains: params.search };
 

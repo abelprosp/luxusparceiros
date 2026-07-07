@@ -27,7 +27,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { canAccessRoute, isPartnerUser } from '@/lib/rbac';
+import { canAccessRoute, isAttendantUser, isPartnerUser } from '@/lib/rbac';
 
 const adminNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -57,11 +57,23 @@ const partnerNavItems = [
   { href: '/perfil', label: 'Perfil', icon: UserCog },
 ];
 
+const attendantNavItems = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/clientes', label: 'Clientes', icon: User },
+  { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
+  { href: '/solicitacoes', label: 'Solicitações', icon: FileText },
+  { href: '/chamados', label: 'Chamados', icon: MessageSquare },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
-  const navItems = isPartnerUser(user) ? partnerNavItems : adminNavItems;
+  const navItems = isAttendantUser(user)
+    ? attendantNavItems
+    : isPartnerUser(user)
+      ? partnerNavItems
+      : adminNavItems;
   const visibleItems = navItems.filter((item) => canAccessRoute(user, item.href));
 
   return (

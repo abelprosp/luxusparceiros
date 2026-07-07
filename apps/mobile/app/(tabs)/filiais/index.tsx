@@ -46,7 +46,7 @@ export default function FiliaisScreen() {
         <Badge label={BRANCH_STATUS_LABELS[item.status] ?? item.status} />
       </View>
       <Text style={[styles.detail, { color: colors.textSecondary }]}>{item.city ?? ''}{item.state ? ` - ${item.state}` : ''}</Text>
-      <Text style={[styles.detail, { color: colors.textSecondary }]}>{item.email}</Text>
+      <Text style={[styles.detail, { color: colors.textSecondary }]}>Login: {item.users?.[0]?.email ?? '-'}</Text>
       <Text style={[styles.date, { color: colors.textSecondary }]}>{formatDate(item.createdAt)}</Text>
     </TouchableOpacity>
   );

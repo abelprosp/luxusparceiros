@@ -2,6 +2,7 @@ import { PartialType } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LineStatus } from '@prisma/client';
+import { Type } from 'class-transformer';
 import { PaginationDto } from '@/common/dto/pagination.dto';
 
 export class CreateLineDto {
@@ -58,4 +59,9 @@ export class LinesQueryDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   partnerId?: string;
+
+  @ApiPropertyOptional({ description: 'Filtrar apenas estoque geral (sem parceiro)' })
+  @IsOptional()
+  @Type(() => Boolean)
+  generalOnly?: boolean;
 }

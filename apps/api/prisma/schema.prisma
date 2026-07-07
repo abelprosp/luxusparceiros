@@ -187,6 +187,8 @@ model User {
   notificationsEnabled Boolean @default(true)
   partnerId     String?
   partner       Partner?  @relation(fields: [partnerId], references: [id])
+  branchId      String?   @unique
+  branch        Branch?   @relation(fields: [branchId], references: [id], onDelete: Cascade)
   lastLoginAt   DateTime?
   lastLoginIp   String?
   lastLoginDevice String?
@@ -209,6 +211,7 @@ model User {
 
   @@index([email])
   @@index([partnerId])
+  @@index([branchId])
   @@index([role])
   @@map("users")
 }
@@ -333,6 +336,7 @@ model Branch {
   sales          Sale[]
   stockMovements StockMovement[]
   requests       Request[]
+  users          User[]
 
   @@index([parentPartnerId])
   @@index([document])

@@ -12,7 +12,7 @@ import { AuditService } from '@/modules/audit/audit.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { EventsGateway } from '@/gateway/events.gateway';
 import { MESSAGES } from '@/common/constants/messages';
-import { assertBranchBelongsToPartner } from '@/common/utils/branch-scope';
+import { assertBranchBelongsToPartner, resolveBranchId } from '@/common/utils/branch-scope';
 import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
 import {
   CreateRequestCommentDto,
@@ -42,9 +42,10 @@ export class RequestsService {
     },
   ) {
     const partnerId = resolvePartnerId(user, params.partnerId);
+    const branchId = resolveBranchId(user, params.branchId);
     const where: Prisma.RequestWhereInput = {};
     if (partnerId) where.partnerId = partnerId;
-    if (params.branchId) where.branchId = params.branchId;
+    if (branchId) where.branchId = branchId;
     if (params.status) where.status = params.status;
     if (params.search) {
       where.OR = [
@@ -92,6 +93,9 @@ export class RequestsService {
     });
     if (!request) throw new NotFoundException(MESSAGES.NOT_FOUND);
     assertPartnerAccess(user, request.partnerId);
+    if (user.branchId && request.branchId !== user.branchId) {
+      throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
 
     if (!isAdminRole(user.role)) {
       return {
@@ -105,9 +109,10 @@ export class RequestsService {
   async create(dto: CreateRequestDto, user: AuthUser) {
     const partnerId = resolvePartnerId(user, dto.partnerId);
     if (!partnerId) throw new ForbiddenException('Parceiro é obrigatório');
+    const branchId = resolveBranchId(user, dto.branchId);
 
-    if (dto.branchId) {
-      await assertBranchBelongsToPartner(this.prisma, dto.branchId, partnerId);
+    if (branchId) {
+      await assertBranchBelongsToPartner(this.prisma, branchId, partnerId);
     }
 
     const request = await this.prisma.request.create({
@@ -116,7 +121,7 @@ export class RequestsService {
         type: dto.type,
         description: dto.description,
         partnerId,
-        branchId: dto.branchId,
+        branchId,
         clientId: dto.clientId,
         createdById: user.id,
       },
