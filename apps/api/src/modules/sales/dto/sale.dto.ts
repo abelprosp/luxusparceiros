@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -13,7 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ContractFormat, DocumentType, SaleStatus } from '@prisma/client';
+import { ContractFormat, DocumentType, DonorOperator, SaleStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { PaginationDto } from '@/common/dto/pagination.dto';
 import { CreateClientInlineDto } from './create-client-inline.dto';
@@ -84,10 +85,16 @@ export class CreateSaleDto {
   @IsBoolean()
   isPortability?: boolean;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiPropertyOptional({ description: 'Número a ser portado' })
+  @ValidateIf((o) => o.isPortability === true)
   @IsString()
+  @IsNotEmpty()
   portabilityNumber?: string;
+
+  @ApiPropertyOptional({ enum: DonorOperator, description: 'Operadora doadora da linha' })
+  @ValidateIf((o) => o.isPortability === true)
+  @IsEnum(DonorOperator)
+  donorOperator?: DonorOperator;
 
   @ApiPropertyOptional({ description: 'Número da linha vendida' })
   @IsOptional()

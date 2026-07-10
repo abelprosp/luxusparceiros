@@ -14,6 +14,7 @@ import {
 import {
   ContractFormat,
   DocumentType,
+  DonorOperator,
   SaleStatus,
   SALE_STATUS_LABELS,
 } from '@luxus/types';
@@ -46,6 +47,14 @@ const CONTRACT_FORMAT_LABELS: Record<ContractFormat, string> = {
   [ContractFormat.ZAPSIGN]: 'ZapSign',
 };
 
+const DONOR_OPERATOR_LABELS: Record<DonorOperator, string> = {
+  [DonorOperator.VIVO]: 'Vivo',
+  [DonorOperator.TIM]: 'TIM',
+  [DonorOperator.CLARO]: 'Claro',
+  [DonorOperator.SURF]: 'Surf',
+  [DonorOperator.OTHER]: 'Outras',
+};
+
 const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|bmp|heic)$/i;
 
 interface SaleDocument {
@@ -76,6 +85,7 @@ interface SaleDetail {
   isVirginChip: boolean;
   isPortability: boolean;
   portabilityNumber?: string | null;
+  donorOperator?: DonorOperator | null;
   contractFormat?: ContractFormat | null;
   rejectionReason?: string | null;
   contestReason?: string | null;
@@ -549,10 +559,20 @@ export function SaleDetailDialog({ saleId, open, onOpenChange }: SaleDetailDialo
                     {sale.isVirginChip && <DetailRow label="ICCID" value={sale.chipIccid} mono />}
                     <DetailRow label="Portabilidade" value={sale.isPortability ? 'Sim' : 'Não'} />
                     {sale.isPortability && (
-                      <DetailRow
-                        label="Número portado"
-                        value={sale.portabilityNumber ? formatPhone(sale.portabilityNumber) : undefined}
-                      />
+                      <>
+                        <DetailRow
+                          label="Operadora doadora"
+                          value={
+                            sale.donorOperator
+                              ? DONOR_OPERATOR_LABELS[sale.donorOperator]
+                              : undefined
+                          }
+                        />
+                        <DetailRow
+                          label="Número a ser portado"
+                          value={sale.portabilityNumber ? formatPhone(sale.portabilityNumber) : undefined}
+                        />
+                      </>
                     )}
                     {sale.contractFormat && (
                       <DetailRow

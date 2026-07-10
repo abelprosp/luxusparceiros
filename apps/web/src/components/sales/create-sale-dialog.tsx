@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { ContractFormat, DocumentType } from '@luxus/types';
+import { ContractFormat, DocumentType, DonorOperator } from '@luxus/types';
 import { api, getPaginated, uploadFile } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerScopedUser } from '@/lib/rbac';
@@ -45,6 +45,14 @@ const emptyClient = {
   zipCode: '',
 };
 
+const DONOR_OPERATORS: { value: DonorOperator; label: string }[] = [
+  { value: DonorOperator.VIVO, label: 'Vivo' },
+  { value: DonorOperator.TIM, label: 'TIM' },
+  { value: DonorOperator.CLARO, label: 'Claro' },
+  { value: DonorOperator.SURF, label: 'Surf' },
+  { value: DonorOperator.OTHER, label: 'Outras' },
+];
+
 interface CreateSaleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -75,6 +83,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
   const [client, setClient] = useState(emptyClient);
   const [isPortability, setIsPortability] = useState(false);
   const [portabilityNumber, setPortabilityNumber] = useState('');
+  const [donorOperator, setDonorOperator] = useState<DonorOperator | ''>('');
 
   useEffect(() => {
     if (!open) return;
@@ -141,6 +150,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     setClient(emptyClient);
     setIsPortability(false);
     setPortabilityNumber('');
+    setDonorOperator('');
   };
 
   const handleSave = async () => {
@@ -180,6 +190,13 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       toast({ title: 'ICCID é obrigatório para chip virgem', variant: 'destructive' });
       return;
     }
+    if (isPortability && (!donorOperator || !portabilityNumber.trim())) {
+      toast({
+        title: 'Selecione a operadora doadora e informe o número a ser portado',
+        variant: 'destructive',
+      });
+      return;
+    }
     const lineDigits = newNumber.replace(/\D/g, '');
     const phoneDigits = client.phone.replace(/\D/g, '');
     if (lineDigits && phoneDigits && lineDigits === phoneDigits) {
@@ -203,6 +220,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
           contractFormat,
           isPortability,
           portabilityNumber: isPortability ? portabilityNumber : undefined,
+          donorOperator: isPortability ? donorOperator : undefined,
           client: {
             ...client,
             document: client.document.replace(/\D/g, ''),
@@ -411,7 +429,34 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
               <Label htmlFor="portability">Venda com portabilidade</Label>
             </div>
             {isPortability && (
-              <Input value={portabilityNumber} onChange={(e) => setPortabilityNumber(e.target.value)} placeholder="Número para portabilidade" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Operadora doadora *</Label>
+                  <Select
+                    value={donorOperator}
+                    onValueChange={(value) => setDonorOperator(value as DonorOperator)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a operadora" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DONOR_OPERATORS.map((operator) => (
+                        <SelectItem key={operator.value} value={operator.value}>
+                          {operator.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Número a ser portado *</Label>
+                  <Input
+                    value={portabilityNumber}
+                    onChange={(e) => setPortabilityNumber(e.target.value)}
+                    placeholder="(11) 99999-9999"
+                  />
+                </div>
+              </div>
             )}
           </section>
         </div>

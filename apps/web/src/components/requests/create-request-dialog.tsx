@@ -56,6 +56,10 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
       toast({ title: 'Descreva a solicitação', variant: 'destructive' });
       return;
     }
+    if (isAdmin && !partnerId) {
+      toast({ title: 'Selecione o parceiro', variant: 'destructive' });
+      return;
+    }
     setLoading(true);
     try {
       await api('/requests', {
@@ -97,11 +101,10 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
           </div>
           {isAdmin && (
             <div className="space-y-2">
-              <Label>Parceiro (opcional)</Label>
-              <Select value={partnerId || 'none'} onValueChange={(v) => setPartnerId(v === 'none' ? '' : v)}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <Label>Parceiro *</Label>
+              <Select value={partnerId} onValueChange={setPartnerId}>
+                <SelectTrigger><SelectValue placeholder="Selecione o parceiro" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Automático</SelectItem>
                   {partners.map((p) => (
                     <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                   ))}

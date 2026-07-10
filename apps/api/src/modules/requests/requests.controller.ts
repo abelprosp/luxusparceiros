@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
-import { RequestStatus } from '@prisma/client';
+import { RequestStatus, RequestType } from '@prisma/client';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
@@ -27,6 +27,7 @@ export class RequestsController {
     @CurrentUser() user: AuthUser,
     @Query() pagination: PaginationDto,
     @Query('status') status?: RequestStatus,
+    @Query('type') type?: RequestType,
     @Query('partnerId') partnerId?: string,
     @Query('branchId') branchId?: string,
   ) {
@@ -35,6 +36,27 @@ export class RequestsController {
       limit: pagination.limit ?? 20,
       search: pagination.search,
       status,
+      type,
+      partnerId,
+      branchId,
+    });
+  }
+
+  @Get('kanban')
+  @RequirePermissions(PERMISSIONS.REQUESTS_READ)
+  @ApiOperation({ summary: 'Listar solicitações agrupadas para o Kanban' })
+  findKanban(
+    @CurrentUser() user: AuthUser,
+    @Query('search') search?: string,
+    @Query('status') status?: RequestStatus,
+    @Query('type') type?: RequestType,
+    @Query('partnerId') partnerId?: string,
+    @Query('branchId') branchId?: string,
+  ) {
+    return this.requestsService.findKanban(user, {
+      search,
+      status,
+      type,
       partnerId,
       branchId,
     });
@@ -46,10 +68,19 @@ export class RequestsController {
   async exportCsv(
     @CurrentUser() user: AuthUser,
     @Res() res: Response,
+    @Query('search') search?: string,
     @Query('status') status?: RequestStatus,
+    @Query('type') type?: RequestType,
+    @Query('partnerId') partnerId?: string,
     @Query('branchId') branchId?: string,
   ) {
-    const csv = await this.requestsService.exportCsv(user, { status, branchId });
+    const csv = await this.requestsService.exportCsv(user, {
+      search,
+      status,
+      type,
+      partnerId,
+      branchId,
+    });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename=solicitacoes.csv');
     res.send(csv);

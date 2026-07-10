@@ -15,8 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { Check, ChevronRight } from 'lucide-react-native';
-import { ContractFormat, DocumentType } from '@luxus/types';
+import { Check, ChevronRight, ScanBarcode } from 'lucide-react-native';
+import { ContractFormat, DocumentType, DonorOperator } from '@luxus/types';
 import { validateCPF } from '@luxus/utils';
 import { useTheme } from '@/contexts/ThemeContext';
 import {
@@ -29,10 +29,18 @@ import {
 } from '@/services/api';
 import { Button, Input, Card } from '@/components/ui';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { IccidScannerModal } from '@/components/IccidScannerModal';
 import { formatCommission } from '@luxus/utils';
 import { spacing, typography, radius } from '@/theme';
 
 const STEPS = ['Linha vendida', 'Cliente', 'Portabilidade', 'Finalizar'];
+const DONOR_OPERATORS: { value: DonorOperator; label: string }[] = [
+  { value: DonorOperator.VIVO, label: 'Vivo' },
+  { value: DonorOperator.TIM, label: 'TIM' },
+  { value: DonorOperator.CLARO, label: 'Claro' },
+  { value: DonorOperator.SURF, label: 'Surf' },
+  { value: DonorOperator.OTHER, label: 'Outras' },
+];
 
 type PhotoAsset = { uri: string; name: string; mimeType?: string };
 
@@ -51,6 +59,7 @@ export default function NovaVendaScreen() {
   const [newNumber, setNewNumber] = useState('');
   const [isVirginChip, setIsVirginChip] = useState(true);
   const [chipIccid, setChipIccid] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [linePhoto, setLinePhoto] = useState<PhotoAsset | null>(null);
   const [chipPhoto, setChipPhoto] = useState<PhotoAsset | null>(null);
   const [cpfPhoto, setCpfPhoto] = useState<PhotoAsset | null>(null);
@@ -75,6 +84,7 @@ export default function NovaVendaScreen() {
 
   const [isPortability, setIsPortability] = useState(false);
   const [portabilityNumber, setPortabilityNumber] = useState('');
+  const [donorOperator, setDonorOperator] = useState<DonorOperator | ''>('');
 
   useEffect(() => {
     operatorsApi.list().then((r) => r.success && r.data && setOperators(r.data));
@@ -199,6 +209,12 @@ export default function NovaVendaScreen() {
         return false;
       }
     }
+    if (step === 2 && isPortability) {
+      if (!donorOperator || !portabilityNumber.trim()) {
+        Alert.alert('Atenção', 'Selecione a operadora doadora e informe o número a ser portado');
+        return false;
+      }
+    }
     return true;
   };
 
@@ -209,6 +225,10 @@ export default function NovaVendaScreen() {
     }
     if (isVirginChip && !chipIccid.trim()) {
       Alert.alert('Atenção', 'Informe o ICCID do chip virgem');
+      return;
+    }
+    if (isPortability && (!donorOperator || !portabilityNumber.trim())) {
+      Alert.alert('Atenção', 'Selecione a operadora doadora e informe o número a ser portado');
       return;
     }
     setLoading(true);
@@ -223,6 +243,7 @@ export default function NovaVendaScreen() {
         contractFormat,
         isPortability,
         portabilityNumber: isPortability ? portabilityNumber : undefined,
+        donorOperator: isPortability ? donorOperator : undefined,
         client: {
           name: clientForm.name,
           document: clientForm.document.replace(/\D/g, ''),
@@ -360,7 +381,25 @@ export default function NovaVendaScreen() {
               <Switch value={isVirginChip} onValueChange={setIsVirginChip} trackColor={{ true: colors.primary }} />
             </View>
             {isVirginChip && (
-              <Input label="ICCID do chip *" value={chipIccid} onChangeText={setChipIccid} placeholder="8955..." />
+              <Input
+                label="ICCID do chip *"
+                value={chipIccid}
+                onChangeText={(text) => setChipIccid(text.replace(/\D/g, ''))}
+                placeholder="8955..."
+                keyboardType="numeric"
+                maxLength={22}
+                hint="Digite ou escaneie o código de barras do chip"
+                rightIcon={
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Escanear código de barras do chip"
+                    onPress={() => setScannerOpen(true)}
+                    hitSlop={12}
+                  >
+                    <ScanBarcode size={24} color={colors.primary} />
+                  </TouchableOpacity>
+                }
+              />
             )}
             {renderPhotoBlock('Foto do chip', chipPhoto, 'chip', true)}
             <Text style={[styles.fieldLabel, { color: colors.text }]}>Formato do contrato *</Text>
@@ -409,7 +448,25 @@ export default function NovaVendaScreen() {
               <Switch value={isPortability} onValueChange={setIsPortability} trackColor={{ true: colors.primary }} />
             </View>
             {isPortability && (
-              <Input label="Número para portabilidade" value={portabilityNumber} onChangeText={setPortabilityNumber} keyboardType="phone-pad" />
+              <>
+                <Text style={[styles.fieldLabel, { color: colors.text }]}>Operadora doadora *</Text>
+                {DONOR_OPERATORS.map((operator) => (
+                  <SelectItem
+                    key={operator.value}
+                    label={operator.label}
+                    selected={donorOperator === operator.value}
+                    onPress={() => setDonorOperator(operator.value)}
+                    colors={colors}
+                  />
+                ))}
+                <Input
+                  label="Número a ser portado *"
+                  value={portabilityNumber}
+                  onChangeText={setPortabilityNumber}
+                  keyboardType="phone-pad"
+                  placeholder="(11) 99999-9999"
+                />
+              </>
             )}
           </>
         );
@@ -424,6 +481,16 @@ export default function NovaVendaScreen() {
             <SummaryRow label="Cliente" value={clientForm.name} colors={colors} />
             <SummaryRow label="CPF" value={clientForm.document} colors={colors} />
             <SummaryRow label="Contato" value={clientForm.phone} colors={colors} />
+            {isPortability && (
+              <>
+                <SummaryRow
+                  label="Operadora doadora"
+                  value={DONOR_OPERATORS.find((operator) => operator.value === donorOperator)?.label ?? '—'}
+                  colors={colors}
+                />
+                <SummaryRow label="Número a ser portado" value={portabilityNumber} colors={colors} />
+              </>
+            )}
             {linePhoto && <Text style={{ color: colors.success, ...typography.caption }}>✓ Foto da linha anexada</Text>}
             <Text style={{ color: colors.success, ...typography.caption }}>✓ Foto do chip anexada</Text>
             <Text style={{ color: colors.success, ...typography.caption }}>✓ Foto do CPF anexada</Text>
@@ -474,6 +541,11 @@ export default function NovaVendaScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <IccidScannerModal
+        visible={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScanned={setChipIccid}
+      />
     </SafeAreaView>
   );
 }

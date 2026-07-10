@@ -126,6 +126,14 @@ enum ContractFormat {
   ZAPSIGN
 }
 
+enum DonorOperator {
+  VIVO
+  TIM
+  CLARO
+  SURF
+  OTHER
+}
+
 enum NotificationType {
   COMMISSION
   LINE_ACTIVATED
@@ -526,6 +534,7 @@ model Sale {
   isPortability     Boolean    @default(false)
   isVirginChip      Boolean    @default(false)
   portabilityNumber String?
+  donorOperator     DonorOperator?
   newNumber         String?
   signature         String?
   approvedAt        DateTime?

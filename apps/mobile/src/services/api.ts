@@ -194,6 +194,8 @@ export interface Sale {
   value: number;
   commissionValue: number;
   isPortability: boolean;
+  portabilityNumber?: string;
+  donorOperator?: string;
   newNumber?: string;
   chipIccid?: string;
   contractFormat?: string;

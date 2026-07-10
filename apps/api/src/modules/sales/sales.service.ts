@@ -256,6 +256,11 @@ export class SalesService {
     if (isVirginChip && !dto.chipIccid?.trim()) {
       throw new BadRequestException('ICCID é obrigatório para venda com chip virgem');
     }
+    if (dto.isPortability && (!dto.donorOperator || !dto.portabilityNumber?.trim())) {
+      throw new BadRequestException(
+        'Operadora doadora e número a ser portado são obrigatórios para portabilidade',
+      );
+    }
 
     let lineId = dto.lineId;
     if (!lineId && dto.newNumber) {
@@ -292,6 +297,7 @@ export class SalesService {
         isPortability: dto.isPortability ?? false,
         isVirginChip,
         portabilityNumber: dto.portabilityNumber,
+        donorOperator: dto.donorOperator,
         newNumber: dto.newNumber,
         notes: dto.notes,
         requiredDocuments: DEFAULT_SALE_REQUIRED_DOCUMENTS as Prisma.InputJsonValue,
@@ -342,6 +348,7 @@ export class SalesService {
       isPortability,
       isVirginChip,
       portabilityNumber,
+      donorOperator,
       newNumber,
       chipIccid,
       contractFormat,
@@ -361,6 +368,7 @@ export class SalesService {
         ...(isPortability !== undefined && { isPortability }),
         ...(isVirginChip !== undefined && { isVirginChip }),
         ...(portabilityNumber !== undefined && { portabilityNumber }),
+        ...(donorOperator !== undefined && { donorOperator }),
         ...(newNumber !== undefined && { newNumber }),
         ...(chipIccid !== undefined && { chipIccid }),
         ...(contractFormat !== undefined && { contractFormat }),

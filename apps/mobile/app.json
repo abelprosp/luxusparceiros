@@ -17,7 +17,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.luxus.parceiros",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Use biometria para acessar sua conta Luxus Parceiros com segurança."
+        "NSFaceIDUsageDescription": "Use biometria para acessar sua conta Luxus Parceiros com segurança.",
+        "NSCameraUsageDescription": "Use a câmera para escanear o código de barras do chip e anexar documentos."
       }
     },
     "android": {
@@ -27,6 +28,7 @@
       },
       "package": "com.luxus.parceiros",
       "permissions": [
+        "CAMERA",
         "USE_BIOMETRIC",
         "USE_FINGERPRINT"
       ]
@@ -39,6 +41,12 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Use a câmera para escanear o código de barras do chip e anexar documentos."
+        }
+      ],
       [
         "expo-local-authentication",
         {

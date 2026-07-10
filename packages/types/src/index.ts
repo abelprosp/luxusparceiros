@@ -117,6 +117,14 @@ export enum ContractFormat {
   ZAPSIGN = 'ZAPSIGN',
 }
 
+export enum DonorOperator {
+  VIVO = 'VIVO',
+  TIM = 'TIM',
+  CLARO = 'CLARO',
+  SURF = 'SURF',
+  OTHER = 'OTHER',
+}
+
 export enum NotificationType {
   COMMISSION = 'COMMISSION',
   LINE_ACTIVATED = 'LINE_ACTIVATED',

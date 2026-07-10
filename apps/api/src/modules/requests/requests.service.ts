@@ -4,8 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { RequestStatus, Prisma } from '@prisma/client';
-import { AuthUser } from '@luxus/types';
+import { RequestStatus, RequestType, Prisma } from '@prisma/client';
+import { AuthUser, UserRole } from '@luxus/types';
 import { generateProtocol } from '@luxus/utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
@@ -37,22 +37,12 @@ export class RequestsService {
       limit: number;
       search?: string;
       status?: RequestStatus;
+      type?: RequestType;
       partnerId?: string;
       branchId?: string;
     },
   ) {
-    const partnerId = resolvePartnerId(user, params.partnerId);
-    const branchId = resolveBranchId(user, params.branchId);
-    const where: Prisma.RequestWhereInput = {};
-    if (partnerId) where.partnerId = partnerId;
-    if (branchId) where.branchId = branchId;
-    if (params.status) where.status = params.status;
-    if (params.search) {
-      where.OR = [
-        { protocol: { contains: params.search, mode: 'insensitive' } },
-        { description: { contains: params.search, mode: 'insensitive' } },
-      ];
-    }
+    const where = this.buildWhere(user, params);
 
     const [data, total] = await Promise.all([
       this.prisma.request.findMany({
@@ -75,6 +65,37 @@ export class RequestsService {
     return { data, meta: { total, page: params.page, limit: params.limit, totalPages: Math.ceil(total / params.limit) } };
   }
 
+  async findKanban(
+    user: AuthUser,
+    params: {
+      search?: string;
+      status?: RequestStatus;
+      type?: RequestType;
+      partnerId?: string;
+      branchId?: string;
+    },
+  ) {
+    const data = await this.prisma.request.findMany({
+      where: this.buildWhere(user, params),
+      orderBy: { createdAt: 'desc' },
+      include: {
+        partner: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true } },
+        assignedTo: { select: { id: true, name: true } },
+        _count: { select: { comments: true } },
+      },
+    });
+
+    return Object.values(RequestStatus).reduce<Record<RequestStatus, typeof data>>(
+      (columns, status) => {
+        columns[status] = data.filter((request) => request.status === status);
+        return columns;
+      },
+      {} as Record<RequestStatus, typeof data>,
+    );
+  }
+
   async findOne(id: string, user: AuthUser) {
     const request = await this.prisma.request.findUnique({
       where: { id },
@@ -93,7 +114,7 @@ export class RequestsService {
     });
     if (!request) throw new NotFoundException(MESSAGES.NOT_FOUND);
     assertPartnerAccess(user, request.partnerId);
-    if (user.branchId && request.branchId !== user.branchId) {
+    if (user.branchId && request.branchId && request.branchId !== user.branchId) {
       throw new ForbiddenException(MESSAGES.FORBIDDEN);
     }
 
@@ -231,16 +252,16 @@ export class RequestsService {
 
   async exportCsv(
     user: AuthUser,
-    params: { status?: RequestStatus; branchId?: string },
+    params: {
+      search?: string;
+      status?: RequestStatus;
+      type?: RequestType;
+      partnerId?: string;
+      branchId?: string;
+    },
   ): Promise<string> {
-    const partnerId = resolvePartnerId(user);
-    const where: Prisma.RequestWhereInput = {};
-    if (partnerId) where.partnerId = partnerId;
-    if (params.status) where.status = params.status;
-    if (params.branchId) where.branchId = params.branchId;
-
     const requests = await this.prisma.request.findMany({
-      where,
+      where: this.buildWhere(user, params),
       orderBy: { createdAt: 'desc' },
       include: {
         partner: { select: { name: true } },
@@ -273,6 +294,45 @@ export class RequestsService {
     });
 
     return [header, ...rows].join('\n');
+  }
+
+  private buildWhere(
+    user: AuthUser,
+    params: {
+      search?: string;
+      status?: RequestStatus;
+      type?: RequestType;
+      partnerId?: string;
+      branchId?: string;
+    },
+  ): Prisma.RequestWhereInput {
+    const partnerId = resolvePartnerId(user, params.partnerId);
+    const branchId = resolveBranchId(user, params.branchId);
+    const where: Prisma.RequestWhereInput = {};
+    const and: Prisma.RequestWhereInput[] = [];
+    if (partnerId) where.partnerId = partnerId;
+    if (branchId) {
+      if (user.role === UserRole.ATTENDANT) {
+        and.push({ OR: [{ branchId }, { branchId: null }] });
+      } else {
+        where.branchId = branchId;
+      }
+    }
+    if (params.status) where.status = params.status;
+    if (params.type) where.type = params.type;
+    if (params.search?.trim()) {
+      const search = params.search.trim();
+      and.push({
+        OR: [
+          { protocol: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+          { client: { name: { contains: search, mode: 'insensitive' } } },
+          { partner: { name: { contains: search, mode: 'insensitive' } } },
+        ],
+      });
+    }
+    if (and.length) where.AND = and;
+    return where;
   }
 
   private async addTimeline(
