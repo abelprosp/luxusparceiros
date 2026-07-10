@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   CameraView,
@@ -18,6 +18,8 @@ interface IccidScannerModalProps {
 }
 
 const ICCID_PATTERN = /^89\d{17,20}$/;
+const INVALID_ICCID_MESSAGE =
+  'Código ignorado. Aponte para o código de barras inferior, cujo número começa com 89.';
 
 export function IccidScannerModal({
   visible,
@@ -26,35 +28,31 @@ export function IccidScannerModal({
 }: IccidScannerModalProps) {
   const { colors } = useTheme();
   const [permission, requestPermission] = useCameraPermissions();
-  const [scanned, setScanned] = useState(false);
   const [error, setError] = useState('');
+  const acceptedRef = useRef(false);
 
   useEffect(() => {
     if (visible) {
-      setScanned(false);
+      acceptedRef.current = false;
       setError('');
     }
   }, [visible]);
 
   const handleBarcodeScanned = ({ data }: BarcodeScanningResult) => {
-    if (scanned) return;
+    if (acceptedRef.current) return;
 
-    const iccid = data.replace(/\D/g, '');
+    const iccid = data.trim();
     if (!ICCID_PATTERN.test(iccid)) {
-      setScanned(true);
-      setError('O código lido não parece ser um ICCID. Aponte para o código que começa com 89.');
+      setError(INVALID_ICCID_MESSAGE);
       return;
     }
 
-    setScanned(true);
+    acceptedRef.current = true;
     onScanned(iccid);
     onClose();
   };
 
-  const scanAgain = () => {
-    setError('');
-    setScanned(false);
-  };
+  if (!visible) return null;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -62,7 +60,7 @@ export function IccidScannerModal({
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>Escanear ICCID</Text>
-            <Text style={styles.subtitle}>Aponte para o código de barras do chip</Text>
+            <Text style={styles.subtitle}>Aponte para o código de barras inferior do chip</Text>
           </View>
           <TouchableOpacity
             accessibilityRole="button"
@@ -95,16 +93,15 @@ export function IccidScannerModal({
               barcodeScannerSettings={{
                 barcodeTypes: ['code128', 'code39', 'code93', 'itf14', 'ean13', 'qr'],
               }}
-              onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+              onBarcodeScanned={handleBarcodeScanned}
             />
             <View pointerEvents="none" style={styles.overlay}>
               <View style={styles.scanFrame} />
               <Text style={styles.instruction}>Mantenha o código dentro da área</Text>
             </View>
             {error ? (
-              <View style={styles.errorPanel}>
+              <View pointerEvents="none" style={styles.errorPanel}>
                 <Text style={styles.errorText}>{error}</Text>
-                <Button title="Tentar novamente" size="sm" onPress={scanAgain} />
               </View>
             ) : null}
           </View>
@@ -180,13 +177,13 @@ const styles = StyleSheet.create({
     left: spacing.md,
     right: spacing.md,
     bottom: spacing.lg,
-    gap: spacing.md,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: radius.md,
-    backgroundColor: 'rgba(11, 11, 11, 0.92)',
+    backgroundColor: 'rgba(11, 11, 11, 0.78)',
   },
   errorText: {
-    ...typography.bodySmall,
+    ...typography.caption,
     color: '#FFFFFF',
     textAlign: 'center',
   },

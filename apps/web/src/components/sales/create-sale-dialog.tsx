@@ -339,7 +339,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                       autoComplete="off"
                       maxLength={22}
                     />
-                    <IccidScanner onScan={setChipIccid} />
+                    <IccidScanner value={chipIccid} onScan={setChipIccid} />
                   </div>
                   <p className="text-xs text-muted-foreground">Deve começar com 89 e ter de 19 a 22 dígitos.</p>
                 </div>

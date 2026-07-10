@@ -6,6 +6,8 @@ import { Camera, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const ICCID_PATTERN = /^89\d{17,20}$/;
+const INVALID_ICCID_MESSAGE =
+  'Código ignorado. Aponte para o código de barras inferior, cujo número começa com 89.';
 
 export function normalizeIccid(value: string) {
   return value.replace(/\D/g, '').slice(0, 22);
@@ -45,10 +47,11 @@ function cameraErrorMessage(error: unknown) {
 }
 
 interface IccidScannerProps {
+  value: string;
   onScan: (iccid: string) => void;
 }
 
-export function IccidScanner({ onScan }: IccidScannerProps) {
+export function IccidScanner({ value, onScan }: IccidScannerProps) {
   const [available, setAvailable] = useState(false);
   const [open, setOpen] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -56,6 +59,8 @@ export function IccidScanner({ onScan }: IccidScannerProps) {
   const [scanning, setScanning] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
+  const acceptedRef = useRef(false);
+  const previousValueRef = useRef(value);
 
   const stopCamera = useCallback(() => {
     controlsRef.current?.stop();
@@ -68,6 +73,15 @@ export function IccidScanner({ onScan }: IccidScannerProps) {
     }
     setScanning(false);
   }, []);
+
+  useEffect(() => {
+    const valueChanged = value !== previousValueRef.current;
+    previousValueRef.current = value;
+
+    if (open && valueChanged) {
+      setOpen(false);
+    }
+  }, [open, value]);
 
   useEffect(() => {
     if (
@@ -108,6 +122,7 @@ export function IccidScanner({ onScan }: IccidScannerProps) {
     const startScanner = async () => {
       setError('');
       setScanning(true);
+      acceptedRef.current = false;
 
       try {
         const { BarcodeFormat, BrowserMultiFormatReader } = await import('@zxing/browser');
@@ -136,25 +151,18 @@ export function IccidScanner({ onScan }: IccidScannerProps) {
             },
           },
           videoRef.current,
-          (result, scanError) => {
-            if (cancelled || !result) {
-              const transientError = ['NotFoundException', 'ChecksumException', 'FormatException'];
-              if (scanError && !transientError.includes(scanError.name)) {
-                setError('Não foi possível ler o código. Tente novamente.');
-                stopCamera();
-              }
+          (result) => {
+            if (cancelled || acceptedRef.current || !result) return;
+
+            const rawValue = result.getText().trim();
+            if (!ICCID_PATTERN.test(rawValue)) {
+              setError(INVALID_ICCID_MESSAGE);
               return;
             }
 
-            const iccid = normalizeIccid(result.getText());
+            acceptedRef.current = true;
             stopCamera();
-
-            if (!isValidIccid(iccid)) {
-              setError('O código lido não é um ICCID válido. Ele deve começar com 89 e ter de 19 a 22 dígitos.');
-              return;
-            }
-
-            onScan(iccid);
+            onScan(rawValue);
             setOpen(false);
           },
         );
@@ -194,7 +202,7 @@ export function IccidScanner({ onScan }: IccidScannerProps) {
   return (
     <div className="space-y-3 rounded-md border p-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium">Aponte a câmera para o código do chip</p>
+        <p className="text-sm font-medium">Aponte para o código de barras inferior do chip</p>
         <Button type="button" variant="ghost" size="icon" aria-label="Fechar scanner" onClick={() => setOpen(false)}>
           <X className="h-4 w-4" />
         </Button>
@@ -207,7 +215,9 @@ export function IccidScanner({ onScan }: IccidScannerProps) {
         )}
       </div>
 
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {error && scanning && (
+        <p role="status" aria-live="polite" className="text-xs text-muted-foreground">{error}</p>
+      )}
 
       {error && !scanning && (
         <Button type="button" variant="outline" onClick={() => setAttempt((value) => value + 1)}>
