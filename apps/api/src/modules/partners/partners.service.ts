@@ -16,6 +16,18 @@ import {
   UpdatePartnerDto,
 } from './dto/partner.dto';
 
+type PartnerAddress = {
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+};
+
+type PartnerCoordinates = {
+  latitude: number;
+  longitude: number;
+};
+
 @Injectable()
 export class PartnersService {
   constructor(
@@ -84,6 +96,7 @@ export class PartnersService {
     if (exists) throw new ConflictException(MESSAGES.DOCUMENT_EXISTS);
 
     const { user: userDto, ...partnerData } = dto;
+    const coordinates = await this.geocodeAddress(partnerData);
 
     if (userDto) {
       const emailExists = await this.prisma.user.findUnique({ where: { email: userDto.email } });
@@ -91,7 +104,9 @@ export class PartnersService {
     }
 
     const partner = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.partner.create({ data: partnerData });
+      const created = await tx.partner.create({
+        data: { ...partnerData, ...(coordinates ?? {}) },
+      });
 
       if (userDto) {
         const hashedPassword = await bcrypt.hash(userDto.password, 10);
@@ -126,10 +141,33 @@ export class PartnersService {
   }
 
   async update(id: string, dto: UpdatePartnerDto, actorId?: string) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
     const { user: _user, ...partnerData } = dto;
+    const locationChanged = (['address', 'city', 'state', 'zipCode'] as const).some(
+      (field) => partnerData[field] !== undefined && partnerData[field] !== existing[field],
+    );
+    const shouldGeocode =
+      locationChanged ||
+      ((!existing.latitude || !existing.longitude) &&
+        Boolean(
+          partnerData.address ?? existing.address ?? partnerData.city ?? existing.city,
+        ));
+    const coordinates = shouldGeocode
+      ? await this.geocodeAddress({
+          address: partnerData.address ?? existing.address,
+          city: partnerData.city ?? existing.city,
+          state: partnerData.state ?? existing.state,
+          zipCode: partnerData.zipCode ?? existing.zipCode,
+        })
+      : undefined;
+    const coordinateData = shouldGeocode
+      ? coordinates ?? { latitude: null, longitude: null }
+      : {};
 
-    const partner = await this.prisma.partner.update({ where: { id }, data: partnerData });
+    const partner = await this.prisma.partner.update({
+      where: { id },
+      data: { ...partnerData, ...coordinateData },
+    });
     await this.auditService.log({
       userId: actorId,
       action: 'UPDATE',
@@ -139,6 +177,54 @@ export class PartnersService {
       newData: partner as unknown as Prisma.InputJsonValue,
     });
     return this.findOne(id);
+  }
+
+  private async geocodeAddress(address: PartnerAddress): Promise<PartnerCoordinates | null> {
+    const query = [
+      address.address,
+      address.city,
+      address.state,
+      address.zipCode,
+      'Brasil',
+    ]
+      .filter(Boolean)
+      .join(', ');
+    if (!address.city || !address.state || !query) return null;
+
+    const params = new URLSearchParams({
+      format: 'jsonv2',
+      limit: '1',
+      countrycodes: 'br',
+      q: query,
+    });
+
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+        headers: {
+          'User-Agent': 'LuxusParceiros/1.0',
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) return null;
+
+      const result = (await response.json()) as { lat?: string; lon?: string }[];
+      const latitude = Number(result[0]?.lat);
+      const longitude = Number(result[0]?.lon);
+      if (
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude) ||
+        latitude < -34 ||
+        latitude > 6 ||
+        longitude < -74 ||
+        longitude > -32
+      ) {
+        return null;
+      }
+      return { latitude, longitude };
+    } catch {
+      return null;
+    }
   }
 
   async resetPassword(id: string, dto: ResetPartnerPasswordDto, actorId?: string) {

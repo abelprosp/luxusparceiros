@@ -26,7 +26,10 @@ function FitBrazilBounds({ positions, boundsKey }: { positions: [number, number]
 
   useEffect(() => {
     if (positions.length > 0) {
-      map.fitBounds(positions, { padding: [32, 32], maxZoom: 6 });
+      map.fitBounds(positions, {
+        padding: [32, 32],
+        maxZoom: positions.length === 1 ? 13 : 8,
+      });
       return;
     }
     map.setView([-14.235, -51.9253], 4);
@@ -45,8 +48,17 @@ export function PartnersLeafletMap({ partners, hoveredId, onHover }: PartnersLea
   const markers = useMemo(() => {
     const stateCounts: Record<string, number> = {};
     return partners
-      .filter((p) => p.state)
       .map((partner) => {
+        if (
+          typeof partner.latitude === 'number' &&
+          typeof partner.longitude === 'number'
+        ) {
+          return {
+            partner,
+            position: [partner.latitude, partner.longitude] as [number, number],
+          };
+        }
+        if (!partner.state) return null;
         const state = partner.state!.trim().toUpperCase();
         const index = stateCounts[state] ?? 0;
         stateCounts[state] = index + 1;

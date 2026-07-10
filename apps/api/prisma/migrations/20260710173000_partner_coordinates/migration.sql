@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "partners"
+ADD COLUMN "latitude" DOUBLE PRECISION,
+ADD COLUMN "longitude" DOUBLE PRECISION;

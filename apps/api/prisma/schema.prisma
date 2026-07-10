@@ -294,6 +294,8 @@ model Partner {
   city              String?
   state             String?
   zipCode           String?
+  latitude          Float?
+  longitude         Float?
   bankName          String?
   bankAgency        String?
   bankAccount       String?

@@ -41,7 +41,7 @@ export function IccidScannerModal({
   const handleBarcodeScanned = ({ data }: BarcodeScanningResult) => {
     if (acceptedRef.current) return;
 
-    const iccid = data.trim();
+    const iccid = data.replace(/\D/g, '').slice(0, 22);
     if (!ICCID_PATTERN.test(iccid)) {
       setError(INVALID_ICCID_MESSAGE);
       return;
@@ -91,7 +91,9 @@ export function IccidScannerModal({
               style={StyleSheet.absoluteFill}
               facing="back"
               barcodeScannerSettings={{
-                barcodeTypes: ['code128', 'code39', 'code93', 'itf14', 'ean13', 'qr'],
+                // O código superior da embalagem é EAN-13 e não é o ICCID.
+                // Excluí-lo evita que ele impeça a leitura do código inferior.
+                barcodeTypes: ['code128', 'code39', 'code93', 'codabar', 'itf14', 'qr'],
               }}
               onBarcodeScanned={handleBarcodeScanned}
             />

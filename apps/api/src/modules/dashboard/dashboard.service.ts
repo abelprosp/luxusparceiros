@@ -62,6 +62,8 @@ export class DashboardService {
           city: true,
           state: true,
           zipCode: true,
+          latitude: true,
+          longitude: true,
           status: true,
         },
         orderBy: { name: 'asc' },
@@ -117,6 +119,8 @@ export class DashboardService {
         city: p.city,
         state: p.state,
         zipCode: p.zipCode,
+        latitude: p.latitude,
+        longitude: p.longitude,
         status: p.status,
       })),
       ranking: ranking.map((r) => ({

@@ -84,31 +84,9 @@ export function IccidScanner({ value, onScan }: IccidScannerProps) {
   }, [open, value]);
 
   useEffect(() => {
-    if (
-      !isMobileDevice() ||
-      !navigator.mediaDevices?.getUserMedia ||
-      !navigator.mediaDevices.enumerateDevices
-    ) {
-      return;
-    }
-
-    let active = true;
-    const detectCamera = async () => {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        if (active) setAvailable(devices.some((device) => device.kind === 'videoinput'));
-      } catch {
-        if (active) setAvailable(false);
-      }
-    };
-
-    void detectCamera();
-    navigator.mediaDevices.addEventListener?.('devicechange', detectCamera);
-
-    return () => {
-      active = false;
-      navigator.mediaDevices.removeEventListener?.('devicechange', detectCamera);
-    };
+    // Alguns navegadores móveis ocultam as câmeras antes da permissão.
+    // A disponibilidade real será confirmada somente ao abrir o scanner.
+    setAvailable(isMobileDevice() && Boolean(navigator.mediaDevices?.getUserMedia));
   }, []);
 
   useEffect(() => {
@@ -135,10 +113,11 @@ export function IccidScanner({ value, onScan }: IccidScannerProps) {
         reader.possibleFormats = [
           BarcodeFormat.CODE_128,
           BarcodeFormat.CODE_39,
+          BarcodeFormat.CODE_93,
+          BarcodeFormat.CODABAR,
           BarcodeFormat.QR_CODE,
           BarcodeFormat.DATA_MATRIX,
           BarcodeFormat.ITF,
-          BarcodeFormat.EAN_13,
         ];
 
         const controls = await reader.decodeFromConstraints(
@@ -154,15 +133,15 @@ export function IccidScanner({ value, onScan }: IccidScannerProps) {
           (result) => {
             if (cancelled || acceptedRef.current || !result) return;
 
-            const rawValue = result.getText().trim();
-            if (!ICCID_PATTERN.test(rawValue)) {
+            const iccid = normalizeIccid(result.getText());
+            if (!ICCID_PATTERN.test(iccid)) {
               setError(INVALID_ICCID_MESSAGE);
               return;
             }
 
             acceptedRef.current = true;
             stopCamera();
-            onScan(rawValue);
+            onScan(iccid);
             setOpen(false);
           },
         );

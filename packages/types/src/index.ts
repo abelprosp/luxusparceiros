@@ -262,6 +262,8 @@ export interface PartnerMapLocation {
   city: string | null;
   state: string | null;
   zipCode: string | null;
+  latitude: number | null;
+  longitude: number | null;
   status: string;
 }
 
