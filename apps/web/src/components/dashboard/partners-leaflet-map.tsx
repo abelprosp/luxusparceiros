@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import type { PartnerMapLocation } from '@luxus/types';
@@ -44,11 +44,101 @@ interface PartnersLeafletMapProps {
   onHover: (id: string | null) => void;
 }
 
+type Coordinates = { lat: number; lng: number };
+
+async function geocodePartner(partner: PartnerMapLocation): Promise<Coordinates | null> {
+  const query = [
+    partner.address,
+    partner.city,
+    partner.state,
+    partner.zipCode,
+    'Brasil',
+  ]
+    .filter(Boolean)
+    .join(', ');
+  if (!partner.city || !partner.state || !query) return null;
+
+  const cacheKey = `partner-geocode:${partner.id}:${query}`;
+  const cached = window.localStorage.getItem(cacheKey);
+  if (cached) {
+    try {
+      return JSON.parse(cached) as Coordinates;
+    } catch {
+      window.localStorage.removeItem(cacheKey);
+    }
+  }
+
+  const params = new URLSearchParams({
+    format: 'jsonv2',
+    limit: '1',
+    countrycodes: 'br',
+    q: query,
+  });
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) return null;
+
+  const result = (await response.json()) as { lat?: string; lon?: string }[];
+  const lat = Number(result[0]?.lat);
+  const lng = Number(result[0]?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const coordinates = { lat, lng };
+  window.localStorage.setItem(cacheKey, JSON.stringify(coordinates));
+  return coordinates;
+}
+
 export function PartnersLeafletMap({ partners, hoveredId, onHover }: PartnersLeafletMapProps) {
+  const [resolvedCoordinates, setResolvedCoordinates] = useState<Record<string, Coordinates>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const unresolved = partners.filter(
+      (partner) =>
+        (typeof partner.latitude !== 'number' || typeof partner.longitude !== 'number') &&
+        partner.address &&
+        partner.city &&
+        partner.state,
+    );
+
+    const resolveCoordinates = async () => {
+      for (let index = 0; index < unresolved.length; index += 1) {
+        const partner = unresolved[index];
+        try {
+          const coordinates = await geocodePartner(partner);
+          if (!cancelled && coordinates) {
+            setResolvedCoordinates((current) => ({
+              ...current,
+              [partner.id]: coordinates,
+            }));
+          }
+        } catch {
+          // Mantém o fallback estadual quando a geocodificação não estiver disponível.
+        }
+        if (index < unresolved.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1100));
+        }
+      }
+    };
+
+    void resolveCoordinates();
+    return () => {
+      cancelled = true;
+    };
+  }, [partners]);
+
   const markers = useMemo(() => {
     const stateCounts: Record<string, number> = {};
     return partners
       .map((partner) => {
+        const resolved = resolvedCoordinates[partner.id];
+        if (resolved) {
+          return {
+            partner,
+            position: [resolved.lat, resolved.lng] as [number, number],
+          };
+        }
         if (
           typeof partner.latitude === 'number' &&
           typeof partner.longitude === 'number'
@@ -67,7 +157,7 @@ export function PartnersLeafletMap({ partners, hoveredId, onHover }: PartnersLea
         return { partner, position: [coords.lat, coords.lng] as [number, number] };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
-  }, [partners]);
+  }, [partners, resolvedCoordinates]);
 
   const positions = markers.map((m) => m.position);
   const boundsKey = positions.map((p) => p.join(',')).join('|');
