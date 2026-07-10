@@ -201,6 +201,7 @@ export interface Sale {
   contractFormat?: string;
   rejectionReason?: string;
   contestReason?: string;
+  notes?: string;
   requiredDocuments?: { type: string; label: string; fulfilled: boolean }[];
   createdAt: string;
   client?: { id: string; name: string };
@@ -208,6 +209,7 @@ export interface Sale {
   plan?: { id: string; name: string };
   line?: { id: string; number: string };
   campaign?: { id: string; title: string };
+  documents?: DocumentItem[];
 }
 
 export interface Operator {
@@ -262,6 +264,16 @@ export interface RequestItem {
   client?: { id: string; name: string };
   partner?: { id: string; name: string };
   comments?: RequestComment[];
+  timeline?: ActivityItem[];
+}
+
+export interface ActivityItem {
+  id: string;
+  action: string;
+  fromStatus?: string | null;
+  toStatus?: string | null;
+  details?: string | null;
+  createdAt: string;
 }
 
 export interface RequestComment {
@@ -281,6 +293,7 @@ export interface Ticket {
   priority: string;
   createdAt: string;
   messages?: TicketMessage[];
+  timeline?: ActivityItem[];
 }
 
 export interface TicketMessage {
@@ -348,6 +361,8 @@ export const salesApi = {
   },
   get: (id: string) => api.get<ApiResponse<Sale>>(`/sales/${id}`),
   create: (data: Record<string, unknown>) => api.post<ApiResponse<Sale>>('/sales', data),
+  resubmitDocuments: (id: string) =>
+    api.post<ApiResponse<Sale>>(`/sales/${id}/resubmit-documents`),
 };
 
 export const uploadsApi = {

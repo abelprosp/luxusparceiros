@@ -1,14 +1,17 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DocumentType, Prisma } from '@prisma/client';
+import { DocumentType, Prisma, SaleStatus } from '@prisma/client';
+import { AuthUser } from '@luxus/types';
 import { createReadStream, existsSync, mkdirSync } from 'fs';
 import { extname, join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MESSAGES } from '@/common/constants/messages';
+import { assertPartnerAccess, isAdminRole } from '@/common/utils/partner-scope';
 
 const ALLOWED_MIME_TYPES = [
   'image/jpeg',
@@ -38,7 +41,7 @@ export class UploadsService {
   async uploadFile(
     file: Express.Multer.File,
     type: DocumentType,
-    userId: string,
+    user: AuthUser,
     relations?: {
       clientId?: string;
       saleId?: string;
@@ -47,6 +50,7 @@ export class UploadsService {
     },
   ) {
     this.validateFile(file);
+    await this.validateRelations(type, user, relations);
 
     const ext = extname(file.originalname).toLowerCase();
     const filename = `${uuidv4()}${ext}`;
@@ -62,7 +66,7 @@ export class UploadsService {
         url: `/uploads/${filename}`,
         mimeType: file.mimetype,
         size: file.size,
-        uploadedBy: userId,
+        uploadedBy: user.id,
         clientId: relations?.clientId,
         saleId: relations?.saleId,
         requestId: relations?.requestId,
@@ -75,6 +79,61 @@ export class UploadsService {
     }
 
     return document;
+  }
+
+  private async validateRelations(
+    type: DocumentType,
+    user: AuthUser,
+    relations?: {
+      clientId?: string;
+      saleId?: string;
+      requestId?: string;
+      ticketId?: string;
+    },
+  ) {
+    if (!relations?.saleId) return;
+
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: relations.saleId },
+      select: {
+        partnerId: true,
+        branchId: true,
+        clientId: true,
+        status: true,
+        requiredDocuments: true,
+      },
+    });
+    if (!sale) throw new BadRequestException('Venda não encontrada');
+
+    assertPartnerAccess(user, sale.partnerId);
+    if (user.branchId && user.branchId !== sale.branchId) {
+      throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
+    if (relations.clientId && relations.clientId !== sale.clientId) {
+      throw new BadRequestException('Cliente não pertence à venda informada');
+    }
+    if (
+      !isAdminRole(user.role) &&
+      !([SaleStatus.IN_ANALYSIS, SaleStatus.DOCUMENTS_PENDING] as SaleStatus[]).includes(
+        sale.status,
+      )
+    ) {
+      throw new BadRequestException('Não é possível anexar documentos neste status da venda');
+    }
+
+    if (sale.status === SaleStatus.DOCUMENTS_PENDING) {
+      const required = (sale.requiredDocuments ?? []) as Array<{
+        type: string;
+        fulfilled: boolean;
+      }>;
+      const requested = required.find((doc) => doc.type === type);
+      if (!requested) {
+        throw new BadRequestException('Este tipo de documento não foi solicitado para a venda');
+      }
+      if (requested.fulfilled) {
+        throw new BadRequestException('Este documento solicitado já foi enviado');
+      }
+    }
   }
 
   private async markSaleDocumentFulfilled(saleId: string, type: DocumentType) {

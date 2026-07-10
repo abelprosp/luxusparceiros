@@ -55,7 +55,15 @@ export class DashboardService {
       }),
       this.prisma.partner.findMany({
         where: partnerWhere,
-        select: { id: true, name: true, city: true, state: true, status: true },
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          city: true,
+          state: true,
+          zipCode: true,
+          status: true,
+        },
         orderBy: { name: 'asc' },
       }),
       this.prisma.sale.groupBy({
@@ -105,8 +113,10 @@ export class DashboardService {
       partnersInBrazil: partnersInBrazil.map((p) => ({
         id: p.id,
         name: p.name,
+        address: p.address,
         city: p.city,
         state: p.state,
+        zipCode: p.zipCode,
         status: p.status,
       })),
       ranking: ranking.map((r) => ({

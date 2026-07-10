@@ -24,6 +24,8 @@ import { useToast } from '@/components/ui/toaster';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { Pencil } from 'lucide-react';
+import { ActivityLog, type ActivityEntry } from '@/components/ActivityLog';
+import { ticketStatusBadge } from '@/lib/status-badge';
 
 interface TicketMessage {
   id: string;
@@ -43,6 +45,7 @@ interface TicketDetail {
   partner?: { name: string };
   createdAt: string;
   messages: TicketMessage[];
+  timeline: ActivityEntry[];
 }
 
 interface TicketDetailDialogProps {
@@ -129,10 +132,12 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
         {loading ? (
           <div className="space-y-3"><Skeleton className="h-6 w-32" /><Skeleton className="h-32" /></div>
         ) : ticket ? (
-          <div className="flex flex-col gap-4 min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-xs text-muted-foreground">{ticket.protocol}</span>
-              <Badge>{TICKET_STATUS_LABELS[ticket.status]}</Badge>
+              <Badge variant={ticketStatusBadge(ticket.status)}>
+                {TICKET_STATUS_LABELS[ticket.status]}
+              </Badge>
               <Badge variant="outline">{TICKET_CATEGORY_LABELS[ticket.category as keyof typeof TICKET_CATEGORY_LABELS] ?? ticket.category}</Badge>
               <Badge variant="secondary">{TICKET_PRIORITY_LABELS[ticket.priority]}</Badge>
             </div>
@@ -153,6 +158,7 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
               </div>
             </div>
             )}
+            <ActivityLog entries={ticket.timeline} />
             <div className="min-h-0 flex-1">
               <Label className="mb-2 block">Mensagens</Label>
               <ScrollArea className="h-48 rounded-lg border p-3">

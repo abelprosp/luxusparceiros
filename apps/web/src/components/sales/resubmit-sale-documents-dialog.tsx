@@ -91,6 +91,16 @@ export function ResubmitSaleDocumentsDialog({
           saleId: sale.id,
           clientId: sale.client?.id,
         });
+        setSale((current) =>
+          current
+            ? {
+                ...current,
+                requiredDocuments: current.requiredDocuments?.map((item) =>
+                  item.type === doc.type ? { ...item, fulfilled: true } : item,
+                ),
+              }
+            : current,
+        );
       }
 
       await api(`/sales/${sale.id}/resubmit-documents`, { method: 'POST' });
@@ -104,6 +114,9 @@ export function ResubmitSaleDocumentsDialog({
       onOpenChange(false);
       onSuccess();
     } catch (err) {
+      if (saleId) {
+        api<SaleDetail>(`/sales/${saleId}`).then(setSale).catch(() => undefined);
+      }
       toast({
         title: 'Erro ao enviar documentos',
         description: err instanceof Error ? err.message : 'Falha na requisição',

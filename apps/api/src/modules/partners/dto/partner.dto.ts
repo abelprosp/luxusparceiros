@@ -6,13 +6,15 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Length,
+  Matches,
   Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DocumentType, PartnerStatus } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { PaginationDto } from '@/common/dto/pagination.dto';
 
 export class CreatePartnerUserDto {
@@ -91,12 +93,16 @@ export class CreatePartnerDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
   @IsString()
+  @Length(2, 2)
   state?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/\D/g, '') : value))
   @IsString()
+  @Matches(/^\d{8}$/, { message: 'CEP deve conter 8 dígitos' })
   zipCode?: string;
 
   @ApiPropertyOptional()

@@ -5,6 +5,7 @@ export default function VendasLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="nova" />
+      <Stack.Screen name="[id]" />
     </Stack>
   );
 }

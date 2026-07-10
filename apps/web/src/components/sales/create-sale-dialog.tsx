@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toaster';
+import { IccidScanner, isValidIccid, normalizeIccid } from './iccid-scanner';
 
 interface Operator {
   id: string;
@@ -186,9 +187,19 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       toast({ title: 'Anexe o contrato assinado', variant: 'destructive' });
       return;
     }
-    if (isVirginChip && !chipIccid.trim()) {
-      toast({ title: 'ICCID é obrigatório para chip virgem', variant: 'destructive' });
-      return;
+    if (isVirginChip) {
+      if (!chipIccid) {
+        toast({ title: 'ICCID é obrigatório para chip virgem', variant: 'destructive' });
+        return;
+      }
+      if (!isValidIccid(chipIccid)) {
+        toast({
+          title: 'ICCID inválido',
+          description: 'O ICCID deve começar com 89 e ter de 19 a 22 dígitos.',
+          variant: 'destructive',
+        });
+        return;
+      }
     }
     if (isPortability && (!donorOperator || !portabilityNumber.trim())) {
       toast({
@@ -216,7 +227,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
           value: parseFloat(value) || filteredPlans.find((p) => p.id === planId)?.price,
           newNumber,
           isVirginChip,
-          chipIccid: isVirginChip ? chipIccid.trim() : chipIccid.trim() || undefined,
+          chipIccid: isVirginChip ? normalizeIccid(chipIccid) : normalizeIccid(chipIccid) || undefined,
           contractFormat,
           isPortability,
           portabilityNumber: isPortability ? portabilityNumber : undefined,
@@ -319,7 +330,18 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
               {isVirginChip && (
                 <div className="space-y-2 sm:col-span-2">
                   <Label>ICCID do chip *</Label>
-                  <Input value={chipIccid} onChange={(e) => setChipIccid(e.target.value)} placeholder="8955..." />
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      value={chipIccid}
+                      onChange={(e) => setChipIccid(normalizeIccid(e.target.value))}
+                      placeholder="8955..."
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={22}
+                    />
+                    <IccidScanner onScan={setChipIccid} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Deve começar com 89 e ter de 19 a 22 dígitos.</p>
                 </div>
               )}
               <div className="space-y-2 sm:col-span-2">

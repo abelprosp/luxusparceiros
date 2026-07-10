@@ -2,6 +2,56 @@ import { PartialType } from '@nestjs/swagger';
 import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RequestStatus, RequestType } from '@prisma/client';
+import { PaginationDto } from '@/common/dto/pagination.dto';
+
+export class RequestFiltersDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ enum: RequestStatus })
+  @IsOptional()
+  @IsEnum(RequestStatus)
+  status?: RequestStatus;
+
+  @ApiPropertyOptional({ enum: RequestType })
+  @IsOptional()
+  @IsEnum(RequestType)
+  type?: RequestType;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+}
+
+export class RequestListQueryDto extends PaginationDto {
+  @ApiPropertyOptional({ enum: RequestStatus })
+  @IsOptional()
+  @IsEnum(RequestStatus)
+  status?: RequestStatus;
+
+  @ApiPropertyOptional({ enum: RequestType })
+  @IsOptional()
+  @IsEnum(RequestType)
+  type?: RequestType;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+}
 
 export class CreateRequestDto {
   @ApiProperty({ enum: RequestType })

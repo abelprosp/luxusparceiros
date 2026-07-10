@@ -1,15 +1,15 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
-import { RequestStatus, RequestType } from '@prisma/client';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
-import { PaginationDto } from '@/common/dto/pagination.dto';
 import { RequestsService } from './requests.service';
 import {
   CreateRequestCommentDto,
   CreateRequestDto,
+  RequestFiltersDto,
+  RequestListQueryDto,
   UpdateRequestDto,
   UpdateRequestStatusDto,
 } from './dto/request.dto';
@@ -25,20 +25,16 @@ export class RequestsController {
   @ApiOperation({ summary: 'Listar solicitações' })
   findAll(
     @CurrentUser() user: AuthUser,
-    @Query() pagination: PaginationDto,
-    @Query('status') status?: RequestStatus,
-    @Query('type') type?: RequestType,
-    @Query('partnerId') partnerId?: string,
-    @Query('branchId') branchId?: string,
+    @Query() query: RequestListQueryDto,
   ) {
     return this.requestsService.findAll(user, {
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      search: pagination.search,
-      status,
-      type,
-      partnerId,
-      branchId,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      search: query.search,
+      status: query.status,
+      type: query.type,
+      partnerId: query.partnerId,
+      branchId: query.branchId,
     });
   }
 
@@ -47,18 +43,14 @@ export class RequestsController {
   @ApiOperation({ summary: 'Listar solicitações agrupadas para o Kanban' })
   findKanban(
     @CurrentUser() user: AuthUser,
-    @Query('search') search?: string,
-    @Query('status') status?: RequestStatus,
-    @Query('type') type?: RequestType,
-    @Query('partnerId') partnerId?: string,
-    @Query('branchId') branchId?: string,
+    @Query() query: RequestFiltersDto,
   ) {
     return this.requestsService.findKanban(user, {
-      search,
-      status,
-      type,
-      partnerId,
-      branchId,
+      search: query.search,
+      status: query.status,
+      type: query.type,
+      partnerId: query.partnerId,
+      branchId: query.branchId,
     });
   }
 
@@ -68,18 +60,14 @@ export class RequestsController {
   async exportCsv(
     @CurrentUser() user: AuthUser,
     @Res() res: Response,
-    @Query('search') search?: string,
-    @Query('status') status?: RequestStatus,
-    @Query('type') type?: RequestType,
-    @Query('partnerId') partnerId?: string,
-    @Query('branchId') branchId?: string,
+    @Query() query: RequestFiltersDto,
   ) {
     const csv = await this.requestsService.exportCsv(user, {
-      search,
-      status,
-      type,
-      partnerId,
-      branchId,
+      search: query.search,
+      status: query.status,
+      type: query.type,
+      partnerId: query.partnerId,
+      branchId: query.branchId,
     });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename=solicitacoes.csv');

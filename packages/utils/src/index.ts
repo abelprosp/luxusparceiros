@@ -153,7 +153,7 @@ export function getStatusColor(status: string): string {
     PAID: '#22c55e',
     PENDING: '#f59e0b',
     IN_ANALYSIS: '#f59e0b',
-    IN_PROGRESS: '#2D8CFF',
+    IN_PROGRESS: '#f59e0b',
     OPEN: '#2D8CFF',
     NEW: '#2D8CFF',
     FORECAST: '#2D8CFF',

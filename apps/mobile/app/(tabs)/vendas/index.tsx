@@ -38,7 +38,11 @@ export default function VendasScreen() {
   }, [loadSales]);
 
   const renderSale = ({ item }: { item: Sale }) => (
-    <View style={[styles.saleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <TouchableOpacity
+      style={[styles.saleCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+      activeOpacity={0.8}
+      onPress={() => router.push(`/(tabs)/vendas/${item.id}` as never)}
+    >
       <View style={styles.saleHeader}>
         <Text style={[styles.protocol, { color: colors.text }]}>{item.protocol}</Text>
         <Badge label={getStatusLabel(item.status, SALE_STATUS_LABELS)} />
@@ -48,14 +52,14 @@ export default function VendasScreen() {
       </Text>
       {item.requiredDocuments && item.requiredDocuments.length > 0 && item.status === 'DOCUMENTS_PENDING' && (
         <Text style={[styles.docsHint, { color: colors.warning ?? '#f59e0b' }]}>
-          Docs pendentes: {item.requiredDocuments.map((d) => d.label).join(', ')}
+          Docs pendentes: {item.requiredDocuments.filter((d) => !d.fulfilled).map((d) => d.label).join(', ') || 'prontos para reenvio'}
         </Text>
       )}
       <View style={styles.saleFooter}>
         <Text style={[styles.value, { color: colors.primary }]}>{formatCurrency(Number(item.value))}</Text>
         <Text style={[styles.date, { color: colors.textSecondary }]}>{formatDate(item.createdAt)}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   return (

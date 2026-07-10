@@ -85,6 +85,19 @@ export function formatPartnerLocation(city?: string | null, state?: string | nul
   return parts.length > 0 ? parts.join(' - ') : 'Localização não informada';
 }
 
+export function formatPartnerAddress(
+  address?: string | null,
+  city?: string | null,
+  state?: string | null,
+  zipCode?: string | null,
+) {
+  const location = formatPartnerLocation(city, state);
+  const formattedCep = zipCode?.replace(/^(\d{5})(\d{3})$/, '$1-$2');
+  return [address, location !== 'Localização não informada' ? location : null, formattedCep]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 export function getPartnerLatLng(state?: string | null, indexInState = 0) {
   if (!state) return null;
   const normalized = state.trim().toUpperCase();

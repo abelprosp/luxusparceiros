@@ -4,7 +4,7 @@ import { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import type { PartnerMapLocation } from '@luxus/types';
-import { formatPartnerLocation, getPartnerLatLng } from '@/lib/brazil-geo';
+import { formatPartnerAddress, getPartnerLatLng } from '@/lib/brazil-geo';
 import 'leaflet/dist/leaflet.css';
 
 const markerIcon = L.divIcon({
@@ -89,7 +89,12 @@ export function PartnersLeafletMap({ partners, hoveredId, onHover }: PartnersLea
             <div className="space-y-1 text-sm">
               <p className="font-semibold">{partner.name}</p>
               <p className="text-muted-foreground">
-                {formatPartnerLocation(partner.city, partner.state)}
+                {formatPartnerAddress(
+                  partner.address,
+                  partner.city,
+                  partner.state,
+                  partner.zipCode,
+                ) || 'Localização não informada'}
               </p>
               <p>{partner.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}</p>
             </div>

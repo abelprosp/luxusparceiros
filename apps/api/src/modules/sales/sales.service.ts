@@ -334,6 +334,15 @@ export class SalesService {
     if (!editableStatuses.includes(existing.status)) {
       throw new BadRequestException('Venda não pode ser editada neste status');
     }
+    if (
+      existing.status === SaleStatus.DOCUMENTS_PENDING &&
+      !isAdminRole(user.role) &&
+      Object.keys(dto).length > 0
+    ) {
+      throw new ForbiddenException(
+        'Enquanto aguarda documentos, somente os arquivos solicitados podem ser alterados',
+      );
+    }
 
     const {
       client: _client,
@@ -393,14 +402,13 @@ export class SalesService {
   }
 
   async updateStatus(id: string, dto: UpdateSaleStatusDto, user: AuthUser) {
+    if (!isAdminRole(user.role)) {
+      throw new ForbiddenException('Apenas administradores podem alterar o status da venda');
+    }
     const sale = await this.findOne(id, user);
     const allowed = STATUS_TRANSITIONS[sale.status] ?? [];
     if (!allowed.includes(dto.status)) {
       throw new BadRequestException(MESSAGES.SALE_STATUS_INVALID);
-    }
-
-    if (!isAdminRole(user.role) && dto.status === SaleStatus.APPROVED) {
-      throw new ForbiddenException('Apenas administradores podem aprovar vendas');
     }
 
     const data: Prisma.SaleUpdateInput = { status: dto.status };
@@ -475,10 +483,17 @@ export class SalesService {
     }
 
     const sale = await this.findOne(id, user);
+    if (!(STATUS_TRANSITIONS[sale.status] ?? []).includes(SaleStatus.DOCUMENTS_PENDING)) {
+      throw new BadRequestException('Não é possível solicitar documentos neste status');
+    }
+    const uniqueTypes = new Set(dto.documents.map((document) => document.type));
+    if (uniqueTypes.size !== dto.documents.length) {
+      throw new BadRequestException('Não repita o mesmo tipo de documento');
+    }
     const documents = dto.documents.map((d) => ({
       type: d.type,
       label: d.label,
-      fulfilled: d.fulfilled ?? false,
+      fulfilled: false,
     }));
 
     const updated = await this.prisma.sale.update({
@@ -537,7 +552,21 @@ export class SalesService {
       );
     }
 
-    const updated = await this.updateStatus(id, { status: SaleStatus.IN_ANALYSIS }, user);
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: { status: SaleStatus.IN_ANALYSIS },
+      include: { commission: true, partner: true },
+    });
+
+    await this.auditService.log({
+      userId: user.id,
+      action: 'UPDATE',
+      module: 'sales',
+      entityId: id,
+      entityType: 'Sale',
+      newData: { status: SaleStatus.IN_ANALYSIS, documentsResubmitted: true } as Prisma.InputJsonValue,
+    });
+    this.eventsGateway.emitToPartner(updated.partnerId, 'sale:updated', updated);
 
     const admins = await this.prisma.user.findMany({
       where: { role: { in: [UserRole.ADMIN, UserRole.SUPERVISOR] }, isActive: true },

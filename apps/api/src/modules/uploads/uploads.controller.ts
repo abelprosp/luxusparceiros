@@ -44,7 +44,7 @@ export class UploadsController {
     @Body() dto: UploadFileDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.uploadsService.uploadFile(file, dto.type, user.id, {
+    return this.uploadsService.uploadFile(file, dto.type, user, {
       clientId: dto.clientId,
       saleId: dto.saleId,
       requestId: dto.requestId,

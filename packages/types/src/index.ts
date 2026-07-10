@@ -258,8 +258,10 @@ export interface DashboardPartnerMetrics {
 export interface PartnerMapLocation {
   id: string;
   name: string;
+  address: string | null;
   city: string | null;
   state: string | null;
+  zipCode: string | null;
   status: string;
 }
 

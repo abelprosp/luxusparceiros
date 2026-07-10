@@ -27,6 +27,7 @@ import { EditTicketDialog } from '@/components/tickets/edit-ticket-dialog';
 import { TicketDetailDialog } from '@/components/tickets/ticket-detail-dialog';
 import { cn } from '@/lib/utils';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
+import { ticketStatusBadge } from '@/lib/status-badge';
 
 interface Ticket {
   id: string;
@@ -41,8 +42,8 @@ interface Ticket {
 
 const columns: { status: TicketStatus; label: string; color: string }[] = [
   { status: TicketStatus.NEW, label: TICKET_STATUS_LABELS[TicketStatus.NEW], color: 'border-t-primary' },
-  { status: TicketStatus.IN_PROGRESS, label: TICKET_STATUS_LABELS[TicketStatus.IN_PROGRESS], color: 'border-t-blue-400' },
-  { status: TicketStatus.PENDING, label: TICKET_STATUS_LABELS[TicketStatus.PENDING], color: 'border-t-amber-400' },
+  { status: TicketStatus.IN_PROGRESS, label: TICKET_STATUS_LABELS[TicketStatus.IN_PROGRESS], color: 'border-t-amber-400' },
+  { status: TicketStatus.PENDING, label: TICKET_STATUS_LABELS[TicketStatus.PENDING], color: 'border-t-blue-400' },
   { status: TicketStatus.RESOLVED, label: TICKET_STATUS_LABELS[TicketStatus.RESOLVED], color: 'border-t-green-500' },
   { status: TicketStatus.CANCELLED, label: TICKET_STATUS_LABELS[TicketStatus.CANCELLED], color: 'border-t-red-400' },
 ];
@@ -198,7 +199,11 @@ export default function ChamadosPage() {
                         {TICKET_CATEGORY_LABELS[ticket.category as keyof typeof TICKET_CATEGORY_LABELS] ?? ticket.category}
                       </Badge>
                     </TableCell>
-                    <TableCell><Badge>{TICKET_STATUS_LABELS[ticket.status]}</Badge></TableCell>
+                    <TableCell>
+                      <Badge variant={ticketStatusBadge(ticket.status)}>
+                        {TICKET_STATUS_LABELS[ticket.status]}
+                      </Badge>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={priorityVariant(ticket.priority)}>
                         {TICKET_PRIORITY_LABELS[ticket.priority]}
@@ -231,7 +236,9 @@ export default function ChamadosPage() {
               meta={formatDateTime(ticket.createdAt)}
               badges={
                 <>
-                  <Badge>{TICKET_STATUS_LABELS[ticket.status]}</Badge>
+                  <Badge variant={ticketStatusBadge(ticket.status)}>
+                    {TICKET_STATUS_LABELS[ticket.status]}
+                  </Badge>
                   <Badge variant={priorityVariant(ticket.priority)}>
                     {TICKET_PRIORITY_LABELS[ticket.priority]}
                   </Badge>

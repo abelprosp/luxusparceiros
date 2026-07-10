@@ -36,6 +36,7 @@ import { useToast } from '@/components/ui/toaster';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerUser } from '@/lib/rbac';
 import { cn } from '@/lib/utils';
+import { requestStatusBadge } from '@/lib/status-badge';
 
 interface Request {
   id: string;
@@ -460,7 +461,9 @@ export default function SolicitacoesPage() {
                     {!isPartner && <TableCell>{r.partner?.name || '-'}</TableCell>}
                     <TableCell>{r.client?.name || '-'}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{REQUEST_STATUS_LABELS[r.status]}</Badge>
+                      <Badge variant={requestStatusBadge(r.status)}>
+                        {REQUEST_STATUS_LABELS[r.status]}
+                      </Badge>
                     </TableCell>
                     <TableCell>{formatDate(r.createdAt)}</TableCell>
                   </TableRow>

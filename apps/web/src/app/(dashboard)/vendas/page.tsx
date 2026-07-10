@@ -400,6 +400,10 @@ export default function VendasPage() {
         saleId={detailSaleId}
         open={!!detailSaleId}
         onOpenChange={(open) => { if (!open) setDetailSaleId(null); }}
+        onResubmitDocuments={(saleId) => {
+          setDetailSaleId(null);
+          setResubmitSaleId(saleId);
+        }}
       />
     </DashboardLayout>
   );

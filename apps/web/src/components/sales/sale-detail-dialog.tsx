@@ -8,6 +8,7 @@ import {
   FileText,
   ImageIcon,
   Loader2,
+  Upload,
   X,
   ZoomIn,
 } from 'lucide-react';
@@ -125,6 +126,7 @@ interface SaleDetailDialogProps {
   saleId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onResubmitDocuments?: (saleId: string) => void;
 }
 
 const TAB_PANEL_CLASS = 'mt-0 h-[calc(90vh-13.5rem)] overflow-y-auto px-5 py-4 focus-visible:outline-none sm:px-6';
@@ -296,7 +298,12 @@ function statusBadgeVariant(status: SaleStatus) {
   return 'outline' as const;
 }
 
-export function SaleDetailDialog({ saleId, open, onOpenChange }: SaleDetailDialogProps) {
+export function SaleDetailDialog({
+  saleId,
+  open,
+  onOpenChange,
+  onResubmitDocuments,
+}: SaleDetailDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const isPartnerScoped = isPartnerScopedUser(user);
@@ -418,6 +425,32 @@ export function SaleDetailDialog({ saleId, open, onOpenChange }: SaleDetailDialo
 
               <TabsContent value="overview" className={TAB_PANEL_CLASS}>
                 <div className="space-y-4 pb-4">
+                  {sale.status === SaleStatus.DOCUMENTS_PENDING &&
+                    sale.requiredDocuments &&
+                    sale.requiredDocuments.length > 0 && (
+                      <Section title="Ação necessária">
+                        <div className="space-y-3 py-3">
+                          <p className="text-sm text-muted-foreground">
+                            A equipe solicitou novos documentos para continuar a análise desta venda.
+                          </p>
+                          {sale.requiredDocuments.map((doc) => (
+                            <div key={doc.type} className="flex items-center justify-between gap-3 text-sm">
+                              <span>{doc.label}</span>
+                              <Badge variant={doc.fulfilled ? 'success' : 'warning'}>
+                                {doc.fulfilled ? 'Enviado' : 'Pendente'}
+                              </Badge>
+                            </div>
+                          ))}
+                          {isPartnerScoped && onResubmitDocuments && (
+                            <Button onClick={() => onResubmitDocuments(sale.id)}>
+                              <Upload className="mr-2 h-4 w-4" />
+                              Enviar documentos pendentes
+                            </Button>
+                          )}
+                        </div>
+                      </Section>
+                    )}
+
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <SummaryCard label="Valor" value={formatCurrency(Number(sale.value))} />
                     <SummaryCard label="Operadora" value={sale.operator?.name ?? '—'} />

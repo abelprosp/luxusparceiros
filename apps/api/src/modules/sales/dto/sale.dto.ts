@@ -1,6 +1,7 @@
 import { PartialType } from '@nestjs/swagger';
 import {
   IsArray,
+  ArrayMinSize,
   IsBoolean,
   IsEmail,
   IsEnum,
@@ -143,6 +144,7 @@ export class UpdateSaleStatusDto {
 export class RequestSaleDocumentsDto {
   @ApiProperty({ type: [SaleRequiredDocumentDto] })
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => SaleRequiredDocumentDto)
   documents: SaleRequiredDocumentDto[];

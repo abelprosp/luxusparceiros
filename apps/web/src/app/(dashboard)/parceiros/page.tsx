@@ -1,7 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Search, Pencil, Trash2, Users, Key, Package, Store } from 'lucide-react';
+import {
+  Key,
+  Loader2,
+  MapPin,
+  Package,
+  Pencil,
+  Plus,
+  Search,
+  Store,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { PartnerStatus, CommissionType } from '@luxus/types';
 import { formatDocument, formatDate, formatCommission } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
@@ -18,6 +29,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/components/ui/toaster';
+import { formatCep, lookupCep, normalizeCep } from '@/lib/cep';
 
 interface Partner {
   id: string;
@@ -26,8 +38,10 @@ interface Partner {
   email: string;
   phone: string;
   status: PartnerStatus;
+  address?: string;
   city?: string;
   state?: string;
+  zipCode?: string;
   createdAt: string;
   users?: { id: string; email: string; name: string }[];
   branches?: Branch[];
@@ -66,6 +80,10 @@ const emptyForm = {
   document: '',
   email: '',
   phone: '',
+  zipCode: '',
+  address: '',
+  city: '',
+  state: '',
   userName: '',
   userEmail: '',
   userPassword: '',
@@ -95,6 +113,7 @@ export default function ParceirosPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [branchDialogOpen, setBranchDialogOpen] = useState(false);
+  const [cepLoading, setCepLoading] = useState(false);
   const [editing, setEditing] = useState<Partner | null>(null);
   const [selected, setSelected] = useState<Partner | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -146,22 +165,69 @@ export default function ParceirosPage() {
     }
   };
 
+  const handleCepLookup = async (value: string) => {
+    const zipCode = normalizeCep(value);
+    if (zipCode.length !== 8 || cepLoading) return;
+
+    setCepLoading(true);
+    try {
+      const address = await lookupCep(zipCode);
+      setForm((current) =>
+        normalizeCep(current.zipCode) === zipCode
+          ? {
+              ...current,
+              zipCode: address.zipCode,
+              address: address.address,
+              city: address.city,
+              state: address.state,
+            }
+          : current,
+      );
+    } catch (err) {
+      toast({
+        title: 'CEP não encontrado',
+        description: err instanceof Error ? err.message : 'Confira o CEP informado.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCepLoading(false);
+    }
+  };
+
   const handleSave = async () => {
+    const zipCode = normalizeCep(form.zipCode);
+    if (zipCode.length !== 8 || !form.address.trim() || !form.city.trim() || form.state.length !== 2) {
+      toast({
+        title: 'Informe um endereço válido',
+        description: 'Consulte o CEP e confira endereço, cidade e UF.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const partnerData = {
+      name: form.name,
+      document: form.document,
+      email: form.email,
+      phone: form.phone,
+      zipCode,
+      address: form.address.trim(),
+      city: form.city.trim(),
+      state: form.state.trim().toUpperCase(),
+    };
+
     try {
       if (editing) {
         await api(`/partners/${editing.id}`, {
           method: 'PATCH',
-          body: { name: form.name, document: form.document, email: form.email, phone: form.phone },
+          body: partnerData,
         });
         toast({ title: 'Parceiro atualizado', variant: 'success' });
       } else {
         await api('/partners', {
           method: 'POST',
           body: {
-            name: form.name,
-            document: form.document,
-            email: form.email,
-            phone: form.phone,
+            ...partnerData,
             user: form.userEmail
               ? { email: form.userEmail, password: form.userPassword, name: form.userName || form.name }
               : undefined,
@@ -290,7 +356,21 @@ export default function ParceirosPage() {
                       <Button variant="ghost" size="icon" onClick={() => openDetail(p)} title="Detalhes">
                         <Store className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => { setEditing(p); setForm({ ...emptyForm, name: p.name, document: p.document, email: p.email, phone: p.phone }); setDialogOpen(true); }}>
+                      <Button variant="ghost" size="icon" onClick={() => {
+                        setEditing(p);
+                        setForm({
+                          ...emptyForm,
+                          name: p.name,
+                          document: p.document,
+                          email: p.email,
+                          phone: p.phone,
+                          zipCode: p.zipCode ?? '',
+                          address: p.address ?? '',
+                          city: p.city ?? '',
+                          state: p.state ?? '',
+                        });
+                        setDialogOpen(true);
+                      }}>
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)}>
@@ -313,13 +393,73 @@ export default function ParceirosPage() {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? 'Editar Parceiro' : 'Novo Parceiro'}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2"><Label>Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
             <div className="space-y-2"><Label>Documento</Label><Input value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} /></div>
             <div className="space-y-2"><Label>E-mail</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
             <div className="space-y-2"><Label>Telefone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
+            <div className="space-y-3 rounded-lg border p-4">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-primary" />
+                <p className="text-sm font-medium">Localização no mapa</p>
+              </div>
+              <div className="space-y-2">
+                <Label>CEP *</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={formatCep(form.zipCode)}
+                    onChange={(event) => {
+                      const zipCode = normalizeCep(event.target.value);
+                      setForm({ ...form, zipCode });
+                      if (zipCode.length === 8) void handleCepLookup(zipCode);
+                    }}
+                    inputMode="numeric"
+                    maxLength={9}
+                    placeholder="00000-000"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={cepLoading || normalizeCep(form.zipCode).length !== 8}
+                    onClick={() => void handleCepLookup(form.zipCode)}
+                  >
+                    {cepLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Consultar'}
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Endereço *</Label>
+                <Input
+                  value={form.address}
+                  onChange={(event) => setForm({ ...form, address: event.target.value })}
+                  placeholder="Rua, avenida e bairro"
+                />
+              </div>
+              <div className="grid grid-cols-[1fr_90px] gap-3">
+                <div className="space-y-2">
+                  <Label>Cidade *</Label>
+                  <Input
+                    value={form.city}
+                    onChange={(event) => setForm({ ...form, city: event.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>UF *</Label>
+                  <Input
+                    value={form.state}
+                    onChange={(event) =>
+                      setForm({ ...form, state: event.target.value.toUpperCase().slice(0, 2) })
+                    }
+                    maxLength={2}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Cidade e UF preenchidas pelo CEP serão usadas no mapa do dashboard.
+              </p>
+            </div>
             {!editing && (
               <>
                 <hr />

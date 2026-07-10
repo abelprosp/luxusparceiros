@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/toaster';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ActivityLog, type ActivityEntry } from '@/components/ActivityLog';
+import { requestStatusBadge } from '@/lib/status-badge';
 
 interface RequestComment {
   id: string;
@@ -34,6 +36,7 @@ interface RequestDetail {
   client?: { name: string };
   createdAt: string;
   comments: RequestComment[];
+  timeline: ActivityEntry[];
 }
 
 interface RequestDetailDialogProps {
@@ -119,9 +122,11 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
         {loading ? (
           <div className="space-y-3"><Skeleton className="h-6 w-32" /><Skeleton className="h-20" /><Skeleton className="h-32" /></div>
         ) : request ? (
-          <div className="flex flex-col gap-4 min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-2">
             <div className="flex flex-wrap gap-2">
-              <Badge>{REQUEST_STATUS_LABELS[request.status]}</Badge>
+              <Badge variant={requestStatusBadge(request.status)}>
+                {REQUEST_STATUS_LABELS[request.status]}
+              </Badge>
               <Badge variant="outline">{REQUEST_TYPE_LABELS[request.type as keyof typeof REQUEST_TYPE_LABELS] ?? request.type}</Badge>
             </div>
             <p className="text-sm text-muted-foreground">{request.description}</p>
@@ -155,6 +160,7 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
                 <Button size="sm" onClick={handleStatus} disabled={sending}>Salvar status</Button>
               </div>
             )}
+            <ActivityLog entries={request.timeline} />
             <div className="min-h-0 flex-1">
               <Label className="mb-2 block">Comentários</Label>
               <ScrollArea className="h-40 rounded-lg border p-3">

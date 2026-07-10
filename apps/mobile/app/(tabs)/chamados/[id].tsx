@@ -19,6 +19,7 @@ import { ticketsApi, type Ticket, type TicketMessage } from '@/services/api';
 import { connectSocket, subscribeToTicket, unsubscribeFromTicket } from '@/services/socket';
 import { Badge, SkeletonList } from '@/components/ui';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { ActivityLog } from '@/components/ActivityLog';
 import { getStatusLabel, TICKET_STATUS_LABELS } from '@/utils/labels';
 import { spacing, typography, radius } from '@/theme';
 
@@ -76,6 +77,7 @@ export default function ChamadoDetailScreen() {
           prev.some((m) => m.id === response.data!.id) ? prev : [...prev, response.data!],
         );
         setReply('');
+        await loadTicket();
         listRef.current?.scrollToEnd();
       }
     } finally {
@@ -114,7 +116,12 @@ export default function ChamadoDetailScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
         <View style={styles.padding}>
           <ScreenHeader title={ticket?.subject ?? 'Chamado'} subtitle={ticket?.protocol} showBack />
-          {ticket && <Badge label={getStatusLabel(ticket.status, TICKET_STATUS_LABELS)} />}
+          {ticket && (
+            <>
+              <Badge label={getStatusLabel(ticket.status, TICKET_STATUS_LABELS)} />
+              <ActivityLog entries={ticket.timeline} />
+            </>
+          )}
         </View>
 
         <FlatList

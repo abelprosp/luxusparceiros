@@ -19,6 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { requestsApi, type RequestItem, type RequestComment } from '@/services/api';
 import { Badge, SkeletonList } from '@/components/ui';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { ActivityLog } from '@/components/ActivityLog';
 import { getStatusLabel, REQUEST_STATUS_LABELS, REQUEST_TYPE_LABELS } from '@/utils/labels';
 import { spacing, typography, radius } from '@/theme';
 
@@ -60,6 +61,7 @@ export default function SolicitacaoDetailScreen() {
           prev.some((c) => c.id === response.data!.id) ? prev : [...prev, response.data!],
         );
         setComment('');
+        await loadRequest();
         listRef.current?.scrollToEnd();
       }
     } finally {
@@ -120,6 +122,7 @@ export default function SolicitacaoDetailScreen() {
                   <Text style={[styles.description, { color: colors.text }]}>{request.resolution}</Text>
                 </View>
               )}
+              <ActivityLog entries={request.timeline} />
             </>
           )}
         </ScrollView>
