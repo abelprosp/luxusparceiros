@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { LineStatus, Prisma } from '@prisma/client';
-import { AuthUser, UserRole } from '@luxus/types';
+import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { MESSAGES } from '@/common/constants/messages';
@@ -35,10 +35,7 @@ export class LinesService {
     if (params.status) where.status = params.status;
     if (params.search) where.number = { contains: params.search };
 
-    if (user.role === UserRole.PARTNER) {
-      if (!user.partnerId) {
-        throw new ForbiddenException(MESSAGES.PARTNER_SCOPE_REQUIRED);
-      }
+    if (user.partnerId) {
       where.OR = [
         { partnerId: user.partnerId },
         { partnerId: null, status: LineStatus.AVAILABLE },
@@ -106,9 +103,13 @@ export class LinesService {
 
   async update(id: string, dto: UpdateLineDto, user: AuthUser) {
     await this.findOne(id, user);
+    const { partnerId: requestedPartnerId, ...fields } = dto;
+    const partnerId = requestedPartnerId
+      ? resolvePartnerId(user, requestedPartnerId)
+      : undefined;
     const line = await this.prisma.line.update({
       where: { id },
-      data: dto,
+      data: { ...fields, ...(partnerId && { partnerId }) },
       include: { operator: true, plan: true, partner: true },
     });
     await this.auditService.log({

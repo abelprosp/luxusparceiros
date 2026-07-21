@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AuditAction, Prisma } from '@prisma/client';
+import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 
 export interface AuditLogInput {
@@ -23,7 +24,7 @@ export class AuditService {
     return this.prisma.auditLog.create({ data: input });
   }
 
-  async findAll(params: {
+  async findAll(user: AuthUser, params: {
     page: number;
     limit: number;
     module?: string;
@@ -32,6 +33,7 @@ export class AuditService {
   }) {
     const { page, limit, module, userId, action } = params;
     const where: Prisma.AuditLogWhereInput = {};
+    if (user.partnerId) where.user = { partnerId: user.partnerId };
     if (module) where.module = module;
     if (userId) where.userId = userId;
     if (action) where.action = action;

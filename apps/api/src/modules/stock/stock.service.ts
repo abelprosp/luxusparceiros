@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { LineStatus, Prisma, StockMovementType, UserRole } from '@prisma/client';
+import { LineStatus, Prisma, StockMovementType } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
@@ -47,7 +47,7 @@ export class StockService {
   }
 
   async getSummary(user: AuthUser) {
-    if (user.role === UserRole.PARTNER) {
+    if (user.partnerId) {
       if (!user.partnerId) {
         return {
           myAvailable: 0,
@@ -189,6 +189,7 @@ export class StockService {
       });
 
       try {
+        const rowPartnerId = resolvePartnerId(user, row.partnerId);
         if (row.iccid) {
           const operatorId = row.operatorId ?? defaultOperatorId;
           if (!operatorId) {
@@ -201,10 +202,10 @@ export class StockService {
             create: {
               iccid: row.iccid,
               operatorId,
-              partnerId: row.partnerId,
+              partnerId: rowPartnerId,
               status: LineStatus.AVAILABLE,
             },
-            update: { partnerId: row.partnerId },
+            update: { partnerId: rowPartnerId },
           });
 
           await this.prisma.stockMovement.create({
@@ -212,7 +213,7 @@ export class StockService {
               type: StockMovementType.ENTRY,
               iccid: row.iccid,
               operatorId,
-              partnerId: row.partnerId,
+              partnerId: rowPartnerId,
               userId: user.id,
               notes: 'Importação CSV',
             },
@@ -227,10 +228,10 @@ export class StockService {
             create: {
               number: row.number,
               operatorId: row.operatorId ?? defaultOperatorId!,
-              partnerId: row.partnerId,
+              partnerId: rowPartnerId,
               status: LineStatus.AVAILABLE,
             },
-            update: { partnerId: row.partnerId },
+            update: { partnerId: rowPartnerId },
           });
 
           await this.prisma.stockMovement.create({
@@ -238,7 +239,7 @@ export class StockService {
               type: StockMovementType.ENTRY,
               number: row.number,
               operatorId: row.operatorId ?? defaultOperatorId,
-              partnerId: row.partnerId,
+              partnerId: rowPartnerId,
               userId: user.id,
               notes: 'Importação CSV',
             },

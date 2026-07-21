@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TicketStatus } from '@prisma/client';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
+import { IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
 import { PaginationDto } from '@/common/dto/pagination.dto';
@@ -12,6 +13,16 @@ import {
   UpdateTicketDto,
   UpdateTicketStatusDto,
 } from './dto/ticket.dto';
+
+class TicketQueryDto extends PaginationDto {
+  @IsOptional()
+  @IsEnum(TicketStatus)
+  status?: TicketStatus;
+
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
+}
 
 @ApiTags('Tickets')
 @ApiBearerAuth()
@@ -24,16 +35,14 @@ export class TicketsController {
   @ApiOperation({ summary: 'Listar tickets' })
   findAll(
     @CurrentUser() user: AuthUser,
-    @Query() pagination: PaginationDto,
-    @Query('status') status?: TicketStatus,
-    @Query('partnerId') partnerId?: string,
+    @Query() query: TicketQueryDto,
   ) {
     return this.ticketsService.findAll(user, {
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      search: pagination.search,
-      status,
-      partnerId,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      search: query.search,
+      status: query.status,
+      partnerId: query.partnerId,
     });
   }
 

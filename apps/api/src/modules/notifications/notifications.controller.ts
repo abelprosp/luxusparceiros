@@ -40,8 +40,8 @@ export class NotificationsController {
   @Post()
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Criar notificação (admin)' })
-  create(@Body() dto: CreateNotificationDto) {
-    return this.notificationsService.create(dto);
+  create(@Body() dto: CreateNotificationDto, @CurrentUser() user: AuthUser) {
+    return this.notificationsService.create(dto, user);
   }
 
   @Patch(':id/read')

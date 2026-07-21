@@ -39,3 +39,14 @@ export class ResetPasswordDto {
   @MinLength(6, { message: 'Senha deve ter no mínimo 6 caracteres' })
   newPassword: string;
 }
+
+export class ChangePasswordDto {
+  @ApiProperty()
+  @IsString()
+  currentPassword: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(6, { message: 'Senha deve ter no mínimo 6 caracteres' })
+  newPassword: string;
+}

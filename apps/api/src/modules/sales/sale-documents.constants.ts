@@ -12,3 +12,9 @@ export const DEFAULT_SALE_REQUIRED_DOCUMENTS: SaleRequiredDocumentItem[] = [
   { type: DocumentType.RG, label: 'Foto do RG', fulfilled: false },
   { type: DocumentType.CONTRACT, label: 'Contrato', fulfilled: false },
 ];
+
+export function getRequiredDocumentsForSale(isPortability: boolean): SaleRequiredDocumentItem[] {
+  return DEFAULT_SALE_REQUIRED_DOCUMENTS.filter(
+    (document) => !isPortability || document.type !== DocumentType.CONTRACT,
+  ).map((document) => ({ ...document }));
+}

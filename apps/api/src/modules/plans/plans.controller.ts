@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -45,14 +45,15 @@ export class PlansController {
   @Get(':id')
   @RequirePermissions(PERMISSIONS.PLANS_READ)
   @ApiOperation({ summary: 'Obter plano por ID' })
-  findOne(@Param('id') id: string) {
-    return this.plansService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.plansService.findOne(id, user);
   }
 
   @Post()
   @RequirePermissions(PERMISSIONS.PLANS_WRITE)
   @ApiOperation({ summary: 'Criar plano' })
   create(@Body() dto: CreatePlanDto, @CurrentUser() user: AuthUser) {
+    this.assertPlatformAdmin(user);
     return this.plansService.create(dto, user.id);
   }
 
@@ -60,6 +61,7 @@ export class PlansController {
   @RequirePermissions(PERMISSIONS.PLANS_WRITE)
   @ApiOperation({ summary: 'Atualizar plano' })
   update(@Param('id') id: string, @Body() dto: UpdatePlanDto, @CurrentUser() user: AuthUser) {
+    this.assertPlatformAdmin(user);
     return this.plansService.update(id, dto, user.id);
   }
 
@@ -67,6 +69,13 @@ export class PlansController {
   @RequirePermissions(PERMISSIONS.PLANS_WRITE)
   @ApiOperation({ summary: 'Remover plano' })
   remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    this.assertPlatformAdmin(user);
     return this.plansService.remove(id, user.id);
+  }
+
+  private assertPlatformAdmin(user: AuthUser) {
+    if (user.partnerId) {
+      throw new ForbiddenException('O catálogo de planos só pode ser alterado pela administração da plataforma');
+    }
   }
 }

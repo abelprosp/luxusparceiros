@@ -7,6 +7,7 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { AuthService } from './auth.service';
 import {
   ForgotPasswordDto,
+  ChangePasswordDto,
   LoginDto,
   RefreshTokenDto,
   ResetPasswordDto,
@@ -50,6 +51,13 @@ export class AuthController {
   @ApiOperation({ summary: 'Redefinir senha com token' })
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.token, dto.newPassword);
+  }
+
+  @ApiBearerAuth()
+  @Post('change-password')
+  @ApiOperation({ summary: 'Alterar a senha do usuário autenticado' })
+  changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(user.id, dto.currentPassword, dto.newPassword);
   }
 
   @ApiBearerAuth()

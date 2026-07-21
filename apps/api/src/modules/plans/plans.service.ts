@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CommissionType, Prisma } from '@prisma/client';
-import { AuthUser, UserRole } from '@luxus/types';
+import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { MESSAGES } from '@/common/constants/messages';
@@ -48,7 +48,7 @@ export class PlansService {
     if (params.search) where.name = { contains: params.search, mode: 'insensitive' };
 
     const partnerId = resolvePartnerId(user, params.partnerId);
-    if (user.role === UserRole.PARTNER && partnerId) {
+    if (partnerId) {
       await this.ensurePartnerPlanLinks(partnerId);
       where.partnerPlans = { some: { partnerId, isActive: true } };
     }
@@ -67,12 +67,18 @@ export class PlansService {
     return { data, meta: { total, page: params.page, limit: params.limit, totalPages: Math.ceil(total / params.limit) } };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user?: AuthUser) {
     const plan = await this.prisma.plan.findUnique({
       where: { id },
       include: planInclude,
     });
     if (!plan) throw new NotFoundException(MESSAGES.NOT_FOUND);
+    if (user?.partnerId) {
+      const linked = plan.partnerPlans.some(
+        (partnerPlan) => partnerPlan.partner.id === user.partnerId,
+      );
+      if (!linked) throw new NotFoundException(MESSAGES.NOT_FOUND);
+    }
     return plan;
   }
 

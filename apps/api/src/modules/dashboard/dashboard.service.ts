@@ -243,6 +243,9 @@ export class DashboardService {
   }
 
   async getMetrics(user: AuthUser, requestedBranchId?: string) {
+    if (user.partnerId) {
+      return this.getPartnerMetrics(user, requestedBranchId);
+    }
     if ([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.FINANCIAL].includes(user.role)) {
       return this.getAdminMetrics();
     }

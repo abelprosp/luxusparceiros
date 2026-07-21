@@ -51,7 +51,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const socketRef = useRef<Socket | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!user) {
+    if (!user?.id) {
       setNotifications([]);
       setUnreadCount(0);
       return;
@@ -90,7 +90,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   useEffect(() => {
-    if (!user) {
+    if (!user?.id) {
       socketRef.current?.disconnect();
       socketRef.current = null;
       return;

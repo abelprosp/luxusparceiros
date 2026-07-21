@@ -161,7 +161,7 @@ npx prisma db seed
 | Variável | Valor |
 |----------|-------|
 | `NEXT_PUBLIC_API_URL` | URL pública da API |
-| `NEXT_PUBLIC_WS_URL` | URL pública da API (WebSocket) |
+| `NEXT_PUBLIC_WS_URL` | URL pública da API com `/events` (WebSocket) |
 
 ### 4. Domínios
 
@@ -170,15 +170,23 @@ Gere domínios públicos para API e Web nos dois serviços e atualize `CORS_ORIG
 ## Deploy com Docker
 
 ```bash
+cp .env.example .env
 docker compose up -d
 ```
 
+Antes de subir, substitua os segredos `JWT_*` no `.env`. No ambiente local,
+`RUN_DB_SEED=true` cria os dados iniciais sem redefinir senhas já existentes.
+Em produção, use `RUN_DB_SEED=false`.
+
 Serviços:
-- **NGINX** → `:80`
-- **Web** → `:3000`
-- **API** → `:3001`
-- **PostgreSQL** → `:5432`
-- **Redis** → `:6379`
+- **NGINX** → `http://localhost` (entrada principal)
+- **Web** → `http://localhost:3000` (acesso local direto)
+- **API** → `http://localhost:3001` (acesso local direto)
+- **PostgreSQL** → `127.0.0.1:5432`
+- **Redis** → `127.0.0.1:6379`
+
+O app Expo não roda dentro do Compose. Para testá-lo em um aparelho, configure
+`EXPO_PUBLIC_API_URL` e `EXPO_PUBLIC_WS_URL` com o IP local do computador.
 
 ## Tempo Real (Socket.io)
 

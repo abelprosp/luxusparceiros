@@ -43,6 +43,16 @@ export default function PerfilScreen() {
     profileApi.get().then((r) => {
       if (r.success && r.data) {
         setProfile(r.data);
+        if (r.data.partner) {
+          setPartner(r.data.partner);
+          setBankForm({
+            bankName: r.data.partner.bankName ?? '',
+            bankAgency: r.data.partner.bankAgency ?? '',
+            bankAccount: r.data.partner.bankAccount ?? '',
+            pixKey: r.data.partner.pixKey ?? '',
+            pixKeyType: r.data.partner.pixKeyType ?? 'CPF',
+          });
+        }
         setNotifications(r.data.notificationsEnabled ?? true);
       }
     });

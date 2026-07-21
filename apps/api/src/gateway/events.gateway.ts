@@ -10,9 +10,14 @@ import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { JwtPayload } from '@luxus/types';
 
+const socketOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost,http://localhost:3000')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: socketOrigins,
     credentials: true,
   },
   namespace: '/events',

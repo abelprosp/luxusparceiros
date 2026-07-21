@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
+  ...(process.env.NEXT_OUTPUT_STANDALONE === 'true' && { output: 'standalone' }),
   transpilePackages: ['@luxus/types', '@luxus/utils'],
   images: {
     remotePatterns: [

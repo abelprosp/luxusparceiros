@@ -20,7 +20,7 @@ function attachHandlers(sock: Socket) {
   sock.off('notification:new');
   sock.off('notification');
   sock.off('ticket:message');
-  sock.off('sale:update');
+  sock.off('sale:updated');
 
   sock.on('connect', () => handlers.onConnect?.());
   sock.on('disconnect', () => handlers.onDisconnect?.());
@@ -28,7 +28,7 @@ function attachHandlers(sock: Socket) {
   sock.on('notification:new', (data) => handlers.onNotification?.(data));
   sock.on('notification', (data) => handlers.onNotification?.(data));
   sock.on('ticket:message', (data) => handlers.onTicketMessage?.(data));
-  sock.on('sale:update', (data) => handlers.onSaleUpdate?.(data));
+  sock.on('sale:updated', (data) => handlers.onSaleUpdate?.(data));
 }
 
 export function connectSocket(newHandlers: SocketEventHandlers = {}): Socket {

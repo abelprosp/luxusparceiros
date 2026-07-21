@@ -104,9 +104,13 @@ export class SimCardsService {
 
   async update(id: string, dto: UpdateSimCardDto, user: AuthUser) {
     await this.findOne(id, user);
+    const { partnerId: requestedPartnerId, ...fields } = dto;
+    const partnerId = requestedPartnerId
+      ? resolvePartnerId(user, requestedPartnerId)
+      : undefined;
     const simCard = await this.prisma.simCard.update({
       where: { id },
-      data: dto,
+      data: { ...fields, ...(partnerId && { partnerId }) },
       include: { operator: true, partner: true },
     });
     await this.auditService.log({
@@ -120,13 +124,20 @@ export class SimCardsService {
   }
 
   async transfer(dto: TransferSimCardsDto, user: AuthUser) {
-    if (!user.partnerId && !dto.partnerId) {
+    const partnerId = resolvePartnerId(user, dto.partnerId);
+    if (!partnerId) {
       throw new ForbiddenException(MESSAGES.FORBIDDEN);
     }
 
     const result = await this.prisma.simCard.updateMany({
-      where: { id: { in: dto.simCardIds }, status: LineStatus.AVAILABLE },
-      data: { partnerId: dto.partnerId },
+      where: {
+        id: { in: dto.simCardIds },
+        status: LineStatus.AVAILABLE,
+        ...(user.partnerId && {
+          OR: [{ partnerId: user.partnerId }, { partnerId: null }],
+        }),
+      },
+      data: { partnerId },
     });
 
     await this.auditService.log({
@@ -134,7 +145,7 @@ export class SimCardsService {
       action: 'UPDATE',
       module: 'sim-cards',
       entityType: 'SimCard',
-      newData: { transfer: dto } as unknown as Prisma.InputJsonValue,
+      newData: { transfer: { ...dto, partnerId } } as unknown as Prisma.InputJsonValue,
     });
 
     return { transferred: result.count };

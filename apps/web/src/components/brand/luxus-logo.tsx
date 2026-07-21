@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 import logoForDarkBg from '@/assets/logos/logo-light.png';
@@ -37,8 +38,8 @@ export function LuxusLogo({ variant = 'full', className, forceDark = false }: Lu
   }
 
   return (
-    <img
-      src={logo.src}
+    <Image
+      src={logo}
       alt="Luxus Parceiros"
       width={logo.width}
       height={logo.height}

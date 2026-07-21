@@ -16,8 +16,8 @@ export class UsersController {
   @Get()
   @RequirePermissions(PERMISSIONS.USERS_READ)
   @ApiOperation({ summary: 'Listar usuários' })
-  findAll(@Query() pagination: PaginationDto) {
-    return this.usersService.findAll({
+  findAll(@CurrentUser() user: AuthUser, @Query() pagination: PaginationDto) {
+    return this.usersService.findAll(user, {
       page: pagination.page ?? 1,
       limit: pagination.limit ?? 20,
       search: pagination.search,
@@ -27,28 +27,28 @@ export class UsersController {
   @Get(':id')
   @RequirePermissions(PERMISSIONS.USERS_READ)
   @ApiOperation({ summary: 'Obter usuário por ID' })
-  findOne(@Param('id') id: string) {
-    return this.usersService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.usersService.findOne(id, user);
   }
 
   @Post()
   @RequirePermissions(PERMISSIONS.USERS_WRITE)
   @ApiOperation({ summary: 'Criar usuário' })
   create(@Body() dto: CreateUserDto, @CurrentUser() user: AuthUser) {
-    return this.usersService.create(dto, user.id);
+    return this.usersService.create(dto, user);
   }
 
   @Patch(':id')
   @RequirePermissions(PERMISSIONS.USERS_WRITE)
   @ApiOperation({ summary: 'Atualizar usuário' })
   update(@Param('id') id: string, @Body() dto: UpdateUserDto, @CurrentUser() user: AuthUser) {
-    return this.usersService.update(id, dto, user.id);
+    return this.usersService.update(id, dto, user);
   }
 
   @Delete(':id')
   @RequirePermissions(PERMISSIONS.USERS_WRITE)
   @ApiOperation({ summary: 'Remover usuário' })
   remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.usersService.remove(id, user.id);
+    return this.usersService.remove(id, user);
   }
 }

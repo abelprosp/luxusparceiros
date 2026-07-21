@@ -180,10 +180,6 @@ export default function NovaVendaScreen() {
         Alert.alert('Atenção', 'Informe o ICCID do chip virgem');
         return false;
       }
-      if (!contractFile) {
-        Alert.alert('Atenção', 'Anexe o contrato assinado');
-        return false;
-      }
     }
     if (step === 1) {
       if (!clientForm.name.trim() || !clientForm.document.trim() || !clientForm.phone.trim()) {
@@ -219,8 +215,12 @@ export default function NovaVendaScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!operatorId || !planId || !newNumber || !contractFormat || !chipPhoto || !cpfPhoto || !rgPhoto || !contractFile) {
-      Alert.alert('Atenção', 'Preencha todos os campos e anexe as fotos e o contrato');
+    if (!operatorId || !planId || !newNumber || !contractFormat || !chipPhoto || !cpfPhoto || !rgPhoto) {
+      Alert.alert('Atenção', 'Preencha todos os campos obrigatórios e anexe as fotos');
+      return;
+    }
+    if (!isPortability && !contractFile) {
+      Alert.alert('Atenção', 'Anexe o contrato assinado');
       return;
     }
     if (isVirginChip && !chipIccid.trim()) {
@@ -295,14 +295,16 @@ export default function NovaVendaScreen() {
           saleId,
           clientId,
         });
-        await uploadsApi.upload({
-          uri: contractFile.uri,
-          name: contractFile.name,
-          mimeType: contractFile.mimeType,
-          type: DocumentType.CONTRACT,
-          saleId,
-          clientId,
-        });
+        if (contractFile) {
+          await uploadsApi.upload({
+            uri: contractFile.uri,
+            name: contractFile.name,
+            mimeType: contractFile.mimeType,
+            type: DocumentType.CONTRACT,
+            saleId,
+            clientId,
+          });
+        }
 
         Alert.alert('Sucesso', 'Venda registrada com sucesso', [
           { text: 'OK', onPress: () => router.back() },
@@ -417,7 +419,13 @@ export default function NovaVendaScreen() {
               onPress={() => setContractFormat(ContractFormat.ZAPSIGN)}
               colors={colors}
             />
-            {renderPhotoBlock('Contrato assinado', contractFile, 'contract', true, true)}
+            {renderPhotoBlock(
+              'Contrato assinado (obrigatório exceto portabilidade)',
+              contractFile,
+              'contract',
+              false,
+              true,
+            )}
           </>
         );
       case 1:
@@ -495,7 +503,9 @@ export default function NovaVendaScreen() {
             <Text style={{ color: colors.success, ...typography.caption }}>✓ Foto do chip anexada</Text>
             <Text style={{ color: colors.success, ...typography.caption }}>✓ Foto do CPF anexada</Text>
             <Text style={{ color: colors.success, ...typography.caption }}>✓ Foto do RG anexada</Text>
-            <Text style={{ color: colors.success, ...typography.caption }}>✓ Contrato anexado</Text>
+            <Text style={{ color: contractFile ? colors.success : colors.textSecondary, ...typography.caption }}>
+              {contractFile ? '✓ Contrato anexado' : 'Contrato pendente (permitido na portabilidade)'}
+            </Text>
           </View>
         );
       default:

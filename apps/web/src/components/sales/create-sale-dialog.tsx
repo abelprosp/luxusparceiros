@@ -31,6 +31,11 @@ interface Partner {
   name: string;
 }
 
+interface Branch {
+  id: string;
+  name: string;
+}
+
 const emptyClient = {
   name: '',
   document: '',
@@ -68,8 +73,10 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
   const [operators, setOperators] = useState<Operator[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
 
   const [partnerId, setPartnerId] = useState('');
+  const [branchId, setBranchId] = useState('');
   const [operatorId, setOperatorId] = useState('');
   const [planId, setPlanId] = useState('');
   const [value, setValue] = useState('');
@@ -111,6 +118,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     if (isPartnerScoped) {
       if (user?.partnerId) {
         setPartnerId(user.partnerId);
+        setBranchId(user.branchId ?? '');
       } else {
         toast({
           title: 'Conta sem parceiro vinculado',
@@ -119,7 +127,21 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
         });
       }
     }
-  }, [open, isPartnerScoped, user?.partnerId, toast]);
+  }, [open, isPartnerScoped, user?.partnerId, user?.branchId, toast]);
+
+  useEffect(() => {
+    if (!open || !partnerId) {
+      setBranches([]);
+      return;
+    }
+
+    getPaginated<Branch>('/branches', { limit: 100, partnerId })
+      .then((result) => {
+        setBranches(result.data);
+        if (user?.branchId) setBranchId(user.branchId);
+      })
+      .catch(() => setBranches([]));
+  }, [open, partnerId, user?.branchId]);
 
   useEffect(() => {
     if (!open || !operatorId) {
@@ -137,6 +159,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
 
   const reset = () => {
     setPartnerId(isPartnerScoped && user?.partnerId ? user.partnerId : '');
+    setBranchId(user?.branchId ?? '');
     setOperatorId('');
     setPlanId('');
     setValue('');
@@ -183,7 +206,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       toast({ title: 'Anexe a foto do RG', variant: 'destructive' });
       return;
     }
-    if (!contractFile) {
+    if (!contractFile && !isPortability) {
       toast({ title: 'Anexe o contrato assinado', variant: 'destructive' });
       return;
     }
@@ -221,7 +244,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
         method: 'POST',
         body: {
           partnerId,
-          branchId: user?.branchId,
+          branchId: branchId || undefined,
           operatorId,
           planId,
           value: parseFloat(value) || filteredPlans.find((p) => p.id === planId)?.price,
@@ -244,7 +267,9 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       await uploadFile(chipPhoto, DocumentType.CHIP_PHOTO, { saleId: sale.id, clientId });
       await uploadFile(cpfPhoto, DocumentType.CPF, { saleId: sale.id, clientId });
       await uploadFile(rgPhoto, DocumentType.RG, { saleId: sale.id, clientId });
-      await uploadFile(contractFile, DocumentType.CONTRACT, { saleId: sale.id, clientId });
+      if (contractFile) {
+        await uploadFile(contractFile, DocumentType.CONTRACT, { saleId: sale.id, clientId });
+      }
       toast({ title: 'Venda registrada', variant: 'success' });
       reset();
       onOpenChange(false);
@@ -270,12 +295,41 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
               {!isPartnerScoped && (
                 <div className="space-y-2 sm:col-span-2">
                   <Label>Parceiro *</Label>
-                  <Select value={partnerId} onValueChange={setPartnerId}>
+                  <Select
+                    value={partnerId}
+                    onValueChange={(value) => {
+                      setPartnerId(value);
+                      setBranchId('');
+                    }}
+                  >
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
                       {partners.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+              {partnerId && (
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Loja responsável</Label>
+                  <Select
+                    value={branchId || '__matrix'}
+                    disabled={Boolean(user?.branchId)}
+                    onValueChange={(value) => setBranchId(value === '__matrix' ? '' : value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a matriz ou uma filial" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {!user?.branchId && <SelectItem value="__matrix">Matriz</SelectItem>}
+                      {branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Somente lojas do parceiro selecionado são exibidas.
+                  </p>
                 </div>
               )}
               <div className="space-y-2">
@@ -363,13 +417,19 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                 </Select>
               </div>
               <div className="space-y-2 sm:col-span-2">
-                <Label>Contrato assinado *</Label>
+                <Label>
+                  Contrato assinado {isPortability ? '(pode ser anexado depois)' : '*'}
+                </Label>
                 <Input
                   type="file"
                   accept="image/*,application/pdf"
                   onChange={(e) => setContractFile(e.target.files?.[0] ?? null)}
                 />
-                <p className="text-xs text-muted-foreground">Foto do contrato impresso ou PDF do ZapSign</p>
+                <p className="text-xs text-muted-foreground">
+                  {isPortability
+                    ? 'Na portabilidade, o contrato assinado não bloqueia o registro inicial.'
+                    : 'Foto do contrato impresso ou PDF do ZapSign'}
+                </p>
               </div>
             </div>
           </section>
