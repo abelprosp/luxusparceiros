@@ -22,8 +22,8 @@ export class PartnersController {
   @Get()
   @RequirePermissions(PERMISSIONS.PARTNERS_READ)
   @ApiOperation({ summary: 'Listar parceiros' })
-  findAll(@Query() query: PartnersQueryDto) {
-    return this.partnersService.findAll({
+  findAll(@CurrentUser() user: AuthUser, @Query() query: PartnersQueryDto) {
+    return this.partnersService.findAll(user, {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
       search: query.search,
@@ -34,15 +34,15 @@ export class PartnersController {
   @Get(':id')
   @RequirePermissions(PERMISSIONS.PARTNERS_READ)
   @ApiOperation({ summary: 'Obter parceiro por ID' })
-  findOne(@Param('id') id: string) {
-    return this.partnersService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.partnersService.findOne(id, user);
   }
 
   @Get(':id/plans')
   @RequirePermissions(PERMISSIONS.PLANS_READ)
   @ApiOperation({ summary: 'Listar planos vinculados ao parceiro' })
-  getPartnerPlans(@Param('id') id: string) {
-    return this.partnersService.getPartnerPlans(id);
+  getPartnerPlans(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.partnersService.getPartnerPlans(id, user);
   }
 
   @Put(':id/plans')
@@ -53,21 +53,21 @@ export class PartnersController {
     @Body() dto: SetPartnerPlansDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.partnersService.setPartnerPlans(id, dto, user.id);
+    return this.partnersService.setPartnerPlans(id, dto, user);
   }
 
   @Post()
   @RequirePermissions(PERMISSIONS.PARTNERS_WRITE)
   @ApiOperation({ summary: 'Criar parceiro (com usuário opcional)' })
   create(@Body() dto: CreatePartnerDto, @CurrentUser() user: AuthUser) {
-    return this.partnersService.create(dto, user.id);
+    return this.partnersService.create(dto, user);
   }
 
   @Patch(':id')
   @RequirePermissions(PERMISSIONS.PARTNERS_WRITE)
   @ApiOperation({ summary: 'Atualizar parceiro' })
   update(@Param('id') id: string, @Body() dto: UpdatePartnerDto, @CurrentUser() user: AuthUser) {
-    return this.partnersService.update(id, dto, user.id);
+    return this.partnersService.update(id, dto, user);
   }
 
   @Post(':id/reset-password')
@@ -78,27 +78,27 @@ export class PartnersController {
     @Body() dto: ResetPartnerPasswordDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.partnersService.resetPassword(id, dto, user.id);
+    return this.partnersService.resetPassword(id, dto, user);
   }
 
   @Post(':id/suspend')
   @RequirePermissions(PERMISSIONS.PARTNERS_WRITE)
   @ApiOperation({ summary: 'Suspender parceiro' })
   suspend(@Param('id') id: string, @Body() dto: SuspendPartnerDto, @CurrentUser() user: AuthUser) {
-    return this.partnersService.suspend(id, dto, user.id);
+    return this.partnersService.suspend(id, dto, user);
   }
 
   @Post(':id/activate')
   @RequirePermissions(PERMISSIONS.PARTNERS_WRITE)
   @ApiOperation({ summary: 'Reativar parceiro' })
   activate(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.partnersService.activate(id, user.id);
+    return this.partnersService.activate(id, user);
   }
 
   @Delete(':id')
   @RequirePermissions(PERMISSIONS.PARTNERS_DELETE)
   @ApiOperation({ summary: 'Remover parceiro' })
   remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.partnersService.remove(id, user.id);
+    return this.partnersService.remove(id, user);
   }
 }

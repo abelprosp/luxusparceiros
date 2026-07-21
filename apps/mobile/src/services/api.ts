@@ -335,6 +335,7 @@ export interface UserProfile extends AuthUser {
   biometricEnabled?: boolean;
   theme?: string;
   notificationsEnabled?: boolean;
+  partner?: PartnerProfile;
 }
 
 export const clientsApi = {

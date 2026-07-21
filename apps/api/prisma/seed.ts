@@ -206,7 +206,7 @@ async function seedPartnerAndUsers(hashedPassword: string) {
       partnerId: partner.id,
       isActive: true,
     },
-    update: { partnerId: partner.id, password: hashedPassword },
+    update: { partnerId: partner.id },
   });
   console.log(`✓ Usuário parceiro: ${partnerUser.email}`);
 
@@ -343,7 +343,7 @@ async function main() {
       role: UserRole.ADMIN,
       isActive: true,
     },
-    update: { password: hashedPassword },
+    update: {},
   });
   console.log(`✓ Admin: ${admin.email}`);
 
@@ -358,7 +358,7 @@ async function main() {
       role: UserRole.ADMIN,
       isActive: true,
     },
-    update: { password: hashedPassword },
+    update: {},
   });
   console.log(`✓ Admin: ${adminLuxus.email}`);
 

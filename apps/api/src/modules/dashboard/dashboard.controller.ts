@@ -1,8 +1,9 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AuthUser, PERMISSIONS } from '@luxus/types';
+import { AuthUser, PERMISSIONS, UserRole } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
+import { Roles } from '@/common/decorators/roles.decorator';
 import { DashboardService } from './dashboard.service';
 import { DashboardFiltersDto } from './dto/dashboard-filters.dto';
 
@@ -20,9 +21,13 @@ export class DashboardController {
   }
 
   @Get('admin')
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.FINANCIAL)
   @ApiOperation({ summary: 'Métricas administrativas' })
-  getAdminMetrics(@Query() filters: DashboardFiltersDto) {
-    return this.dashboardService.getAdminMetrics(filters);
+  getAdminMetrics(@CurrentUser() user: AuthUser, @Query() filters: DashboardFiltersDto) {
+    return this.dashboardService.getAdminMetrics({
+      ...filters,
+      ...(user.partnerId && { partnerId: user.partnerId }),
+    });
   }
 
   @Get('partner')

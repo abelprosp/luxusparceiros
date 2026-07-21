@@ -1,11 +1,18 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
+import { IsOptional, IsUUID } from 'class-validator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
 import { PaginationDto } from '@/common/dto/pagination.dto';
 import { ClientsService } from './clients.service';
 import { CreateClientDto, UpdateClientDto } from './dto/client.dto';
+
+class ClientQueryDto extends PaginationDto {
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
+}
 
 @ApiTags('Clients')
 @ApiBearerAuth()
@@ -18,14 +25,13 @@ export class ClientsController {
   @ApiOperation({ summary: 'Listar clientes' })
   findAll(
     @CurrentUser() user: AuthUser,
-    @Query() pagination: PaginationDto,
-    @Query('partnerId') partnerId?: string,
+    @Query() query: ClientQueryDto,
   ) {
     return this.clientsService.findAll(user, {
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      search: pagination.search,
-      partnerId,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      search: query.search,
+      partnerId: query.partnerId,
     });
   }
 

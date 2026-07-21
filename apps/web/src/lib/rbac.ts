@@ -59,5 +59,5 @@ export function isAttendantUser(user: AuthUser | null): boolean {
 
 /** Parceiro mestre ou filial vinculada ao parceiro. */
 export function isPartnerScopedUser(user: AuthUser | null): boolean {
-  return isPartnerUser(user) || isAttendantUser(user);
+  return Boolean(user?.partnerId) || isPartnerUser(user) || isAttendantUser(user);
 }

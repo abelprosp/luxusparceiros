@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { FinancialType, Prisma } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -36,21 +36,26 @@ export class FinancialService {
     return { data, meta: { total, page: params.page, limit: params.limit, totalPages: Math.ceil(total / params.limit) } };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: AuthUser) {
     const record = await this.prisma.financialRecord.findUnique({ where: { id } });
     if (!record) throw new NotFoundException(MESSAGES.NOT_FOUND);
+    if (user.partnerId && record.partnerId !== user.partnerId) {
+      throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
     return record;
   }
 
-  async create(dto: CreateFinancialRecordDto, actorId?: string) {
+  async create(dto: CreateFinancialRecordDto, user: AuthUser) {
+    const partnerId = resolvePartnerId(user, dto.partnerId);
     const record = await this.prisma.financialRecord.create({
       data: {
         ...dto,
+        partnerId,
         date: dto.date ? new Date(dto.date) : new Date(),
       },
     });
     await this.auditService.log({
-      userId: actorId,
+      userId: user.id,
       action: 'CREATE',
       module: 'financial',
       entityId: record.id,
@@ -59,13 +64,14 @@ export class FinancialService {
     return record;
   }
 
-  async update(id: string, dto: UpdateFinancialRecordDto, actorId?: string) {
-    await this.findOne(id);
+  async update(id: string, dto: UpdateFinancialRecordDto, user: AuthUser) {
+    await this.findOne(id, user);
+    if (dto.partnerId) resolvePartnerId(user, dto.partnerId);
     const data: Prisma.FinancialRecordUpdateInput = { ...dto };
     if (dto.date) data.date = new Date(dto.date);
     const record = await this.prisma.financialRecord.update({ where: { id }, data });
     await this.auditService.log({
-      userId: actorId,
+      userId: user.id,
       action: 'UPDATE',
       module: 'financial',
       entityId: id,
@@ -74,11 +80,11 @@ export class FinancialService {
     return record;
   }
 
-  async remove(id: string, actorId?: string) {
-    await this.findOne(id);
+  async remove(id: string, user: AuthUser) {
+    await this.findOne(id, user);
     await this.prisma.financialRecord.delete({ where: { id } });
     await this.auditService.log({
-      userId: actorId,
+      userId: user.id,
       action: 'DELETE',
       module: 'financial',
       entityId: id,

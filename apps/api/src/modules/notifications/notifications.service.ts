@@ -4,6 +4,7 @@ import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { EventsGateway } from '@/gateway/events.gateway';
 import { MESSAGES } from '@/common/constants/messages';
+import { assertPartnerAccess } from '@/common/utils/partner-scope';
 import { CreateNotificationDto } from './dto/notification.dto';
 
 @Injectable()
@@ -46,7 +47,15 @@ export class NotificationsService {
     return notification;
   }
 
-  async create(dto: CreateNotificationDto) {
+  async create(dto: CreateNotificationDto, actor?: AuthUser) {
+    if (actor?.partnerId) {
+      const target = await this.prisma.user.findUnique({
+        where: { id: dto.userId },
+        select: { partnerId: true },
+      });
+      if (!target?.partnerId) throw new NotFoundException(MESSAGES.NOT_FOUND);
+      assertPartnerAccess(actor, target.partnerId);
+    }
     const notification = await this.prisma.notification.create({
       data: {
         userId: dto.userId,

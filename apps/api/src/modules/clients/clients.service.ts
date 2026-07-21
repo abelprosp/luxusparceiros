@@ -9,7 +9,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { MESSAGES } from '@/common/constants/messages';
 import { resolveBranchId } from '@/common/utils/branch-scope';
-import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
+import { assertPartnerAccess, resolvePartnerId } from '@/common/utils/partner-scope';
 import { CreateClientDto, UpdateClientDto } from './dto/client.dto';
 
 @Injectable()
@@ -92,8 +92,8 @@ export class ClientsService {
 
   async update(id: string, dto: UpdateClientDto, user: AuthUser) {
     const existing = await this.findOne(id, user);
-    if (dto.partnerId && !isAdminRole(user.role)) {
-      throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    if (dto.partnerId) {
+      resolvePartnerId(user, dto.partnerId);
     }
 
     const client = await this.prisma.client.update({

@@ -1,13 +1,16 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PartnerStatus, Prisma, UserRole } from '@prisma/client';
+import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { MESSAGES } from '@/common/constants/messages';
+import { assertPartnerAccess } from '@/common/utils/partner-scope';
 import {
   CreatePartnerDto,
   ResetPartnerPasswordDto,
@@ -35,9 +38,10 @@ export class PartnersService {
     private auditService: AuditService,
   ) {}
 
-  async findAll(params: { page: number; limit: number; search?: string; status?: PartnerStatus }) {
+  async findAll(user: AuthUser, params: { page: number; limit: number; search?: string; status?: PartnerStatus }) {
     const { page, limit, search, status } = params;
     const where: Prisma.PartnerWhereInput = {};
+    if (user.partnerId) where.id = user.partnerId;
     if (status) where.status = status;
     if (search) {
       where.OR = [
@@ -64,7 +68,7 @@ export class PartnersService {
     return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user?: AuthUser) {
     const partner = await this.prisma.partner.findUnique({
       where: { id },
       include: {
@@ -88,10 +92,14 @@ export class PartnersService {
       },
     });
     if (!partner) throw new NotFoundException(MESSAGES.NOT_FOUND);
+    if (user) assertPartnerAccess(user, partner.id);
     return partner;
   }
 
-  async create(dto: CreatePartnerDto, actorId?: string) {
+  async create(dto: CreatePartnerDto, actor: AuthUser) {
+    if (actor.partnerId) {
+      throw new ForbiddenException('Administradores de parceiro não podem criar outros parceiros');
+    }
     const exists = await this.prisma.partner.findUnique({ where: { document: dto.document } });
     if (exists) throw new ConflictException(MESSAGES.DOCUMENT_EXISTS);
 
@@ -129,7 +137,7 @@ export class PartnersService {
     });
 
     await this.auditService.log({
-      userId: actorId,
+      userId: actor.id,
       action: 'CREATE',
       module: 'partners',
       entityId: partner.id,
@@ -140,8 +148,8 @@ export class PartnersService {
     return this.findOne(partner.id);
   }
 
-  async update(id: string, dto: UpdatePartnerDto, actorId?: string) {
-    const existing = await this.findOne(id);
+  async update(id: string, dto: UpdatePartnerDto, actor: AuthUser) {
+    const existing = await this.findOne(id, actor);
     const { user: _user, ...partnerData } = dto;
     const locationChanged = (['address', 'city', 'state', 'zipCode'] as const).some(
       (field) => partnerData[field] !== undefined && partnerData[field] !== existing[field],
@@ -169,7 +177,7 @@ export class PartnersService {
       data: { ...partnerData, ...coordinateData },
     });
     await this.auditService.log({
-      userId: actorId,
+      userId: actor.id,
       action: 'UPDATE',
       module: 'partners',
       entityId: id,
@@ -227,8 +235,8 @@ export class PartnersService {
     }
   }
 
-  async resetPassword(id: string, dto: ResetPartnerPasswordDto, actorId?: string) {
-    const partner = await this.findOne(id);
+  async resetPassword(id: string, dto: ResetPartnerPasswordDto, actor: AuthUser) {
+    const partner = await this.findOne(id, actor);
     const user = partner.users.find((u) => u.role === UserRole.PARTNER);
     if (!user) throw new NotFoundException('Usuário parceiro não encontrado');
 
@@ -239,7 +247,7 @@ export class PartnersService {
     });
 
     await this.auditService.log({
-      userId: actorId,
+      userId: actor.id,
       action: 'UPDATE',
       module: 'partners',
       entityId: id,
@@ -250,8 +258,8 @@ export class PartnersService {
     return { message: 'Senha redefinida com sucesso' };
   }
 
-  async getPartnerPlans(partnerId: string) {
-    await this.findOne(partnerId);
+  async getPartnerPlans(partnerId: string, user: AuthUser) {
+    await this.findOne(partnerId, user);
     return this.prisma.partnerPlan.findMany({
       where: { partnerId },
       include: {
@@ -263,8 +271,8 @@ export class PartnersService {
     });
   }
 
-  async setPartnerPlans(partnerId: string, dto: SetPartnerPlansDto, actorId?: string) {
-    await this.findOne(partnerId);
+  async setPartnerPlans(partnerId: string, dto: SetPartnerPlansDto, actor: AuthUser) {
+    await this.findOne(partnerId, actor);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.partnerPlan.deleteMany({ where: { partnerId } });
@@ -282,7 +290,7 @@ export class PartnersService {
     });
 
     await this.auditService.log({
-      userId: actorId,
+      userId: actor.id,
       action: 'UPDATE',
       module: 'partners',
       entityId: partnerId,
@@ -290,11 +298,11 @@ export class PartnersService {
       newData: { plans: dto.plans } as unknown as Prisma.InputJsonValue,
     });
 
-    return this.getPartnerPlans(partnerId);
+    return this.getPartnerPlans(partnerId, actor);
   }
 
-  async suspend(id: string, dto: SuspendPartnerDto, actorId?: string) {
-    await this.findOne(id);
+  async suspend(id: string, dto: SuspendPartnerDto, actor: AuthUser) {
+    await this.findOne(id, actor);
     const partner = await this.prisma.partner.update({
       where: { id },
       data: {
@@ -304,7 +312,7 @@ export class PartnersService {
       },
     });
     await this.auditService.log({
-      userId: actorId,
+      userId: actor.id,
       action: 'UPDATE',
       module: 'partners',
       entityId: id,
@@ -314,8 +322,8 @@ export class PartnersService {
     return partner;
   }
 
-  async activate(id: string, actorId?: string) {
-    await this.findOne(id);
+  async activate(id: string, actor: AuthUser) {
+    await this.findOne(id, actor);
     const partner = await this.prisma.partner.update({
       where: { id },
       data: {
@@ -325,7 +333,7 @@ export class PartnersService {
       },
     });
     await this.auditService.log({
-      userId: actorId,
+      userId: actor.id,
       action: 'UPDATE',
       module: 'partners',
       entityId: id,
@@ -335,11 +343,11 @@ export class PartnersService {
     return partner;
   }
 
-  async remove(id: string, actorId?: string) {
-    await this.findOne(id);
+  async remove(id: string, actor: AuthUser) {
+    await this.findOne(id, actor);
     await this.prisma.partner.delete({ where: { id } });
     await this.auditService.log({
-      userId: actorId,
+      userId: actor.id,
       action: 'DELETE',
       module: 'partners',
       entityId: id,

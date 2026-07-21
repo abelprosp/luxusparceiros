@@ -24,7 +24,7 @@ import {
   UpdateSaleDto,
   UpdateSaleStatusDto,
 } from './dto/sale.dto';
-import { DEFAULT_SALE_REQUIRED_DOCUMENTS } from './sale-documents.constants';
+import { getRequiredDocumentsForSale } from './sale-documents.constants';
 
 const STATUS_TRANSITIONS: Record<SaleStatus, SaleStatus[]> = {
   [SaleStatus.IN_ANALYSIS]: [
@@ -237,7 +237,7 @@ export class SalesService {
     const plan = await this.prisma.plan.findUnique({ where: { id: dto.planId } });
     if (!plan) throw new BadRequestException('Plano inválido');
 
-    if (user.role === UserRole.PARTNER) {
+    if (user.partnerId) {
       await this.plansService.ensurePartnerPlanLinks(partnerId);
       const linked = await this.prisma.partnerPlan.findFirst({
         where: { partnerId, planId: dto.planId, isActive: true },
@@ -300,7 +300,7 @@ export class SalesService {
         donorOperator: dto.donorOperator,
         newNumber: dto.newNumber,
         notes: dto.notes,
-        requiredDocuments: DEFAULT_SALE_REQUIRED_DOCUMENTS as Prisma.InputJsonValue,
+        requiredDocuments: getRequiredDocumentsForSale(dto.isPortability ?? false) as Prisma.InputJsonValue,
       },
       include: {
         client: { select: { id: true, name: true, phone: true, document: true, rg: true, email: true } },
@@ -409,6 +409,18 @@ export class SalesService {
     const allowed = STATUS_TRANSITIONS[sale.status] ?? [];
     if (!allowed.includes(dto.status)) {
       throw new BadRequestException(MESSAGES.SALE_STATUS_INVALID);
+    }
+    if (dto.status === SaleStatus.APPROVED || dto.status === SaleStatus.ACTIVATED) {
+      const requiredDocuments = (sale.requiredDocuments ?? []) as Array<{
+        label: string;
+        fulfilled: boolean;
+      }>;
+      const pendingDocuments = requiredDocuments.filter((document) => !document.fulfilled);
+      if (pendingDocuments.length > 0) {
+        throw new BadRequestException(
+          `Documentos pendentes: ${pendingDocuments.map((document) => document.label).join(', ')}`,
+        );
+      }
     }
 
     const data: Prisma.SaleUpdateInput = { status: dto.status };
