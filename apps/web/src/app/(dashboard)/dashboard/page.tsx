@@ -11,8 +11,9 @@ import {
   Megaphone,
   Filter,
   X,
+  ChevronRight,
 } from 'lucide-react';
-import type { DashboardAdminMetrics } from '@luxus/types';
+import type { DashboardAdminMetrics, DashboardDetails } from '@luxus/types';
 import { formatCurrency } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
@@ -33,6 +34,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { DashboardExportButton } from '@/components/dashboard/dashboard-export-button';
+import { DashboardDetailsDialog } from '@/components/dashboard/dashboard-details-dialog';
 
 interface PartnerOption {
   id: string;
@@ -74,17 +77,26 @@ function BentoPanel({
   icon: Icon,
   children,
   className,
+  onDetails,
 }: {
   title: string;
   icon?: React.ComponentType<{ className?: string }>;
   children: React.ReactNode;
   className?: string;
+  onDetails?: () => void;
 }) {
   return (
     <div className={cn('bento-card p-5 sm:p-6', className)}>
-      <div className="mb-5 flex items-center gap-2">
-        {Icon && <Icon className="h-5 w-5 text-primary" />}
-        <h3 className="text-base font-semibold">{title}</h3>
+      <div className="mb-5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {Icon && <Icon className="h-5 w-5 text-primary" />}
+          <h3 className="text-base font-semibold">{title}</h3>
+        </div>
+        {onDetails && (
+          <Button variant="ghost" size="sm" onClick={onDetails}>
+            Ver detalhes <ChevronRight className="h-4 w-4" />
+          </Button>
+        )}
       </div>
       {children}
     </div>
@@ -103,6 +115,12 @@ export default function DashboardPage() {
   const [partners, setPartners] = useState<PartnerOption[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
   const [operators, setOperators] = useState<OperatorOption[]>([]);
+  const [details, setDetails] = useState<DashboardDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailSection, setDetailSection] = useState<
+    keyof Pick<DashboardDetails, 'sales' | 'partners' | 'lines' | 'commissions' | 'campaigns'> | null
+  >(null);
+  const [detailTitle, setDetailTitle] = useState('Detalhes');
 
   const hasFilters =
     partnerId !== 'all' ||
@@ -149,6 +167,38 @@ export default function DashboardPage() {
     loadMetrics();
   }, [isPartnerScoped, loadMetrics]);
 
+  useEffect(() => {
+    setDetails(null);
+  }, [partnerId, state, campaignId, operatorId]);
+
+  const loadDetails = useCallback(async () => {
+    if (details) return details;
+    setDetailsLoading(true);
+    try {
+      const result = await api<DashboardDetails>('/dashboard/details', {
+        params: {
+          partnerId: partnerId !== 'all' ? partnerId : undefined,
+          state: state !== 'all' ? state : undefined,
+          campaignId: campaignId !== 'all' ? campaignId : undefined,
+          operatorId: operatorId !== 'all' ? operatorId : undefined,
+        },
+      });
+      setDetails(result);
+      return result;
+    } finally {
+      setDetailsLoading(false);
+    }
+  }, [details, partnerId, state, campaignId, operatorId]);
+
+  const openDetails = (
+    section: keyof Pick<DashboardDetails, 'sales' | 'partners' | 'lines' | 'commissions' | 'campaigns'>,
+    title: string,
+  ) => {
+    setDetailSection(section);
+    setDetailTitle(title);
+    void loadDetails().catch(() => {});
+  };
+
   const clearFilters = () => {
     setPartnerId('all');
     setState('all');
@@ -175,9 +225,12 @@ export default function DashboardPage() {
       description="Visão geral do ecossistema Luxus Parceiros"
     >
       <div className="bento-card mb-6 p-4 sm:p-5">
-        <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-          <Filter className="h-4 w-4" />
-          Filtros
+        <div className="mb-3 flex items-center justify-between gap-2 text-sm font-medium text-muted-foreground">
+          <span className="flex items-center gap-2">
+            <Filter className="h-4 w-4" />
+            Filtros
+          </span>
+          <DashboardExportButton loadDetails={loadDetails} />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap">
           <Select value={partnerId} onValueChange={setPartnerId}>
@@ -259,34 +312,47 @@ export default function DashboardPage() {
               value={data.activePartners}
               description={`${data.totalPartners} total`}
               icon={Users}
+              onClick={() => openDetails('partners', 'Parceiros do indicador')}
             />
             <MetricsCard
               title="Linhas Disponíveis"
               value={data.availableLines}
               description={`${data.soldLines} vendidas`}
               icon={Smartphone}
+              onClick={() => openDetails('lines', 'Linhas do indicador')}
             />
             <MetricsCard
               title="Receita"
               value={formatCurrency(data.revenue)}
               icon={TrendingUp}
               variant="accent"
+              onClick={() => openDetails('sales', 'Vendas realizadas no mês')}
             />
             <MetricsCard
               title="Comissões"
               value={formatCurrency(data.commissions)}
               icon={DollarSign}
+              onClick={() => openDetails('commissions', 'Comissões do mês')}
             />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-12">
-            <SalesChart
-              data={data.salesChart}
-              title="Vendas nos últimos 30 dias"
-              className="xl:col-span-8"
-            />
+            <div
+              className="cursor-pointer xl:col-span-8"
+              role="button"
+              tabIndex={0}
+              onClick={() => openDetails('sales', 'Vendas realizadas')}
+              onKeyDown={(event) => event.key === 'Enter' && openDetails('sales', 'Vendas realizadas')}
+            >
+              <SalesChart data={data.salesChart} title="Vendas nos últimos 30 dias" />
+            </div>
 
-            <BentoPanel title="Ranking de Parceiros" icon={Trophy} className="xl:col-span-4">
+            <BentoPanel
+              title="Ranking de Parceiros"
+              icon={Trophy}
+              className="xl:col-span-4"
+              onDetails={() => openDetails('sales', 'Vendas do ranking')}
+            >
               <div className="space-y-3">
                 {data.ranking.length > 0 ? (
                   data.ranking.slice(0, 5).map((item, index) => (
@@ -316,7 +382,12 @@ export default function DashboardPage() {
 
           <div className="grid gap-4 xl:grid-cols-12">
             {(data.campaignPerformance?.length ?? 0) > 0 && (
-              <BentoPanel title="Performance por Campanha" icon={Megaphone} className="xl:col-span-4">
+              <BentoPanel
+                title="Performance por Campanha"
+                icon={Megaphone}
+                className="xl:col-span-4"
+                onDetails={() => openDetails('campaigns', 'Performance por campanha')}
+              >
                 <div className="space-y-3">
                   {data.campaignPerformance!.map((c) => (
                     <div
@@ -342,12 +413,20 @@ export default function DashboardPage() {
               className={cn(
                 (data.campaignPerformance?.length ?? 0) > 0 ? 'xl:col-span-8' : 'xl:col-span-12',
               )}
+              onDetails={() => openDetails('partners', 'Parceiros no Brasil')}
             >
               <BrazilPartnersMap partners={data.partnersInBrazil} />
             </BentoPanel>
           </div>
         </div>
       )}
+      <DashboardDetailsDialog
+        open={detailSection != null}
+        onOpenChange={(open) => !open && setDetailSection(null)}
+        title={detailTitle}
+        rows={detailSection && details ? details[detailSection] : []}
+        loading={detailsLoading}
+      />
     </DashboardLayout>
   );
 }

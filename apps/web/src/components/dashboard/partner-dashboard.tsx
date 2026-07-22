@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ShoppingCart,
   Smartphone,
@@ -10,8 +10,9 @@ import {
   Wallet,
   Package,
   Radio,
+  ChevronRight,
 } from 'lucide-react';
-import type { DashboardPartnerMetrics } from '@luxus/types';
+import type { DashboardDetails, DashboardPartnerMetrics } from '@luxus/types';
 import { formatCurrency } from '@luxus/utils';
 import { api } from '@/lib/api';
 import { MetricsCard } from '@/components/charts/metrics-card';
@@ -19,6 +20,9 @@ import { SalesChart } from '@/components/charts/sales-chart';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { DashboardExportButton } from '@/components/dashboard/dashboard-export-button';
+import { DashboardDetailsDialog } from '@/components/dashboard/dashboard-details-dialog';
 
 const emptyMetrics: DashboardPartnerMetrics = {
   salesToday: 0,
@@ -41,17 +45,26 @@ function BentoPanel({
   icon: Icon,
   children,
   className,
+  onDetails,
 }: {
   title: string;
   icon?: React.ComponentType<{ className?: string }>;
   children: React.ReactNode;
   className?: string;
+  onDetails?: () => void;
 }) {
   return (
     <div className={cn('bento-card p-5 sm:p-6', className)}>
-      <div className="mb-5 flex items-center gap-2">
-        {Icon && <Icon className="h-5 w-5 text-primary" />}
-        <h3 className="text-base font-semibold">{title}</h3>
+      <div className="mb-5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {Icon && <Icon className="h-5 w-5 text-primary" />}
+          <h3 className="text-base font-semibold">{title}</h3>
+        </div>
+        {onDetails && (
+          <Button variant="ghost" size="sm" onClick={onDetails}>
+            Ver detalhes <ChevronRight className="h-4 w-4" />
+          </Button>
+        )}
       </div>
       {children}
     </div>
@@ -61,6 +74,10 @@ function BentoPanel({
 export function PartnerDashboard() {
   const [metrics, setMetrics] = useState<DashboardPartnerMetrics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [details, setDetails] = useState<DashboardDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailSection, setDetailSection] = useState<'sales' | 'lines' | 'commissions' | null>(null);
+  const [detailTitle, setDetailTitle] = useState('Detalhes');
 
   useEffect(() => {
     api<DashboardPartnerMetrics>('/dashboard/partner')
@@ -68,6 +85,24 @@ export function PartnerDashboard() {
       .catch(() => setMetrics(emptyMetrics))
       .finally(() => setLoading(false));
   }, []);
+
+  const loadDetails = useCallback(async () => {
+    if (details) return details;
+    setDetailsLoading(true);
+    try {
+      const result = await api<DashboardDetails>('/dashboard/details');
+      setDetails(result);
+      return result;
+    } finally {
+      setDetailsLoading(false);
+    }
+  }, [details]);
+
+  const openDetails = (section: 'sales' | 'lines' | 'commissions', title: string) => {
+    setDetailSection(section);
+    setDetailTitle(title);
+    void loadDetails().catch(() => {});
+  };
 
   if (loading) {
     return (
@@ -83,34 +118,41 @@ export function PartnerDashboard() {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <DashboardExportButton loadDetails={loadDetails} />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricsCard
           title="Vendas Hoje"
           value={data.salesToday}
           description={`${data.salesMonth} no mês`}
           icon={ShoppingCart}
+          onClick={() => openDetails('sales', 'Vendas realizadas')}
         />
         <MetricsCard
           title="Linhas Ativas"
           value={data.activeLines}
           description={`${data.cancelledLines} canceladas`}
           icon={Smartphone}
+          onClick={() => openDetails('lines', 'Linhas do parceiro')}
         />
         <MetricsCard
           title="Comissão Prevista"
           value={formatCurrency(data.forecastCommission)}
           icon={DollarSign}
           variant="accent"
+          onClick={() => openDetails('commissions', 'Comissões previstas')}
         />
         <MetricsCard
           title="Comissão Paga"
           value={formatCurrency(data.paidCommission)}
           icon={Wallet}
+          onClick={() => openDetails('commissions', 'Comissões pagas')}
         />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
-        <BentoPanel title="Meta do Mês" icon={Target} className="md:col-span-1 xl:col-span-5">
+        <BentoPanel title="Meta do Mês" icon={Target} className="md:col-span-1 xl:col-span-5" onDetails={() => openDetails('sales', 'Vendas da meta mensal')}>
           <div className="flex items-end justify-between">
             <div>
               <p className="text-3xl font-bold">
@@ -133,7 +175,7 @@ export function PartnerDashboard() {
           </div>
         </BentoPanel>
 
-        <BentoPanel title="Ranking" icon={Trophy} className="md:col-span-1 xl:col-span-3">
+        <BentoPanel title="Ranking" icon={Trophy} className="md:col-span-1 xl:col-span-3" onDetails={() => openDetails('sales', 'Vendas consideradas no ranking')}>
           <p className="text-4xl font-bold">
             {data.ranking > 0 ? `#${data.ranking}` : '—'}
           </p>
@@ -142,15 +184,19 @@ export function PartnerDashboard() {
           </p>
         </BentoPanel>
 
-        <SalesChart
-          data={data.salesChart}
-          title="Vendas nos últimos 30 dias"
-          className="md:col-span-2 xl:col-span-4"
-        />
+        <div
+          className="cursor-pointer md:col-span-2 xl:col-span-4"
+          role="button"
+          tabIndex={0}
+          onClick={() => openDetails('sales', 'Vendas realizadas')}
+          onKeyDown={(event) => event.key === 'Enter' && openDetails('sales', 'Vendas realizadas')}
+        >
+          <SalesChart data={data.salesChart} title="Vendas nos últimos 30 dias" />
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <BentoPanel title="Top Planos" icon={Package}>
+        <BentoPanel title="Top Planos" icon={Package} onDetails={() => openDetails('sales', 'Vendas por plano')}>
           <div className="space-y-3">
             {data.topProducts.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
@@ -177,7 +223,7 @@ export function PartnerDashboard() {
           </div>
         </BentoPanel>
 
-        <BentoPanel title="Top Operadoras" icon={Radio}>
+        <BentoPanel title="Top Operadoras" icon={Radio} onDetails={() => openDetails('sales', 'Vendas por operadora')}>
           <div className="space-y-3">
             {data.topOperators.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
@@ -204,6 +250,13 @@ export function PartnerDashboard() {
           </div>
         </BentoPanel>
       </div>
+      <DashboardDetailsDialog
+        open={detailSection != null}
+        onOpenChange={(open) => !open && setDetailSection(null)}
+        title={detailTitle}
+        rows={detailSection && details ? details[detailSection] : []}
+        loading={detailsLoading}
+      />
     </div>
   );
 }

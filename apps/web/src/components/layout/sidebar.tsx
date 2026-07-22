@@ -1,30 +1,35 @@
 'use client';
 
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Settings, LogOut } from 'lucide-react';
+import { ChevronDown, Settings, LogOut } from 'lucide-react';
 import { LuxusLogo } from '@/components/brand/luxus-logo';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/hooks/useAuth';
-import { getInitials } from '@luxus/utils';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getVisibleNavItems } from '@/components/layout/nav-config';
+import { UserAvatar } from '@/components/profile/user-avatar';
+
+const SIDEBAR_SCROLL_KEY = 'luxus:sidebar-scroll-position';
 
 function NavIcon({
   href,
   label,
   icon: Icon,
   isActive,
+  onNavigate,
 }: {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   isActive: boolean;
+  onNavigate: () => void;
 }) {
   return (
     <Link
       href={href}
+      onClick={onNavigate}
       className={cn(
         'flex h-11 w-11 items-center justify-center rounded-2xl transition-all duration-200',
         isActive
@@ -43,12 +48,65 @@ export function Sidebar() {
   const { user, logout } = useAuth();
   const router = useRouter();
   const visibleItems = getVisibleNavItems(user);
+  const scrollRootRef = useRef<HTMLDivElement>(null);
+  const [hasMoreItems, setHasMoreItems] = useState(false);
   const isPerfilActive = pathname === '/perfil';
   const isConfigActive = pathname === '/configuracoes';
 
   const handleLogout = async () => {
     await logout();
     router.push('/login');
+  };
+
+  const updateScrollHint = useCallback(() => {
+    const viewport = scrollRootRef.current?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    );
+    if (!viewport) return;
+    setHasMoreItems(viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 4);
+  }, []);
+
+  const preserveScrollPosition = useCallback(() => {
+    const viewport = scrollRootRef.current?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    );
+    if (viewport) {
+      sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(viewport.scrollTop));
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    const viewport = scrollRootRef.current?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    );
+    if (!viewport) return;
+
+    const savedPosition = Number(sessionStorage.getItem(SIDEBAR_SCROLL_KEY) ?? 0);
+    if (Number.isFinite(savedPosition)) {
+      viewport.scrollTop = savedPosition;
+    }
+    updateScrollHint();
+  }, [pathname, updateScrollHint]);
+
+  useEffect(() => {
+    const viewport = scrollRootRef.current?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    );
+    if (!viewport) return;
+    updateScrollHint();
+    viewport.addEventListener('scroll', updateScrollHint);
+    window.addEventListener('resize', updateScrollHint);
+    return () => {
+      viewport.removeEventListener('scroll', updateScrollHint);
+      window.removeEventListener('resize', updateScrollHint);
+    };
+  }, [updateScrollHint, visibleItems.length]);
+
+  const scrollToMoreItems = () => {
+    const viewport = scrollRootRef.current?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    );
+    viewport?.scrollBy({ top: 180, behavior: 'smooth' });
   };
 
   return (
@@ -61,22 +119,36 @@ export function Sidebar() {
         <LuxusLogo variant="full" forceDark className="h-9 w-[72px] max-w-[72px]" />
       </Link>
 
-      <ScrollArea className="w-full flex-1">
-        <nav className="flex flex-col items-center gap-2 px-3">
-          {visibleItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <NavIcon
-                key={item.href}
-                href={item.href}
-                label={item.label}
-                icon={item.icon}
-                isActive={isActive}
-              />
-            );
-          })}
-        </nav>
-      </ScrollArea>
+      <div ref={scrollRootRef} className="relative min-h-0 w-full flex-1">
+        <ScrollArea className="h-full w-full">
+          <nav className="flex flex-col items-center gap-2 px-3 pb-14">
+            {visibleItems.map((item) => {
+              const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <NavIcon
+                  key={item.href}
+                  href={item.href}
+                  label={item.label}
+                  icon={item.icon}
+                  isActive={isActive}
+                  onNavigate={preserveScrollPosition}
+                />
+              );
+            })}
+          </nav>
+        </ScrollArea>
+        {hasMoreItems && (
+          <button
+            type="button"
+            onClick={scrollToMoreItems}
+            className="absolute inset-x-2 bottom-0 flex flex-col items-center rounded-xl bg-[#111827]/95 py-1.5 text-[10px] font-medium text-white/80 shadow-[0_-10px_18px_#111827] transition hover:text-white"
+            aria-label="Mostrar mais opções do menu"
+          >
+            Mais opções
+            <ChevronDown className="h-3.5 w-3.5 animate-bounce" />
+          </button>
+        )}
+      </div>
 
       <div className="mt-4 flex flex-col items-center gap-3">
         <Link
@@ -107,11 +179,12 @@ export function Sidebar() {
             isPerfilActive && 'ring-2 ring-primary ring-offset-2 ring-offset-[#111827]',
           )}
         >
-          <Avatar className="h-10 w-10 border-2 border-white/10">
-            <AvatarFallback className="bg-primary/20 text-xs font-semibold text-primary">
-              {user ? getInitials(user.name) : 'LP'}
-            </AvatarFallback>
-          </Avatar>
+          <UserAvatar
+            name={user?.name}
+            avatar={user?.avatar}
+            className="h-10 w-10 border-2 border-white/10"
+            fallbackClassName="bg-primary/20 text-xs text-primary"
+          />
         </Link>
       </div>
     </aside>

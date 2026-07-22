@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Lock } from 'lucide-react';
-import { getInitials } from '@luxus/utils';
+import { Camera, Lock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -10,15 +9,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/components/ui/toaster';
+import { UserAvatar } from '@/components/profile/user-avatar';
+import { AvatarEditorDialog } from '@/components/profile/avatar-editor-dialog';
 
 export default function PerfilPage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
 
   const handleChangePassword = async () => {
     if (passwords.new !== passwords.confirm) {
@@ -46,13 +47,31 @@ export default function PerfilPage() {
       <div className="mx-auto max-w-2xl space-y-6">
         <Card>
           <CardContent className="flex flex-col items-center gap-3 pt-6">
-            <Avatar className="h-20 w-20">
-              <AvatarFallback className="text-xl">{user ? getInitials(user.name) : 'P'}</AvatarFallback>
-            </Avatar>
+            <div className="relative">
+              <UserAvatar
+                name={user?.name}
+                avatar={user?.avatar}
+                className="h-24 w-24 border-4 border-background shadow-md ring-1 ring-border"
+                fallbackClassName="text-xl"
+              />
+              <Button
+                type="button"
+                size="icon"
+                className="absolute -bottom-1 -right-1 h-9 w-9 rounded-full shadow-md"
+                onClick={() => setAvatarEditorOpen(true)}
+                aria-label="Alterar foto de perfil"
+                title="Alterar foto de perfil"
+              >
+                <Camera className="h-4 w-4" />
+              </Button>
+            </div>
             <div className="text-center">
               <p className="text-lg font-semibold">{user?.name}</p>
               <p className="text-sm text-muted-foreground">{user?.email}</p>
             </div>
+            <Button variant="ghost" size="sm" onClick={() => setAvatarEditorOpen(true)}>
+              Alterar foto
+            </Button>
           </CardContent>
         </Card>
 
@@ -91,6 +110,11 @@ export default function PerfilPage() {
           </CardContent>
         </Card>
       </div>
+      <AvatarEditorDialog
+        open={avatarEditorOpen}
+        onOpenChange={setAvatarEditorOpen}
+        onSaved={refreshUser}
+      />
     </DashboardLayout>
   );
 }

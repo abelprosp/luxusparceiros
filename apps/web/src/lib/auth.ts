@@ -7,6 +7,7 @@ export interface StoredUser {
   id: string;
   email: string;
   name: string;
+  avatar?: string;
   role: string;
   partnerId?: string;
   partnerName?: string;

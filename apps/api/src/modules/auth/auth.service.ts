@@ -230,6 +230,7 @@ export class AuthService {
       id: string;
       email: string;
       name: string;
+      avatar: string | null;
       role: string;
       partnerId: string | null;
       branchId: string | null;
@@ -242,6 +243,7 @@ export class AuthService {
       id: user.id,
       email: user.email,
       name: user.name,
+      avatar: user.avatar ?? undefined,
       role: user.role as AuthUser['role'],
       partnerId: user.partnerId ?? undefined,
       partnerName: user.partner?.name,

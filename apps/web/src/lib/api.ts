@@ -237,6 +237,29 @@ export async function uploadFile(
   return handleResponse<unknown>(res);
 }
 
+export async function uploadAvatar(file: File): Promise<{ avatar: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const token = await getValidToken();
+  const res = await fetch(`${API_URL}/uploads/avatar`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(
+      (data as ApiResponse)?.error || (data as ApiResponse)?.message || 'Falha no envio da foto',
+      res.status,
+      data,
+    );
+  }
+
+  return handleResponse<{ avatar: string }>(res);
+}
+
 export async function downloadAuthenticatedFile(path: string, filename: string): Promise<void> {
   const token = await getValidToken();
   const res = await fetch(`${API_URL}${path}`, {

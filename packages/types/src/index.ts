@@ -208,6 +208,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  avatar?: string;
   role: UserRole;
   partnerId?: string;
   partnerName?: string;
@@ -279,6 +280,25 @@ export interface DashboardAdminMetrics {
   partnersInBrazil: PartnerMapLocation[];
   ranking: { partnerId: string; partnerName: string; sales: number }[];
   campaignPerformance?: { campaignId: string; title: string; salesCount: number; revenue: number }[];
+}
+
+export interface DashboardDetailRow {
+  id: string;
+  primary: string;
+  secondary?: string;
+  status?: string;
+  value?: number;
+  date?: string;
+}
+
+export interface DashboardDetails {
+  generatedAt: string;
+  scopeLabel: string;
+  sales: DashboardDetailRow[];
+  partners: DashboardDetailRow[];
+  lines: DashboardDetailRow[];
+  commissions: DashboardDetailRow[];
+  campaigns: DashboardDetailRow[];
 }
 
 export interface SaleRequiredDocument {

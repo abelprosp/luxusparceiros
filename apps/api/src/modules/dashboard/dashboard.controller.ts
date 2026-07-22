@@ -38,4 +38,20 @@ export class DashboardController {
   ) {
     return this.dashboardService.getPartnerMetrics(user, branchId);
   }
+
+  @Get('details')
+  @ApiOperation({ summary: 'Detalhes e dados exportáveis do dashboard' })
+  getDetails(
+    @CurrentUser() user: AuthUser,
+    @Query() filters: DashboardFiltersDto,
+  ) {
+    return this.dashboardService.getDetails(
+      user,
+      {
+        ...filters,
+        ...(user.partnerId && { partnerId: user.partnerId }),
+      },
+      filters.branchId,
+    );
+  }
 }

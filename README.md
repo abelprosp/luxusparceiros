@@ -1,99 +1,215 @@
 # Luxus Parceiros
 
-Ecossistema SaaS enterprise para gestão de parceiros da **Luxus Telefonia**.
+Plataforma para gestão da operação comercial da Luxus Telefonia: parceiros, filiais, usuários, planos, estoque, clientes, vendas, portabilidade, comissões, campanhas, atendimento, financeiro e auditoria.
+
+O repositório é um monorepo TypeScript preparado para desenvolvimento local e produção com Docker, além de deploy separado da API e do frontend na Railway.
+
+## Funcionalidades
+
+### Operação comercial
+
+- Cadastro de parceiros, matriz, filiais e usuários vinculados.
+- Isolamento de dados por parceiro e por filial aplicado na API.
+- Planos e operadoras compartilhados entre matriz e filiais do mesmo parceiro.
+- Estoque de linhas e chips, movimentações, transferências e leitura de ICCID.
+- Clientes e vendas com documentos, portabilidade e histórico de situação.
+- Venda rejeitada permanece consultável, mas não entra nos resultados realizados.
+- Somente vendas `APPROVED` e `ACTIVATED` contam nos indicadores, rankings e comissões realizadas.
+
+### Gestão e acompanhamento
+
+- Dashboard administrativo e dashboard do parceiro.
+- Cards, gráficos e rankings com abertura dos registros que formam cada indicador.
+- Filtros por período, parceiro, filial, campanha, operadora e região, conforme permissão.
+- Exportação protegida do dashboard em PDF, CSV compatível com Excel e TXT.
+- Ordenação crescente e decrescente ao clicar nos cabeçalhos das tabelas.
+- Campanhas, metas, comissões, financeiro, solicitações e chamados em Kanban.
+- Notificações e atualizações em tempo real com Socket.IO.
+- Auditoria de ações relevantes.
+
+### Experiência e conta
+
+- Temas claro, escuro e sistema.
+- Menu responsivo para desktop e celular.
+- Menu lateral com indicação de itens abaixo da área visível e preservação do scroll ao navegar.
+- Foto de perfil com upload, enquadramento, zoom e posicionamento.
+- Alteração de senha e preferências do usuário.
 
 ## Arquitetura
 
-```
-luxuspartner/
+```text
+luxusparceiros/
 ├── apps/
-│   ├── api/          # NestJS + Prisma + Socket.io
-│   ├── web/          # Next.js 14 Admin Panel
-│   └── mobile/       # Expo React Native
+│   ├── api/                 # NestJS, Prisma, PostgreSQL, Redis e Socket.IO
+│   ├── web/                 # Next.js 14, Tailwind CSS, Radix UI e Recharts
+│   └── mobile/              # Expo/React Native
 ├── packages/
-│   ├── types/        # Tipos TypeScript compartilhados
-│   ├── utils/        # Utilitários compartilhados
-│   └── ui/           # Componentes UI compartilhados
-├── docker/           # Dockerfiles e NGINX
-└── docker-compose.yml
+│   ├── types/               # Tipos, enums e contratos compartilhados
+│   ├── utils/               # Funções utilitárias compartilhadas
+│   └── ui/                  # Base de componentes compartilháveis
+├── docker/                  # Dockerfiles, NGINX e scripts de inicialização
+├── docs/                    # Relatórios e documentação complementar
+├── docker-compose.yml       # Ambiente local completo
+├── railway.toml             # Serviço da API na Railway
+└── railway.web.toml         # Serviço web na Railway
 ```
 
-## Stack
+| Camada | Tecnologias principais |
+| --- | --- |
+| API | NestJS, Prisma, PostgreSQL 16, Redis 7, JWT, Socket.IO |
+| Web | Next.js 14, React 18, Tailwind CSS, Radix UI, Recharts, jsPDF |
+| Mobile | Expo, Expo Router, Secure Store e biometria |
+| Infraestrutura | Docker Compose, NGINX e Railway |
 
-| Camada | Tecnologias |
-|--------|-------------|
-| API | NestJS, Prisma, PostgreSQL, Redis, Socket.io, JWT |
-| Web | Next.js 14, TailwindCSS, Shadcn/UI, Recharts |
-| Mobile | Expo SDK 52, Expo Router, Secure Store, Biometria |
-| Infra | Docker, NGINX, PostgreSQL 16, Redis 7 |
+## Execução recomendada com Docker
 
-## Pré-requisitos
+### Requisitos
 
-- Node.js 20+
-- pnpm 9+
-- Docker & Docker Compose
+- Docker Desktop com o mecanismo de contêineres Linux em execução.
+- Git.
+- Portas `80`, `3000`, `3001`, `5432` e `6379` livres.
 
-## Início Rápido
+Não é necessário instalar Node.js, PostgreSQL ou Redis no computador para executar o ambiente Docker.
 
-### 1. Infraestrutura
+### Primeira execução
 
-```bash
-docker compose up -d postgres redis
+1. Copie as variáveis de exemplo:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+2. Troque `JWT_SECRET`, `JWT_REFRESH_SECRET` e a senha do PostgreSQL no `.env`.
+
+3. Construa e inicie o ambiente:
+
+   ```powershell
+   docker compose up -d --build
+   ```
+
+4. Confira a saúde dos serviços:
+
+   ```powershell
+   docker compose ps
+   ```
+
+### Endereços locais
+
+| Serviço | Endereço |
+| --- | --- |
+| Aplicação via NGINX | http://localhost |
+| Web direto | http://localhost:3000 |
+| API direta | http://localhost:3001/api |
+| Swagger | http://localhost:3001/api/docs |
+| Healthcheck | http://localhost:3001/api/health |
+
+### Comandos Docker úteis
+
+```powershell
+# Acompanhar os logs
+docker compose logs -f api web
+
+# Reconstruir após uma alteração
+docker compose up -d --build api web
+
+# Parar sem apagar banco ou uploads
+docker compose down
+
+# Ver os serviços e healthchecks
+docker compose ps
 ```
 
-### 2. Variáveis de Ambiente
+Os dados do PostgreSQL e os uploads usam volumes persistentes. Não execute `docker compose down -v` sem ter certeza, pois essa opção remove os volumes locais.
 
-```bash
-cp .env.example .env
-cp .env.example apps/api/.env
-```
+## Credenciais locais de demonstração
 
-### 3. Instalação
+Disponíveis quando `RUN_DB_SEED=true`:
 
-```bash
+| Perfil | E-mail | Senha inicial |
+| --- | --- | --- |
+| Administrador | `admin@luxus.com.br` | `Luxus@2024` |
+| Administrador alternativo | `admin@luxusparceiros.com` | `Luxus@2024` |
+| Parceiro | `parceiro@demotelecom.com.br` | `Luxus@2024` |
+
+Essas credenciais são somente para ambiente local. Em produção, mantenha `RUN_DB_SEED=false`, use senhas próprias e segredos fortes.
+
+## Desenvolvimento sem Docker
+
+### Requisitos
+
+- Node.js 20 ou superior.
+- pnpm 9, habilitado pelo Corepack.
+- PostgreSQL e Redis acessíveis pelas URLs do `.env`.
+
+```powershell
+corepack enable
+corepack prepare pnpm@9.15.0 --activate
 pnpm install
-```
-
-### 4. Banco de Dados
-
-```bash
+pnpm db:generate
 pnpm db:migrate
 pnpm db:seed
+pnpm dev
 ```
 
-### 5. Desenvolvimento
+Para trabalhar em um serviço específico:
 
-```bash
-# Todos os apps
-pnpm dev
-
-# Individual (sem comentários na mesma linha — o shell pode repassá-los ao script)
+```powershell
 pnpm --filter @luxus/api dev
 pnpm --filter @luxus/web dev
 pnpm --filter @luxus/mobile dev
-
-# URLs: API http://localhost:3001 | Web http://localhost:3000 | Mobile via Expo
 ```
 
-## Credenciais iniciais
+## Variáveis de ambiente
 
-| Perfil | E-mail | Senha |
-|--------|--------|-------|
-| Administrador | admin@luxus.com.br | Luxus@2024 |
-| Parceiro | parceiro@demotelecom.com.br | Luxus@2024 |
+Use `.env.example` como referência. As principais variáveis são:
 
-O seed cria apenas usuários e permissões. Operadoras, planos, estoque e demais dados devem ser cadastrados pelo painel.
+| Variável | Uso |
+| --- | --- |
+| `DATABASE_URL` | Conexão PostgreSQL usada pelo Prisma |
+| `REDIS_URL` | Cache, filas e integração em tempo real |
+| `JWT_SECRET` | Assinatura do token de acesso |
+| `JWT_REFRESH_SECRET` | Assinatura do token de renovação |
+| `CORS_ORIGINS` | Origens web autorizadas, separadas por vírgula |
+| `NEXT_PUBLIC_API_URL` | URL pública da API, sem `/api` no final |
+| `NEXT_PUBLIC_WS_URL` | URL pública da API com `/events` |
+| `UPLOAD_DIR` | Diretório persistente dos arquivos |
+| `UPLOAD_MAX_SIZE` | Tamanho máximo geral em bytes |
+| `RUN_DB_SEED` | Executa o seed idempotente ao iniciar a API |
 
-## API Documentation
+Nunca versione o arquivo `.env` nem segredos reais.
 
-Swagger disponível em: `http://localhost:3001/api/docs`
+## Banco de dados e Prisma
 
-### Endpoints Principais
+O schema fica em `apps/api/prisma/schema.prisma` e as migrations em `apps/api/prisma/migrations`.
+
+```powershell
+# Gerar o Prisma Client
+pnpm db:generate
+
+# Criar/aplicar migration durante o desenvolvimento
+pnpm db:migrate
+
+# Popular dados iniciais
+pnpm db:seed
+
+# Abrir o Prisma Studio
+pnpm db:studio
+```
+
+Toda alteração de schema deve vir acompanhada de migration. Evite editar migrations que já foram aplicadas em produção.
+
+## API e módulos
+
+Todas as rotas usam o prefixo `/api`. A documentação completa e interativa está no Swagger.
 
 | Módulo | Prefixo |
-|--------|---------|
+| --- | --- |
 | Autenticação | `/api/auth` |
+| Perfil | `/api/profile` |
+| Uploads | `/api/uploads` |
 | Parceiros | `/api/partners` |
+| Filiais | `/api/branches` |
+| Usuários | `/api/users` |
 | Clientes | `/api/clients` |
 | Vendas | `/api/sales` |
 | Operadoras | `/api/operators` |
@@ -101,116 +217,170 @@ Swagger disponível em: `http://localhost:3001/api/docs`
 | Linhas | `/api/lines` |
 | Estoque | `/api/stock` |
 | Comissões | `/api/commissions` |
+| Campanhas | `/api/campaigns` |
 | Chamados | `/api/tickets` |
 | Solicitações | `/api/requests` |
+| Financeiro | `/api/financial` |
 | Dashboard | `/api/dashboard` |
 | Notificações | `/api/notifications` |
 | Auditoria | `/api/audit` |
 
-## Perfis de Usuário (RBAC)
+### Uploads
 
-- **Administrador** — acesso total
-- **Supervisor** — gestão operacional
-- **Parceiro** — dados próprios (app mobile)
-- **Atendente** — suporte e solicitações
-- **Financeiro** — comissões e financeiro
+- Formatos gerais permitidos: JPG, PNG, WebP e PDF.
+- Foto de perfil: JPG, PNG ou WebP, com limite de 5 MB.
+- O frontend recorta a foto em 512×512 antes de enviar.
+- Os arquivos são servidos pela API e exigem autenticação.
+- Em Docker, o volume `uploads_data` preserva os arquivos entre reconstruções.
+- Na Railway, configure um volume persistente montado no mesmo caminho de `UPLOAD_DIR`.
 
-## Identidade Visual
+## Perfis e isolamento de dados
 
-| Token | Valor |
-|-------|-------|
-| Azul escuro | `#0057FF` |
-| Azul claro | `#2D8CFF` |
-| Preto | `#0B0B0B` |
-| Branco | `#FFFFFF` |
-| Cinza claro | `#F5F5F7` |
+| Perfil | Responsabilidade geral |
+| --- | --- |
+| `ADMIN` | Administração global ou limitada ao parceiro ao qual estiver vinculado |
+| `SUPERVISOR` | Gestão operacional conforme permissões |
+| `PARTNER` | Dados do parceiro comercial vinculado |
+| `ATTENDANT` | Operação limitada à filial vinculada |
+| `FINANCIAL` | Comissões e rotinas financeiras conforme escopo |
+
+Regras obrigatórias para qualquer nova consulta:
+
+1. Não confiar em `partnerId` enviado pelo navegador.
+2. Forçar o `partnerId` do usuário autenticado quando ele estiver vinculado.
+3. Aplicar também `branchId` para usuários de filial.
+4. Permitir visão global apenas aos perfis administrativos sem vínculo comercial.
+5. Aplicar o isolamento na API; ocultar elementos no frontend não substitui autorização.
+
+Utilize os helpers de escopo existentes em `apps/api/src/common/utils/partner-scope.ts`.
+
+## Regras importantes de negócio
+
+- Matriz e filiais compartilham planos e operadoras do parceiro mestre.
+- Um parceiro não pode visualizar lojas, vendas ou relatórios de concorrentes.
+- Portabilidade pode ser cadastrada antes do contrato assinado; o documento entra no momento correto do fluxo.
+- Vendas rejeitadas continuam disponíveis para consulta e correção.
+- Indicadores de venda realizada consideram apenas `APPROVED` e `ACTIVATED`.
+- Exportações e detalhes do dashboard respeitam o mesmo escopo do usuário autenticado.
+
+## Como editar com segurança
+
+### Backend
+
+Cada domínio normalmente contém controller, service, DTOs e módulo em `apps/api/src/modules/<dominio>`.
+
+- Valide entradas com `class-validator` nos DTOs.
+- Documente endpoints com decorators do Swagger.
+- Mantenha regras e consultas no service, não no controller.
+- Use transações Prisma quando uma operação altera várias entidades dependentes.
+- Registre ações sensíveis no módulo de auditoria.
+- Não retorne senha, refresh token ou dados de outro parceiro.
+
+### Frontend
+
+- Páginas autenticadas ficam em `apps/web/src/app/(dashboard)`.
+- Componentes reutilizáveis ficam em `apps/web/src/components`.
+- Chamadas autenticadas devem passar pelo cliente em `apps/web/src/lib/api.ts`.
+- Tipos usados por mais de um app devem ficar em `packages/types`.
+- Preserve estados de carregamento, vazio, erro e confirmação nas operações assíncronas.
+- Tabelas usam o componente compartilhado para manter a ordenação padronizada.
+
+### Antes de entregar uma alteração
+
+```powershell
+pnpm test
+pnpm build
+git diff --check
+docker compose up -d --build api web
+docker compose ps
+```
+
+Teste pelo menos um administrador, um parceiro e, quando aplicável, um usuário de filial.
+
+## Testes automatizados
+
+```powershell
+# Testes da API
+pnpm test
+
+# Build e validação TypeScript de todos os pacotes
+pnpm build
+```
+
+Os testes atuais cobrem regras críticas como isolamento por parceiro, documentos obrigatórios, status realizados e filtros do dashboard. Novas regras de negócio devem receber testes de regressão.
+
+## Tempo real
+
+Namespace Socket.IO: `/events`.
+
+- `dashboard:update`
+- `sale:updated`
+- `commission:updated`
+- `notification:new`
+- `ticket:updated`
+- `stock:updated`
 
 ## Deploy na Railway
 
-O repositório é um monorepo. Crie **um projeto** na [Railway](https://railway.com) com os serviços abaixo.
+O projeto utiliza dois serviços ligados ao mesmo repositório, além do PostgreSQL.
 
-### 1. PostgreSQL
+### API
 
-Adicione o plugin **PostgreSQL** e copie a variável `DATABASE_URL` gerada.
+- Config-as-code: `railway.toml`.
+- Dockerfile: `docker/api.Dockerfile`.
+- Healthcheck: `/api/health`.
+- Variáveis mínimas: `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET` e `CORS_ORIGINS`.
+- Configure `RUN_DB_SEED=false` após a preparação inicial.
+- Adicione volume persistente para uploads.
 
-### 2. Serviço API
+### Web
 
-- **Source:** GitHub `abelprosp/luxusparceiros`
-- **Builder:** Dockerfile → `docker/api.Dockerfile`
-- **Variáveis:**
+- Config-as-code: `railway.web.toml`.
+- Dockerfile: `docker/web.Dockerfile`.
+- Healthcheck: `/login`.
+- Defina `NEXT_PUBLIC_API_URL` e `NEXT_PUBLIC_WS_URL` durante o build.
 
-| Variável | Valor |
-|----------|-------|
-| `DATABASE_URL` | Referência ao Postgres |
-| `JWT_SECRET` | String aleatória (mín. 32 chars) |
-| `JWT_REFRESH_SECRET` | String aleatória (mín. 32 chars) |
-| `CORS_ORIGINS` | URL pública do Web (ex: `https://seu-web.up.railway.app`) |
-| `API_PORT` | `3001` (ou use `PORT` que a Railway injeta) |
+### Domínios
 
-Após o primeiro deploy, rode o seed uma vez no shell da Railway:
+1. Gere ou associe um domínio ao serviço da API.
+2. Gere ou associe o domínio web, por exemplo `parceiros.grupoluxus.com.br`.
+3. Inclua o domínio web em `CORS_ORIGINS` na API.
+4. Aponte `NEXT_PUBLIC_API_URL` para o domínio da API, sem `/api` ao final.
+5. Faça novo deploy dos dois serviços e confirme os healthchecks.
 
-```bash
-npx prisma db seed
-```
+## Solução de problemas
 
-### 3. Serviço Web
+### Docker não inicia no Windows
 
-- **Builder:** Dockerfile → `docker/web.Dockerfile`
-- **Build args / variáveis de build:**
+- Abra o Docker Desktop e aguarde o status “Engine running”.
+- Confirme que o mecanismo de contêineres Linux está ativo.
+- Execute `docker version` e `docker compose ps`.
+- Se o Docker solicitar atualização do componente WSL, isso é requisito do mecanismo interno do Docker Desktop; não altera o Windows para Linux.
 
-| Variável | Valor |
-|----------|-------|
-| `NEXT_PUBLIC_API_URL` | URL pública da API |
-| `NEXT_PUBLIC_WS_URL` | URL pública da API com `/events` (WebSocket) |
+### Railway falha no healthcheck
 
-### 4. Domínios
+- Verifique se o serviço usa o arquivo correto: `railway.toml` para API e `railway.web.toml` para web.
+- Confira `PORT`, `DATABASE_URL`, domínio público, CORS e logs de inicialização.
+- A API deve responder em `/api/health`; o web deve responder em `/login`.
 
-Gere domínios públicos para API e Web nos dois serviços e atualize `CORS_ORIGINS` e `NEXT_PUBLIC_*`.
+### Foto ou documento desaparece após deploy
 
-## Deploy com Docker
-
-```bash
-cp .env.example .env
-docker compose up -d
-```
-
-Antes de subir, substitua os segredos `JWT_*` no `.env`. No ambiente local,
-`RUN_DB_SEED=true` cria os dados iniciais sem redefinir senhas já existentes.
-Em produção, use `RUN_DB_SEED=false`.
-
-Serviços:
-- **NGINX** → `http://localhost` (entrada principal)
-- **Web** → `http://localhost:3000` (acesso local direto)
-- **API** → `http://localhost:3001` (acesso local direto)
-- **PostgreSQL** → `127.0.0.1:5432`
-- **Redis** → `127.0.0.1:6379`
-
-O app Expo não roda dentro do Compose. Para testá-lo em um aparelho, configure
-`EXPO_PUBLIC_API_URL` e `EXPO_PUBLIC_WS_URL` com o IP local do computador.
-
-## Tempo Real (Socket.io)
-
-Namespace: `/events`
-
-Eventos emitidos:
-- `dashboard:update` — métricas do dashboard
-- `sale:updated` — status de vendas
-- `commission:updated` — comissões
-- `notification:new` — notificações
-- `ticket:updated` — chamados
-- `stock:updated` — estoque
+- Confirme que existe um volume persistente no serviço da API.
+- Confira se o ponto de montagem corresponde a `UPLOAD_DIR`.
+- Arquivos no sistema efêmero da Railway são perdidos quando a instância é substituída.
 
 ## Segurança
 
-- JWT + Refresh Token
-- RBAC com permissões granulares
-- Rate limiting (Throttler)
-- Helmet (headers de segurança)
-- bcrypt (hash de senhas)
-- Validação de uploads
-- Auditoria completa de ações
+- JWT de curta duração e refresh token revogável.
+- Hash de senha com bcrypt.
+- RBAC com permissões granulares.
+- Helmet, CORS e rate limiting.
+- Validação de tamanho, extensão e MIME type dos uploads.
+- Auditoria das ações administrativas.
+- Isolamento por parceiro e filial no backend.
+
+Antes de produção, execute auditoria de dependências e planeje as atualizações de versões principais com testes de regressão.
 
 ## Licença
 
-Proprietário — Luxus Telefonia © 2026
-# luxusparceiros
+Software proprietário — Luxus Telefonia © 2026.

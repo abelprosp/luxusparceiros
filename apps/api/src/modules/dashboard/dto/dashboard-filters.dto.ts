@@ -2,6 +2,11 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsUUID, Length } from 'class-validator';
 
 export class DashboardFiltersDto {
+  @ApiPropertyOptional({ description: 'Filtrar pela filial vinculada' })
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
   @ApiPropertyOptional({ description: 'Filtrar por parceiro' })
   @IsOptional()
   @IsUUID()
