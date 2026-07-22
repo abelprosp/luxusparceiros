@@ -13,8 +13,12 @@ export const DEFAULT_SALE_REQUIRED_DOCUMENTS: SaleRequiredDocumentItem[] = [
   { type: DocumentType.CONTRACT, label: 'Contrato', fulfilled: false },
 ];
 
-export function getRequiredDocumentsForSale(isPortability: boolean): SaleRequiredDocumentItem[] {
-  return DEFAULT_SALE_REQUIRED_DOCUMENTS.filter(
-    (document) => !isPortability || document.type !== DocumentType.CONTRACT,
-  ).map((document) => ({ ...document }));
+export function getRequiredDocumentsForSale(): SaleRequiredDocumentItem[] {
+  return DEFAULT_SALE_REQUIRED_DOCUMENTS.map((document) => ({ ...document }));
+}
+
+export function hasSignedContract(
+  documents: Array<{ type: DocumentType | string }>,
+): boolean {
+  return documents.some((document) => document.type === DocumentType.CONTRACT);
 }

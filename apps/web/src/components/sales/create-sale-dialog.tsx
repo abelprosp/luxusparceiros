@@ -187,7 +187,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       return;
     }
     if (!partnerId || !operatorId || !planId || !newNumber || !contractFormat) {
-      toast({ title: 'Preencha parceiro, operadora, plano, linha e contrato', variant: 'destructive' });
+      toast({ title: 'Preencha parceiro, operadora, plano, linha e formato do contrato', variant: 'destructive' });
       return;
     }
     if (!client.name || !client.document || !client.phone) {
@@ -204,10 +204,6 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     }
     if (!rgPhoto) {
       toast({ title: 'Anexe a foto do RG', variant: 'destructive' });
-      return;
-    }
-    if (!contractFile && !isPortability) {
-      toast({ title: 'Anexe o contrato assinado', variant: 'destructive' });
       return;
     }
     if (isVirginChip) {
@@ -417,18 +413,14 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                 </Select>
               </div>
               <div className="space-y-2 sm:col-span-2">
-                <Label>
-                  Contrato assinado {isPortability ? '(pode ser anexado depois)' : '*'}
-                </Label>
+                <Label>Contrato assinado (opcional no cadastro)</Label>
                 <Input
                   type="file"
                   accept="image/*,application/pdf"
                   onChange={(e) => setContractFile(e.target.files?.[0] ?? null)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {isPortability
-                    ? 'Na portabilidade, o contrato assinado não bloqueia o registro inicial.'
-                    : 'Foto do contrato impresso ou PDF do ZapSign'}
+                  Foto do contrato impresso ou PDF do ZapSign. Obrigatório antes de aprovar a venda.
                 </p>
               </div>
             </div>

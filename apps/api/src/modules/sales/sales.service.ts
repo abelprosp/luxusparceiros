@@ -24,7 +24,7 @@ import {
   UpdateSaleDto,
   UpdateSaleStatusDto,
 } from './dto/sale.dto';
-import { getRequiredDocumentsForSale } from './sale-documents.constants';
+import { getRequiredDocumentsForSale, hasSignedContract } from './sale-documents.constants';
 
 const STATUS_TRANSITIONS: Record<SaleStatus, SaleStatus[]> = {
   [SaleStatus.IN_ANALYSIS]: [
@@ -300,7 +300,7 @@ export class SalesService {
         donorOperator: dto.donorOperator,
         newNumber: dto.newNumber,
         notes: dto.notes,
-        requiredDocuments: getRequiredDocumentsForSale(dto.isPortability ?? false) as Prisma.InputJsonValue,
+        requiredDocuments: getRequiredDocumentsForSale() as Prisma.InputJsonValue,
       },
       include: {
         client: { select: { id: true, name: true, phone: true, document: true, rg: true, email: true } },
@@ -411,6 +411,9 @@ export class SalesService {
       throw new BadRequestException(MESSAGES.SALE_STATUS_INVALID);
     }
     if (dto.status === SaleStatus.APPROVED || dto.status === SaleStatus.ACTIVATED) {
+      if (!hasSignedContract(sale.documents)) {
+        throw new BadRequestException('Anexe o contrato assinado antes de aprovar a venda');
+      }
       const requiredDocuments = (sale.requiredDocuments ?? []) as Array<{
         label: string;
         fulfilled: boolean;
