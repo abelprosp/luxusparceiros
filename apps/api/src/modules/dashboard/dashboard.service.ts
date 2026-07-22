@@ -4,11 +4,11 @@ import {
   LineStatus,
   PartnerStatus,
   Prisma,
-  SaleStatus,
 } from '@prisma/client';
 import { AuthUser, DashboardAdminMetrics, DashboardPartnerMetrics, UserRole } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { resolveBranchId } from '@/common/utils/branch-scope';
+import { realizedSaleStatusFilter } from '@/common/constants/realized-sale-statuses';
 import { DashboardFiltersDto } from './dto/dashboard-filters.dto';
 
 @Injectable()
@@ -169,10 +169,10 @@ export class DashboardService {
       allPartnerSales,
     ] = await Promise.all([
       this.prisma.sale.count({
-        where: { ...saleFilter, createdAt: { gte: startOfDay }, status: { not: SaleStatus.CANCELLED } },
+        where: { ...saleFilter, createdAt: { gte: startOfDay }, status: realizedSaleStatusFilter() },
       }),
       this.prisma.sale.count({
-        where: { ...saleFilter, createdAt: { gte: startOfMonth }, status: { not: SaleStatus.CANCELLED } },
+        where: { ...saleFilter, createdAt: { gte: startOfMonth }, status: realizedSaleStatusFilter() },
       }),
       this.prisma.line.count({ where: { partnerId, status: LineStatus.ACTIVATED } }),
       this.prisma.line.count({ where: { partnerId, status: LineStatus.CANCELLED } }),
@@ -189,21 +189,29 @@ export class DashboardService {
       this.prisma.sale.groupBy({
         by: ['planId'],
         _count: { id: true },
-        where: { ...saleFilter, createdAt: { gte: startOfMonth } },
+        where: {
+          ...saleFilter,
+          createdAt: { gte: startOfMonth },
+          status: realizedSaleStatusFilter(),
+        },
         orderBy: { _count: { id: 'desc' } },
         take: 5,
       }),
       this.prisma.sale.groupBy({
         by: ['operatorId'],
         _count: { id: true },
-        where: { ...saleFilter, createdAt: { gte: startOfMonth } },
+        where: {
+          ...saleFilter,
+          createdAt: { gte: startOfMonth },
+          status: realizedSaleStatusFilter(),
+        },
         orderBy: { _count: { id: 'desc' } },
         take: 5,
       }),
       this.prisma.sale.groupBy({
         by: ['partnerId'],
         _count: { id: true },
-        where: { createdAt: { gte: startOfMonth }, status: { not: SaleStatus.CANCELLED } },
+        where: { createdAt: { gte: startOfMonth }, status: realizedSaleStatusFilter() },
         orderBy: { _count: { id: 'desc' } },
       }),
     ]);
@@ -254,7 +262,7 @@ export class DashboardService {
 
   private buildSaleWhere(filters: DashboardFiltersDto, since?: Date): Prisma.SaleWhereInput {
     const where: Prisma.SaleWhereInput = {
-      status: { not: SaleStatus.CANCELLED },
+      status: realizedSaleStatusFilter(),
     };
 
     if (since) {
@@ -288,7 +296,7 @@ export class DashboardService {
     if (filters.campaignId || filters.operatorId) {
       where.sales = {
         some: {
-          status: { not: SaleStatus.CANCELLED },
+          status: realizedSaleStatusFilter(),
           ...(filters.campaignId && { campaignId: filters.campaignId }),
           ...(filters.operatorId && { operatorId: filters.operatorId }),
         },
@@ -314,7 +322,7 @@ export class DashboardService {
       where.sales = {
         some: {
           campaignId: filters.campaignId,
-          status: { not: SaleStatus.CANCELLED },
+          status: realizedSaleStatusFilter(),
         },
       };
     }
@@ -381,7 +389,7 @@ export class DashboardService {
           partnerId,
           ...(branchId && { branchId }),
           createdAt: { gte: start, lte: end },
-          status: { not: SaleStatus.CANCELLED },
+          status: realizedSaleStatusFilter(),
         },
       });
       months.push({

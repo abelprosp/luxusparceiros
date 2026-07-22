@@ -3,6 +3,7 @@ import { CampaignStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { MESSAGES } from '@/common/constants/messages';
+import { realizedSaleStatusFilter } from '@/common/constants/realized-sale-statuses';
 import { CreateCampaignDto, UpdateCampaignDto } from './dto/campaign.dto';
 
 @Injectable()
@@ -46,7 +47,7 @@ export class CampaignsService {
   async getMetrics(id: string) {
     const campaign = await this.findOne(id);
     const sales = await this.prisma.sale.findMany({
-      where: { campaignId: id, status: { not: 'CANCELLED' } },
+      where: { campaignId: id, status: realizedSaleStatusFilter() },
       select: { value: true, partnerId: true, partner: { select: { name: true } } },
     });
 
