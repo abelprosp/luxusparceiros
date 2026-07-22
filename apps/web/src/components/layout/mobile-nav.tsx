@@ -6,9 +6,8 @@ import { LogOut, Settings } from 'lucide-react';
 import { LuxusLogo } from '@/components/brand/luxus-logo';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/profile/user-avatar';
 import { useAuth } from '@/hooks/useAuth';
-import { getInitials } from '@luxus/utils';
 import { cn } from '@/lib/utils';
 import { getVisibleNavItems } from '@/components/layout/nav-config';
 import { useMobileNav } from '@/components/layout/mobile-nav-context';
@@ -67,11 +66,12 @@ export function MobileNav() {
             onClick={navigate}
             className="mb-2 flex items-center gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-muted"
           >
-            <Avatar className="h-9 w-9">
-              <AvatarFallback className="bg-primary/15 text-xs font-semibold text-primary">
-                {user ? getInitials(user.name) : 'LP'}
-              </AvatarFallback>
-            </Avatar>
+            <UserAvatar
+              name={user?.name}
+              avatar={user?.avatar}
+              className="h-9 w-9"
+              fallbackClassName="bg-primary/15 text-xs text-primary"
+            />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{user?.name ?? 'Usuário'}</p>
               <p className="truncate text-xs text-muted-foreground">{user?.email}</p>

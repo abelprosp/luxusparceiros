@@ -81,6 +81,23 @@ export class UploadsService {
     return document;
   }
 
+  async uploadAvatar(file: Express.Multer.File, user: AuthUser) {
+    this.validateAvatar(file);
+
+    const ext = extname(file.originalname).toLowerCase();
+    const filename = `avatar-${user.id}-${uuidv4()}${ext}`;
+    const filepath = join(this.uploadDir, filename);
+
+    const { writeFileSync } = await import('fs');
+    writeFileSync(filepath, file.buffer);
+
+    return this.prisma.user.update({
+      where: { id: user.id },
+      data: { avatar: `/uploads/${filename}` },
+      select: { avatar: true },
+    });
+  }
+
   private async validateRelations(
     type: DocumentType,
     user: AuthUser,
@@ -175,6 +192,22 @@ export class UploadsService {
     const ext = extname(file.originalname).toLowerCase();
     if (!ALLOWED_MIME_TYPES.includes(file.mimetype) || !ALLOWED_EXTENSIONS.includes(ext)) {
       throw new BadRequestException(MESSAGES.FILE_TYPE_INVALID);
+    }
+  }
+
+  private validateAvatar(file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Imagem é obrigatória');
+    }
+    if (file.size > Math.min(this.maxSize, 5 * 1024 * 1024)) {
+      throw new BadRequestException('A foto de perfil deve ter no máximo 5 MB');
+    }
+
+    const ext = extname(file.originalname).toLowerCase();
+    const imageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+    if (!imageMimeTypes.includes(file.mimetype) || !imageExtensions.includes(ext)) {
+      throw new BadRequestException('Use uma imagem JPG, PNG ou WebP');
     }
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { type LucideIcon } from 'lucide-react';
+import { ChevronRight, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MetricsCardProps {
@@ -11,6 +11,8 @@ interface MetricsCardProps {
   trend?: { value: number; label: string };
   className?: string;
   variant?: 'default' | 'accent';
+  onClick?: () => void;
+  actionLabel?: string;
 }
 
 const SPARKLINE_HEIGHTS = [38, 62, 45, 78, 55, 88, 64, 72];
@@ -40,14 +42,20 @@ export function MetricsCard({
   trend,
   className,
   variant = 'default',
+  onClick,
+  actionLabel = 'Ver detalhes',
 }: MetricsCardProps) {
   const isAccent = variant === 'accent';
+  const Component = onClick ? 'button' : 'div';
 
   return (
-    <div
+    <Component
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
       className={cn(
         isAccent ? 'bento-card-dark' : 'bento-card',
-        'p-5 sm:p-6',
+        'p-5 text-left sm:p-6',
+        onClick && 'group cursor-pointer transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
         className,
       )}
     >
@@ -90,6 +98,12 @@ export function MetricsCard({
       <div className="mt-5">
         <MiniSparkline accent={isAccent} />
       </div>
-    </div>
+      {onClick && (
+        <span className={cn('mt-3 inline-flex items-center gap-1 text-xs font-medium', isAccent ? 'text-white/60' : 'text-primary')}>
+          {actionLabel}
+          <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+        </span>
+      )}
+    </Component>
   );
 }

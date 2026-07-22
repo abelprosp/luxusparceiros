@@ -52,6 +52,26 @@ export class UploadsController {
     });
   }
 
+  @Post('avatar')
+  @ApiOperation({ summary: 'Enviar foto de perfil do usuário autenticado' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  uploadAvatar(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.uploadsService.uploadAvatar(file, user);
+  }
+
   @Get(':filename')
   @ApiOperation({ summary: 'Download de arquivo' })
   download(@Param('filename') filename: string, @Res() res: Response) {

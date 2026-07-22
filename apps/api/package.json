@@ -8,7 +8,7 @@
     "start": "node dist/src/main",
     "start:prod": "node dist/src/main",
     "lint": "tsc --noEmit",
-    "test": "nest build && tsc -p prisma/tsconfig.seed.json && node --test --test-isolation=none test/partner-scope.test.js test/realized-sale-statuses.test.js test/sale-documents.test.js",
+    "test": "nest build && tsc -p prisma/tsconfig.seed.json && node --test --test-isolation=none test/dashboard-filters.test.js test/partner-scope.test.js test/realized-sale-statuses.test.js test/sale-documents.test.js",
     "prisma": "prisma",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
