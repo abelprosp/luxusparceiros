@@ -231,6 +231,8 @@ Todas as rotas usam o prefixo `/api`. A documentação completa e interativa est
 - Foto de perfil: JPG, PNG ou WebP, com limite de 5 MB.
 - O frontend recorta a foto em 512×512 antes de enviar.
 - Os arquivos são servidos pela API e exigem autenticação.
+- Documentos cujo arquivo físico foi perdido exibem a ação `Reanexar arquivo`; o sistema
+  preserva o registro original e bloqueia a substituição quando o arquivo ainda existe.
 - Em Docker, o volume `uploads_data` preserva os arquivos entre reconstruções.
 - Na Railway, conecte um volume ao serviço da API e use exatamente o ponto de montagem
   `/app/uploads`. A API também reconhece automaticamente `RAILWAY_VOLUME_MOUNT_PATH`.

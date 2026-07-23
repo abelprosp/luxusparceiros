@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Head,
   Param,
   Post,
   Query,
@@ -71,6 +72,40 @@ export class UploadsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.uploadsService.uploadAvatar(file, user);
+  }
+
+  @Post(':documentId/replace')
+  @ApiOperation({ summary: 'Reanexar arquivo físico perdido de um documento' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  replaceDocument(
+    @Param('documentId') documentId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.uploadsService.replaceDocument(documentId, file, user);
+  }
+
+  @Head(':filename')
+  async check(
+    @Param('filename') filename: string,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+  ) {
+    const file = await this.uploadsService.getFile(filename, user);
+    file.stream.destroy();
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Length', file.size);
+    res.status(200).end();
   }
 
   @Get(':filename')

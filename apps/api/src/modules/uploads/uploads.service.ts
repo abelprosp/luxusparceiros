@@ -7,7 +7,14 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { DocumentType, Prisma, SaleStatus } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
-import { createReadStream, existsSync, mkdirSync, statSync } from 'fs';
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'fs';
 import { extname, join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -64,7 +71,6 @@ export class UploadsService {
     const filename = `${uuidv4()}${ext}`;
     const filepath = join(this.uploadDir, filename);
 
-    const { writeFileSync } = await import('fs');
     writeFileSync(filepath, file.buffer);
 
     const document = await this.prisma.document.create({
@@ -96,7 +102,6 @@ export class UploadsService {
     const filename = `avatar-${user.id}-${uuidv4()}${ext}`;
     const filepath = join(this.uploadDir, filename);
 
-    const { writeFileSync } = await import('fs');
     writeFileSync(filepath, file.buffer);
 
     return this.prisma.user.update({
@@ -179,6 +184,76 @@ export class UploadsService {
       where: { id: saleId },
       data: { requiredDocuments: updated as Prisma.InputJsonValue },
     });
+  }
+
+  async replaceDocument(
+    documentId: string,
+    file: Express.Multer.File,
+    user: AuthUser,
+  ) {
+    this.validateFile(file);
+
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId },
+      select: {
+        id: true,
+        url: true,
+        sale: { select: { partnerId: true, branchId: true } },
+        client: { select: { partnerId: true, branchId: true } },
+        request: { select: { partnerId: true, branchId: true } },
+        ticket: { select: { partnerId: true } },
+      },
+    });
+    if (!document) {
+      throw new NotFoundException(MESSAGES.NOT_FOUND);
+    }
+
+    const scope = document.sale ?? document.client ?? document.request ?? document.ticket;
+    if (!scope?.partnerId) {
+      if (!isPlatformAdmin(user)) {
+        throw new ForbiddenException(MESSAGES.FORBIDDEN);
+      }
+    } else {
+      assertPartnerAccess(user, scope.partnerId);
+    }
+
+    const branchId =
+      document.sale?.branchId ??
+      document.client?.branchId ??
+      document.request?.branchId;
+    if (user.branchId && branchId && user.branchId !== branchId) {
+      throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
+
+    const previousFilename = document.url
+      .replace(/^\/uploads\//, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '');
+    if (previousFilename && existsSync(join(this.uploadDir, previousFilename))) {
+      throw new BadRequestException(
+        'O arquivo original ainda está disponível e não pode ser substituído',
+      );
+    }
+
+    const ext = extname(file.originalname).toLowerCase();
+    const filename = `${uuidv4()}${ext}`;
+    const filepath = join(this.uploadDir, filename);
+    writeFileSync(filepath, file.buffer);
+
+    try {
+      return await this.prisma.document.update({
+        where: { id: document.id },
+        data: {
+          name: file.originalname,
+          url: `/uploads/${filename}`,
+          mimeType: file.mimetype,
+          size: file.size,
+          uploadedBy: user.id,
+        },
+      });
+    } catch (error) {
+      if (existsSync(filepath)) unlinkSync(filepath);
+      throw error;
+    }
   }
 
   async getFile(filename: string, user: AuthUser) {
