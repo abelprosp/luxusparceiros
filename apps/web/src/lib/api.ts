@@ -305,6 +305,27 @@ export async function fetchAuthenticatedFile(documentUrl: string): Promise<Blob 
   return res.blob();
 }
 
+export async function checkAuthenticatedFile(documentUrl: string): Promise<boolean> {
+  const token = await getValidToken();
+  const res = await fetch(getUploadFetchUrl(documentUrl), {
+    method: 'HEAD',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  return res.ok;
+}
+
+export async function replaceUploadedDocument(
+  documentId: string,
+  file: File,
+): Promise<void> {
+  const formData = new FormData();
+  formData.append('file', file);
+  await api(`/uploads/${documentId}/replace`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
 export async function openAuthenticatedFile(documentUrl: string, filename?: string): Promise<void> {
   const blob = await fetchAuthenticatedFile(documentUrl);
   if (!blob) throw new ApiError('Arquivo não encontrado', 404);

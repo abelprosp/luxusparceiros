@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   Download,
@@ -9,6 +9,7 @@ import {
   ImageIcon,
   Loader2,
   Upload,
+  UploadCloud,
   X,
   ZoomIn,
 } from 'lucide-react';
@@ -22,9 +23,11 @@ import {
 import { formatCurrency, formatDateTime, formatDocument, formatPhone } from '@luxus/utils';
 import {
   api,
+  checkAuthenticatedFile,
   downloadAuthenticatedUpload,
   fetchAuthenticatedFile,
   openAuthenticatedFile,
+  replaceUploadedDocument,
 } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerScopedUser } from '@/lib/rbac';
@@ -177,22 +180,34 @@ function DocumentPreview({
   doc,
   onOpen,
   onDownload,
+  onReplace,
   onZoom,
   compact,
 }: {
   doc: SaleDocument;
   onOpen: () => void;
   onDownload: () => void;
+  onReplace: (file: File) => Promise<void>;
   onZoom?: (url: string) => void;
   compact?: boolean;
 }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [replacing, setReplacing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const isImage = isImageDocument(doc);
 
   useEffect(() => {
-    if (!isImage) return;
+    if (!isImage) {
+      setLoading(true);
+      setError(false);
+      checkAuthenticatedFile(doc.url)
+        .then((available) => setError(!available))
+        .catch(() => setError(true))
+        .finally(() => setLoading(false));
+      return;
+    }
     let objectUrl: string | null = null;
     setLoading(true);
     setError(false);
@@ -213,14 +228,41 @@ function DocumentPreview({
   }, [doc.url, isImage]);
 
   const label = DOCUMENT_TYPE_LABELS[doc.type] ?? doc.type;
+  const handleReplacement = async (file?: File) => {
+    if (!file) return;
+    setReplacing(true);
+    try {
+      await onReplace(file);
+      setError(false);
+    } catch {
+      setError(true);
+    } finally {
+      setReplacing(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={(event) => void handleReplacement(event.target.files?.[0])}
+      />
       {isImage ? (
-        <button
-          type="button"
+        <div
+          role="button"
+          tabIndex={previewUrl ? 0 : -1}
           onClick={() => previewUrl && onZoom?.(previewUrl)}
-          disabled={!previewUrl}
+          onKeyDown={(event) => {
+            if (previewUrl && (event.key === 'Enter' || event.key === ' ')) {
+              event.preventDefault();
+              onZoom?.(previewUrl);
+            }
+          }}
+          aria-disabled={!previewUrl}
           className="group relative block w-full bg-muted/30"
         >
           {loading && (
@@ -234,6 +276,21 @@ function DocumentPreview({
               <span className="text-xs">Não foi possível carregar a imagem</span>
               <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
                 Tentar abrir arquivo
+              </Button>
+              <Button
+                size="sm"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  inputRef.current?.click();
+                }}
+                disabled={replacing}
+              >
+                {replacing ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <UploadCloud className="mr-1 h-3.5 w-3.5" />
+                )}
+                Reanexar arquivo
               </Button>
             </div>
           )}
@@ -253,11 +310,30 @@ function DocumentPreview({
               </div>
             </>
           )}
-        </button>
+        </div>
       ) : (
-        <div className="flex h-40 flex-col items-center justify-center gap-2 bg-muted/20 text-muted-foreground">
-          <FileText className="h-10 w-10" />
-          <span className="text-sm">{doc.mimeType?.includes('pdf') ? 'Documento PDF' : 'Arquivo'}</span>
+        <div className="flex h-40 flex-col items-center justify-center gap-2 bg-muted/20 px-4 text-center text-muted-foreground">
+          {loading ? (
+            <Loader2 className="h-8 w-8 animate-spin" />
+          ) : error ? (
+            <>
+              <FileText className="h-10 w-10 opacity-40" />
+              <span className="text-sm">Arquivo indisponível</span>
+              <Button size="sm" onClick={() => inputRef.current?.click()} disabled={replacing}>
+                {replacing ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <UploadCloud className="mr-1 h-3.5 w-3.5" />
+                )}
+                Reanexar arquivo
+              </Button>
+            </>
+          ) : (
+            <>
+              <FileText className="h-10 w-10" />
+              <span className="text-sm">{doc.mimeType?.includes('pdf') ? 'Documento PDF' : 'Arquivo'}</span>
+            </>
+          )}
         </div>
       )}
 
@@ -267,11 +343,11 @@ function DocumentPreview({
           <p className="truncate text-xs text-muted-foreground">{doc.name}</p>
         </div>
         <div className="flex shrink-0 gap-1.5">
-          <Button size="sm" variant="outline" onClick={onOpen}>
+          <Button size="sm" variant="outline" onClick={onOpen} disabled={error}>
             <ExternalLink className="mr-1 h-3.5 w-3.5" />
             Abrir
           </Button>
-          <Button size="sm" variant="outline" onClick={onDownload}>
+          <Button size="sm" variant="outline" onClick={onDownload} disabled={error}>
             <Download className="mr-1 h-3.5 w-3.5" />
             Baixar
           </Button>
@@ -375,6 +451,25 @@ export function SaleDetailDialog({
         description: err instanceof Error ? err.message : 'Falha na requisição',
         variant: 'destructive',
       });
+    }
+  };
+
+  const handleReplaceDocument = async (doc: SaleDocument, file: File) => {
+    try {
+      await replaceUploadedDocument(doc.id, file);
+      toast({
+        title: 'Arquivo reanexado',
+        description: 'O documento foi recuperado e já está disponível.',
+        variant: 'success',
+      });
+      await load();
+    } catch (err) {
+      toast({
+        title: 'Erro ao reanexar arquivo',
+        description: err instanceof Error ? err.message : 'Falha na requisição',
+        variant: 'destructive',
+      });
+      throw err;
     }
   };
 
@@ -497,6 +592,7 @@ export function SaleDetailDialog({
                             compact
                             onOpen={() => handleOpenDocument(doc)}
                             onDownload={() => handleDownloadDocument(doc)}
+                            onReplace={(file) => handleReplaceDocument(doc, file)}
                             onZoom={(url) =>
                               setLightbox({
                                 src: url,
@@ -566,6 +662,7 @@ export function SaleDetailDialog({
                                 doc={doc}
                                 onOpen={() => handleOpenDocument(doc)}
                                 onDownload={() => handleDownloadDocument(doc)}
+                                onReplace={(file) => handleReplaceDocument(doc, file)}
                                 onZoom={(url) =>
                                   setLightbox({
                                     src: url,
@@ -587,6 +684,7 @@ export function SaleDetailDialog({
                                 doc={doc}
                                 onOpen={() => handleOpenDocument(doc)}
                                 onDownload={() => handleDownloadDocument(doc)}
+                                onReplace={(file) => handleReplaceDocument(doc, file)}
                               />
                             ))}
                           </div>
