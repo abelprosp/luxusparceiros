@@ -292,7 +292,16 @@ export async function fetchAuthenticatedFile(documentUrl: string): Promise<Blob 
   const res = await fetch(getUploadFetchUrl(documentUrl), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(
+      (data as ApiResponse)?.error ||
+        (data as ApiResponse)?.message ||
+        'Arquivo não encontrado',
+      res.status,
+      data,
+    );
+  }
   return res.blob();
 }
 
@@ -303,7 +312,22 @@ export async function openAuthenticatedFile(documentUrl: string, filename?: stri
   const anchor = document.createElement('a');
   anchor.href = objectUrl;
   anchor.target = '_blank';
-  if (filename) anchor.download = filename;
+  anchor.rel = 'noopener noreferrer';
+  anchor.title = filename || 'Abrir arquivo';
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+export async function downloadAuthenticatedUpload(
+  documentUrl: string,
+  filename: string,
+): Promise<void> {
+  const blob = await fetchAuthenticatedFile(documentUrl);
+  if (!blob) throw new ApiError('Arquivo não encontrado', 404);
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }

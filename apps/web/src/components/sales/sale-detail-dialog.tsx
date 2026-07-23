@@ -20,7 +20,12 @@ import {
   SALE_STATUS_LABELS,
 } from '@luxus/types';
 import { formatCurrency, formatDateTime, formatDocument, formatPhone } from '@luxus/utils';
-import { api, fetchAuthenticatedFile, openAuthenticatedFile } from '@/lib/api';
+import {
+  api,
+  downloadAuthenticatedUpload,
+  fetchAuthenticatedFile,
+  openAuthenticatedFile,
+} from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerScopedUser } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
@@ -171,11 +176,13 @@ function SummaryCard({ label, value }: { label: string; value: React.ReactNode }
 function DocumentPreview({
   doc,
   onOpen,
+  onDownload,
   onZoom,
   compact,
 }: {
   doc: SaleDocument;
   onOpen: () => void;
+  onDownload: () => void;
   onZoom?: (url: string) => void;
   compact?: boolean;
 }) {
@@ -259,10 +266,16 @@ function DocumentPreview({
           <p className="truncate text-sm font-medium">{label}</p>
           <p className="truncate text-xs text-muted-foreground">{doc.name}</p>
         </div>
-        <Button size="sm" variant="outline" className="shrink-0" onClick={onOpen}>
-          <ExternalLink className="mr-1 h-3.5 w-3.5" />
-          Abrir
-        </Button>
+        <div className="flex shrink-0 gap-1.5">
+          <Button size="sm" variant="outline" onClick={onOpen}>
+            <ExternalLink className="mr-1 h-3.5 w-3.5" />
+            Abrir
+          </Button>
+          <Button size="sm" variant="outline" onClick={onDownload}>
+            <Download className="mr-1 h-3.5 w-3.5" />
+            Baixar
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -347,6 +360,18 @@ export function SaleDetailDialog({
     } catch (err) {
       toast({
         title: 'Erro ao abrir arquivo',
+        description: err instanceof Error ? err.message : 'Falha na requisição',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDownloadDocument = async (doc: SaleDocument) => {
+    try {
+      await downloadAuthenticatedUpload(doc.url, doc.name);
+    } catch (err) {
+      toast({
+        title: 'Erro ao baixar arquivo',
         description: err instanceof Error ? err.message : 'Falha na requisição',
         variant: 'destructive',
       });
@@ -471,6 +496,7 @@ export function SaleDetailDialog({
                             doc={doc}
                             compact
                             onOpen={() => handleOpenDocument(doc)}
+                            onDownload={() => handleDownloadDocument(doc)}
                             onZoom={(url) =>
                               setLightbox({
                                 src: url,
@@ -539,6 +565,7 @@ export function SaleDetailDialog({
                                 key={doc.id}
                                 doc={doc}
                                 onOpen={() => handleOpenDocument(doc)}
+                                onDownload={() => handleDownloadDocument(doc)}
                                 onZoom={(url) =>
                                   setLightbox({
                                     src: url,
@@ -559,6 +586,7 @@ export function SaleDetailDialog({
                                 key={doc.id}
                                 doc={doc}
                                 onOpen={() => handleOpenDocument(doc)}
+                                onDownload={() => handleDownloadDocument(doc)}
                               />
                             ))}
                           </div>
@@ -672,7 +700,7 @@ export function SaleDetailDialog({
                   onClick={async () => {
                     for (const doc of sale.documents ?? []) {
                       try {
-                        await openAuthenticatedFile(doc.url, doc.name);
+                        await downloadAuthenticatedUpload(doc.url, doc.name);
                       } catch {
                         // continua
                       }
@@ -680,7 +708,7 @@ export function SaleDetailDialog({
                   }}
                 >
                   <Download className="mr-2 h-4 w-4" />
-                  Abrir todos
+                  Baixar todos
                 </Button>
               </>
             )}

@@ -2,16 +2,21 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentType, Prisma, SaleStatus } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
-import { createReadStream, existsSync, mkdirSync } from 'fs';
+import { createReadStream, existsSync, mkdirSync, statSync } from 'fs';
 import { extname, join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MESSAGES } from '@/common/constants/messages';
-import { assertPartnerAccess, isAdminRole } from '@/common/utils/partner-scope';
+import {
+  assertPartnerAccess,
+  isAdminRole,
+  isPlatformAdmin,
+} from '@/common/utils/partner-scope';
 
 const ALLOWED_MIME_TYPES = [
   'image/jpeg',
@@ -31,7 +36,10 @@ export class UploadsService {
     private configService: ConfigService,
     private prisma: PrismaService,
   ) {
-    this.uploadDir = this.configService.get<string>('UPLOAD_DIR', './uploads');
+    this.uploadDir =
+      this.configService.get<string>('UPLOAD_DIR') ||
+      this.configService.get<string>('RAILWAY_VOLUME_MOUNT_PATH') ||
+      './uploads';
     this.maxSize = this.configService.get<number>('UPLOAD_MAX_SIZE', 10485760);
     if (!existsSync(this.uploadDir)) {
       mkdirSync(this.uploadDir, { recursive: true });
@@ -173,13 +181,76 @@ export class UploadsService {
     });
   }
 
-  getFileStream(filename: string) {
+  async getFile(filename: string, user: AuthUser) {
     const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, '');
     const filepath = join(this.uploadDir, sanitized);
     if (!existsSync(filepath)) {
-      throw new BadRequestException(MESSAGES.NOT_FOUND);
+      throw new NotFoundException('Arquivo não encontrado no armazenamento');
     }
-    return createReadStream(filepath);
+
+    const url = `/uploads/${sanitized}`;
+    const document = await this.prisma.document.findFirst({
+      where: { url },
+      select: {
+        name: true,
+        mimeType: true,
+        uploadedBy: true,
+        sale: { select: { partnerId: true, branchId: true } },
+        client: { select: { partnerId: true, branchId: true } },
+        request: { select: { partnerId: true, branchId: true } },
+        ticket: { select: { partnerId: true } },
+      },
+    });
+
+    if (!document) {
+      const avatar = await this.prisma.user.findFirst({
+        where: { avatar: url },
+        select: { name: true },
+      });
+      if (!avatar) {
+        throw new NotFoundException(MESSAGES.NOT_FOUND);
+      }
+
+      return {
+        stream: createReadStream(filepath),
+        name: `${avatar.name || 'avatar'}${extname(sanitized)}`,
+        mimeType: this.mimeTypeFromExtension(sanitized),
+        size: statSync(filepath).size,
+      };
+    }
+
+    const scope = document.sale ?? document.client ?? document.request ?? document.ticket;
+    if (scope?.partnerId) {
+      assertPartnerAccess(user, scope.partnerId);
+    } else if (document.uploadedBy !== user.id && !isPlatformAdmin(user)) {
+      throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
+
+    const branchId =
+      document.sale?.branchId ??
+      document.client?.branchId ??
+      document.request?.branchId;
+    if (user.branchId && branchId && user.branchId !== branchId) {
+      throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
+
+    return {
+      stream: createReadStream(filepath),
+      name: document.name,
+      mimeType: document.mimeType || this.mimeTypeFromExtension(sanitized),
+      size: statSync(filepath).size,
+    };
+  }
+
+  private mimeTypeFromExtension(filename: string): string {
+    const types: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.pdf': 'application/pdf',
+    };
+    return types[extname(filename).toLowerCase()] ?? 'application/octet-stream';
   }
 
   private validateFile(file: Express.Multer.File) {

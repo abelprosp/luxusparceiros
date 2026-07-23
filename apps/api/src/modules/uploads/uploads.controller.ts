@@ -3,6 +3,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -74,8 +75,24 @@ export class UploadsController {
 
   @Get(':filename')
   @ApiOperation({ summary: 'Download de arquivo' })
-  download(@Param('filename') filename: string, @Res() res: Response) {
-    const stream = this.uploadsService.getFileStream(filename);
+  async download(
+    @Param('filename') filename: string,
+    @Query('download') download: string | undefined,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+  ) {
+    const file = await this.uploadsService.getFile(filename, user);
+    const disposition = download === '1' ? 'attachment' : 'inline';
+    const fallbackName = file.name.replace(/[^\w.-]/g, '_');
+
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Length', file.size);
+    res.setHeader(
+      'Content-Disposition',
+      `${disposition}; filename="${fallbackName}"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+    );
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    const stream = file.stream;
     stream.pipe(res);
   }
 }
