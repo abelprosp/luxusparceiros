@@ -232,7 +232,8 @@ Todas as rotas usam o prefixo `/api`. A documentação completa e interativa est
 - O frontend recorta a foto em 512×512 antes de enviar.
 - Os arquivos são servidos pela API e exigem autenticação.
 - Em Docker, o volume `uploads_data` preserva os arquivos entre reconstruções.
-- Na Railway, configure um volume persistente montado no mesmo caminho de `UPLOAD_DIR`.
+- Na Railway, conecte um volume ao serviço da API e use exatamente o ponto de montagem
+  `/app/uploads`. A API também reconhece automaticamente `RAILWAY_VOLUME_MOUNT_PATH`.
 
 ## Perfis e isolamento de dados
 
@@ -331,7 +332,8 @@ O projeto utiliza dois serviços ligados ao mesmo repositório, além do Postgre
 - Healthcheck: `/api/health`.
 - Variáveis mínimas: `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET` e `CORS_ORIGINS`.
 - Configure `RUN_DB_SEED=false` após a preparação inicial.
-- Adicione volume persistente para uploads.
+- Adicione um volume persistente ao serviço da API, com ponto de montagem `/app/uploads`.
+  Não conecte esse volume ao frontend `web`.
 
 ### Web
 
@@ -366,8 +368,10 @@ O projeto utiliza dois serviços ligados ao mesmo repositório, além do Postgre
 ### Foto ou documento desaparece após deploy
 
 - Confirme que existe um volume persistente no serviço da API.
-- Confira se o ponto de montagem corresponde a `UPLOAD_DIR`.
+- Confira se o ponto de montagem é `/app/uploads`.
 - Arquivos no sistema efêmero da Railway são perdidos quando a instância é substituída.
+- Registros antigos podem continuar no banco mesmo quando o arquivo físico já foi perdido;
+  nesse caso, o documento original precisa ser anexado novamente.
 
 ## Segurança
 
