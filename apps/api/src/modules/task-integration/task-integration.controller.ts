@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { PERMISSIONS } from '@luxus/types';
@@ -20,6 +21,12 @@ export class TaskIntegrationController {
   @RequirePermissions(PERMISSIONS.REQUESTS_WRITE)
   listResponsibles() {
     return this.integration.listResponsibles();
+  }
+
+  @Get('task-integration/clients')
+  @RequirePermissions(PERMISSIONS.REQUESTS_WRITE)
+  listClients(@Query('search') search?: string) {
+    return this.integration.listClients(search);
   }
 
   @Public()

@@ -31,6 +31,10 @@ interface TaskSyncSource {
   branch?: { name: string } | null;
   client?: { name: string } | null;
   createdBy: { name: string; email: string };
+  taskClientId?: string | null;
+  taskClientName?: string | null;
+  taskDeadline?: string | null;
+  taskPriority?: boolean;
 }
 
 @Injectable()
@@ -182,8 +186,16 @@ export class RequestsService {
     if (branchId) {
       await assertBranchBelongsToPartner(this.prisma, branchId, partnerId);
     }
-    if (this.taskIntegration.isConfigured() && !dto.taskResponsibleId) {
-      throw new BadRequestException('Selecione o responsável pela demanda');
+    if (this.taskIntegration.isConfigured()) {
+      if (!dto.taskResponsibleId) {
+        throw new BadRequestException('Selecione o responsável pela demanda');
+      }
+      if (!dto.taskClientId || !dto.taskClientName) {
+        throw new BadRequestException('Selecione o cliente do Luxus Task');
+      }
+      if (!dto.taskDeadline) {
+        throw new BadRequestException('Informe o prazo da demanda');
+      }
     }
 
     const request = await this.prisma.request.create({
@@ -195,6 +207,11 @@ export class RequestsService {
         branchId,
         clientId: dto.clientId,
         createdById: user.id,
+        taskResponsibleId: dto.taskResponsibleId,
+        taskClientId: dto.taskClientId,
+        taskClientName: dto.taskClientName,
+        taskDeadline: dto.taskDeadline,
+        taskPriority: dto.taskPriority ?? false,
       },
       include: {
         partner: { select: { id: true, name: true } },
@@ -216,7 +233,15 @@ export class RequestsService {
     this.eventsGateway.emitToPartner(partnerId, 'request:created', request);
 
     if (this.taskIntegration.isConfigured() && dto.taskResponsibleId) {
-      return this.sendToTask(request, dto.taskResponsibleId, dto.taskPriority);
+      setImmediate(() => {
+        void this.sendToTask(
+          request,
+          dto.taskResponsibleId!,
+          dto.taskClientId!,
+          dto.taskDeadline!,
+          dto.taskPriority,
+        );
+      });
     }
     return request;
   }
@@ -236,7 +261,16 @@ export class RequestsService {
       // Se o primeiro envio terminou no Task após o timeout, a consulta acima
       // recupera o vínculo. Um novo POST só ocorre quando não há vínculo remoto.
     }
-    return this.sendToTask(request, request.taskResponsibleId, false);
+    if (!request.taskClientId || !request.taskDeadline) {
+      throw new BadRequestException('Cliente e prazo do Luxus Task são obrigatórios');
+    }
+    return this.sendToTask(
+      request,
+      request.taskResponsibleId,
+      request.taskClientId,
+      request.taskDeadline,
+      request.taskPriority,
+    );
   }
 
   async update(id: string, dto: UpdateRequestDto, user: AuthUser) {
@@ -425,6 +459,8 @@ export class RequestsService {
   private async sendToTask(
     request: TaskSyncSource,
     responsibleId: string,
+    clientId: string,
+    deadline: string,
     priority = false,
   ) {
     const typeLabel: Record<RequestType, string> = {
@@ -443,6 +479,8 @@ export class RequestsService {
       const task = await this.taskIntegration.createDemand({
         requestId: request.id,
         responsibleId,
+        clientId,
+        deadline,
         subject: `${typeLabel[request.type]} — ${request.partner.name}`,
         description: [
           request.description,

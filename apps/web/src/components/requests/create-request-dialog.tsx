@@ -5,6 +5,7 @@ import { RequestType, REQUEST_TYPE_LABELS, UserRole } from '@luxus/types';
 import { api, getPaginated } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -27,6 +28,13 @@ interface TaskResponsible {
   email: string;
 }
 
+interface TaskClient {
+  id: string;
+  name: string;
+  document?: string;
+  tradeName?: string;
+}
+
 interface CreateRequestDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -46,6 +54,11 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
   const [clients, setClients] = useState<Client[]>([]);
   const [responsibles, setResponsibles] = useState<TaskResponsible[]>([]);
   const [responsibleId, setResponsibleId] = useState('');
+  const [taskClients, setTaskClients] = useState<TaskClient[]>([]);
+  const [taskClientSearch, setTaskClientSearch] = useState('');
+  const [taskClientId, setTaskClientId] = useState('');
+  const [taskClientName, setTaskClientName] = useState('');
+  const [taskDeadline, setTaskDeadline] = useState('');
   const [priority, setPriority] = useState(false);
   const [integrationError, setIntegrationError] = useState('');
 
@@ -56,6 +69,11 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
     setPartnerId('');
     setClientId('');
     setResponsibleId('');
+    setTaskClients([]);
+    setTaskClientSearch('');
+    setTaskClientId('');
+    setTaskClientName('');
+    setTaskDeadline('');
     setPriority(false);
     setIntegrationError('');
     if (isAdmin) {
@@ -72,6 +90,19 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
       });
   }, [open, isAdmin]);
 
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => {
+      const query = taskClientSearch.trim();
+      api<TaskClient[]>(
+        `/task-integration/clients${query ? `?search=${encodeURIComponent(query)}` : ''}`,
+      )
+        .then(setTaskClients)
+        .catch(() => setTaskClients([]));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [open, taskClientSearch]);
+
   const handleSubmit = async () => {
     if (!description.trim()) {
       toast({ title: 'Descreva a solicitação', variant: 'destructive' });
@@ -85,6 +116,14 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
       toast({ title: 'Selecione o responsável pela demanda', variant: 'destructive' });
       return;
     }
+    if (!taskClientId || !taskClientName) {
+      toast({ title: 'Selecione o cliente do Luxus Task', variant: 'destructive' });
+      return;
+    }
+    if (!taskDeadline) {
+      toast({ title: 'Informe o prazo da demanda', variant: 'destructive' });
+      return;
+    }
     setLoading(true);
     try {
       const created = await api<{ taskSyncError?: string; taskProtocol?: string }>('/requests', {
@@ -95,13 +134,16 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
           clientId: clientId || undefined,
           partnerId: isAdmin && partnerId ? partnerId : undefined,
           taskResponsibleId: responsibleId,
+          taskClientId,
+          taskClientName,
+          taskDeadline,
           taskPriority: priority,
         },
       });
       toast({
         title: created.taskSyncError
           ? 'Demanda salva, aguardando sincronização'
-          : 'Demanda criada',
+          : 'Demanda salva e enviada para processamento',
         description: created.taskSyncError || (
           created.taskProtocol ? `Protocolo no Luxus Task: ${created.taskProtocol}` : undefined
         ),
@@ -176,6 +218,49 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
             {integrationError && (
               <p className="text-xs text-destructive">{integrationError}</p>
             )}
+          </div>
+          <div className="space-y-2">
+            <Label>Cliente no Luxus Task *</Label>
+            <Input
+              value={taskClientSearch}
+              onChange={(event) => setTaskClientSearch(event.target.value)}
+              placeholder="Digite para buscar clientes do Luxus Task"
+            />
+            <Select
+              value={taskClientId}
+              onValueChange={(value) => {
+                setTaskClientId(value);
+                setTaskClientName(
+                  taskClients.find((client) => client.id === value)?.name ?? '',
+                );
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                {taskClients.map((client) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                    {client.document ? ` — ${client.document}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {taskClients.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Nenhum cliente encontrado para a busca.
+              </p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label>Prazo no Luxus Task *</Label>
+            <Input
+              type="date"
+              min={new Date().toISOString().slice(0, 10)}
+              value={taskDeadline}
+              onChange={(event) => setTaskDeadline(event.target.value)}
+            />
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input

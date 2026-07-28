@@ -13,6 +13,13 @@ export interface TaskResponsible {
   email: string;
 }
 
+export interface TaskClient {
+  id: string;
+  name: string;
+  document?: string;
+  tradeName?: string;
+}
+
 export interface CreatedTaskDemand {
   id: string;
   protocol: string;
@@ -34,6 +41,15 @@ export class TaskIntegrationService {
 
   async listResponsibles(): Promise<TaskResponsible[]> {
     return this.request<TaskResponsible[]>('/integrations/luxus-parceiros/responsaveis');
+  }
+
+  async listClients(search?: string): Promise<TaskClient[]> {
+    const query = search?.trim()
+      ? `?search=${encodeURIComponent(search.trim())}`
+      : '';
+    return this.request<TaskClient[]>(
+      `/integrations/luxus-parceiros/clientes${query}`,
+    );
   }
 
   async createDemand(input: CreateTaskDemandInput): Promise<CreatedTaskDemand> {
