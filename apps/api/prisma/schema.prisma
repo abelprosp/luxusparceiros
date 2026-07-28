@@ -653,6 +653,8 @@ model Request {
   taskResponsibleName String?
   taskClientId String?
   taskClientName String?
+  taskClientDocumentType String?
+  taskClientDocument String?
   taskDeadline String?
   taskPriority Boolean @default(false)
   taskSyncError String?

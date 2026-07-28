@@ -18,6 +18,7 @@ export interface TaskClient {
   name: string;
   document?: string;
   tradeName?: string;
+  personType?: string;
 }
 
 export interface CreatedTaskDemand {
@@ -25,6 +26,7 @@ export interface CreatedTaskDemand {
   protocol: string;
   status: string;
   responsible?: TaskResponsible;
+  client?: TaskClient;
   updatedAt?: string;
 }
 
@@ -65,6 +67,8 @@ export class TaskIntegrationService {
   }> {
     return this.request(
       `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}`,
+      undefined,
+      10_000,
     );
   }
 
@@ -75,6 +79,7 @@ export class TaskIntegrationService {
         id: true,
         taskDemandId: true,
         status: true,
+        resolution: true,
       },
     });
     if (!existing) return { accepted: true };
@@ -87,6 +92,9 @@ export class TaskIntegrationService {
       dto.resolution?.trim() ||
       dto.observations?.filter(Boolean).at(-1)?.trim() ||
       undefined;
+    const resolutionChanged = Boolean(
+      resolution && resolution !== existing.resolution,
+    );
 
     await this.prisma.$transaction(async (tx) => {
       await tx.request.update({
@@ -104,7 +112,7 @@ export class TaskIntegrationService {
           ...(status === 'COMPLETED' && { completedAt: new Date() }),
         },
       });
-      if (status !== existing.status || resolution) {
+      if (status !== existing.status || resolutionChanged) {
         await tx.requestTimeline.create({
           data: {
             requestId: existing.id,
@@ -132,14 +140,18 @@ export class TaskIntegrationService {
     return values[status as keyof typeof values] ?? 'IN_ANALYSIS';
   }
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+  private async request<T>(
+    path: string,
+    init?: RequestInit,
+    timeoutMs = this.timeoutMs,
+  ): Promise<T> {
     if (!this.isConfigured()) {
       throw new ServiceUnavailableException(
         'Integração com o Luxus Task ainda não foi configurada',
       );
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(`${this.apiUrl}${path}`, {
         ...init,
