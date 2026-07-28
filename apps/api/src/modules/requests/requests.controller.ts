@@ -1,9 +1,10 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
-import { AuthUser, PERMISSIONS } from '@luxus/types';
+import { AuthUser, PERMISSIONS, UserRole } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
+import { Roles } from '@/common/decorators/roles.decorator';
 import { RequestsService } from './requests.service';
 import {
   CreateRequestCommentDto,
@@ -82,6 +83,7 @@ export class RequestsController {
   }
 
   @Post()
+  @Roles(UserRole.ADMIN)
   @RequirePermissions(PERMISSIONS.REQUESTS_WRITE)
   @ApiOperation({ summary: 'Criar solicitação' })
   create(@Body() dto: CreateRequestDto, @CurrentUser() user: AuthUser) {
