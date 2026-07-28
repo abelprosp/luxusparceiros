@@ -345,7 +345,7 @@ export class SalesService {
     }
 
     const {
-      client: _client,
+      client: clientChanges,
       clientId,
       partnerId: _partnerId,
       branchId,
@@ -364,6 +364,68 @@ export class SalesService {
       notes,
     } = dto;
 
+    if (clientId !== undefined && clientId !== existing.clientId) {
+      throw new BadRequestException('Não é permitido trocar o cliente da venda');
+    }
+
+    const effectivePhone = clientChanges?.phone ?? existing.client.phone;
+    const effectiveNewNumber = newNumber ?? existing.newNumber;
+    if (effectiveNewNumber && effectivePhone) {
+      const normalizedLine = effectiveNewNumber.replace(/\D/g, '');
+      const normalizedPhone = effectivePhone.replace(/\D/g, '');
+      if (normalizedLine && normalizedLine === normalizedPhone) {
+        throw new BadRequestException('Telefone de contato deve ser diferente da linha vendida');
+      }
+    }
+
+    const effectiveBranchId = branchId ?? existing.branchId;
+    if (effectiveBranchId) {
+      await assertBranchBelongsToPartner(this.prisma, effectiveBranchId, existing.partnerId);
+    }
+
+    const effectivePlanId = planId ?? existing.planId;
+    const effectiveOperatorId = operatorId ?? existing.operatorId;
+    const plan = await this.prisma.plan.findUnique({ where: { id: effectivePlanId } });
+    if (!plan || plan.operatorId !== effectiveOperatorId) {
+      throw new BadRequestException('Plano ou operadora inválidos');
+    }
+    if (user.partnerId) {
+      await this.plansService.ensurePartnerPlanLinks(existing.partnerId);
+      const linked = await this.prisma.partnerPlan.findFirst({
+        where: { partnerId: existing.partnerId, planId: effectivePlanId, isActive: true },
+      });
+      if (!linked) {
+        throw new BadRequestException('Plano não disponível para este parceiro');
+      }
+    }
+
+    const effectiveValue = value ?? Number(existing.value);
+    const commission =
+      planId !== undefined || value !== undefined
+        ? await this.resolveCommission(existing.partnerId, effectivePlanId, effectiveValue)
+        : null;
+
+    if (clientChanges) {
+      await this.prisma.client.update({
+        where: { id: existing.clientId },
+        data: {
+          name: clientChanges.name,
+          document: clientChanges.document,
+          documentType: clientChanges.documentType,
+          rg: clientChanges.rg,
+          email: clientChanges.email,
+          phone: clientChanges.phone,
+          address: clientChanges.address,
+          addressNumber: clientChanges.addressNumber,
+          complement: clientChanges.complement,
+          neighborhood: clientChanges.neighborhood,
+          city: clientChanges.city,
+          state: clientChanges.state,
+          zipCode: clientChanges.zipCode,
+        },
+      });
+    }
+
     const sale = await this.prisma.sale.update({
       where: { id },
       data: {
@@ -374,6 +436,10 @@ export class SalesService {
         ...(lineId !== undefined && { lineId }),
         ...(campaignId !== undefined && { campaignId }),
         ...(value !== undefined && { value }),
+        ...(commission && {
+          commissionRate: commission.commissionRate,
+          commissionValue: commission.amount,
+        }),
         ...(isPortability !== undefined && { isPortability }),
         ...(isVirginChip !== undefined && { isVirginChip }),
         ...(portabilityNumber !== undefined && { portabilityNumber }),
