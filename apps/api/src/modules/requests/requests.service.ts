@@ -229,6 +229,13 @@ export class RequestsService {
     if (!request.taskResponsibleId) {
       throw new BadRequestException('Selecione um responsável do Luxus Task');
     }
+    try {
+      const existingTask = await this.taskIntegration.getDemand(request.id);
+      return this.saveTaskLink(request, request.taskResponsibleId, existingTask);
+    } catch {
+      // Se o primeiro envio terminou no Task após o timeout, a consulta acima
+      // recupera o vínculo. Um novo POST só ocorre quando não há vínculo remoto.
+    }
     return this.sendToTask(request, request.taskResponsibleId, false);
   }
 
@@ -448,35 +455,7 @@ export class RequestsService {
         requesterEmail: request.createdBy.email,
         priority,
       });
-      const updated = await this.prisma.request.update({
-        where: { id: request.id },
-        data: {
-          taskDemandId: task.id,
-          taskProtocol: task.protocol,
-          taskStatus: task.status,
-          taskResponsibleId: task.responsible?.id ?? responsibleId,
-          taskResponsibleName: task.responsible?.name,
-          taskSyncError: null,
-          taskLastSyncAt: new Date(),
-        },
-        include: {
-          partner: { select: { id: true, name: true } },
-          branch: { select: { id: true, name: true } },
-          client: { select: { id: true, name: true } },
-          createdBy: { select: { id: true, name: true, email: true } },
-        },
-      });
-      await this.addTimeline(
-        request.id,
-        `Demanda ${task.protocol} criada no Luxus Task`,
-        null,
-        null,
-        undefined,
-        task.responsible?.name
-          ? `Responsável: ${task.responsible.name}`
-          : undefined,
-      );
-      return updated;
+      return this.saveTaskLink(request, responsibleId, task);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao sincronizar';
       const updated = await this.prisma.request.update({
@@ -495,5 +474,41 @@ export class RequestsService {
       });
       return updated;
     }
+  }
+
+  private async saveTaskLink(
+    request: TaskSyncSource,
+    responsibleId: string,
+    task: Awaited<ReturnType<TaskIntegrationService['createDemand']>>,
+  ) {
+    const updated = await this.prisma.request.update({
+      where: { id: request.id },
+      data: {
+        taskDemandId: task.id,
+        taskProtocol: task.protocol,
+        taskStatus: task.status,
+        taskResponsibleId: task.responsible?.id ?? responsibleId,
+        taskResponsibleName: task.responsible?.name,
+        taskSyncError: null,
+        taskLastSyncAt: new Date(),
+      },
+      include: {
+        partner: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, email: true } },
+      },
+    });
+    await this.addTimeline(
+      request.id,
+      `Demanda ${task.protocol} vinculada ao Luxus Task`,
+      null,
+      null,
+      undefined,
+      task.responsible?.name
+        ? `Responsável: ${task.responsible.name}`
+        : undefined,
+    );
+    return updated;
   }
 }

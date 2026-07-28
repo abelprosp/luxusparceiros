@@ -123,7 +123,7 @@ export class TaskIntegrationService {
       );
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15_000);
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const response = await fetch(`${this.apiUrl}${path}`, {
         ...init,
@@ -143,6 +143,11 @@ export class TaskIntegrationService {
       return body as T;
     } catch (error) {
       if (error instanceof BadGatewayException) throw error;
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new BadGatewayException(
+          'O Luxus Task demorou para responder. A demanda pode já ter sido criada; tente sincronizar novamente para confirmar sem duplicar.',
+        );
+      }
       throw new BadGatewayException(
         error instanceof Error
           ? `Não foi possível acessar o Luxus Task: ${error.message}`
@@ -159,5 +164,12 @@ export class TaskIntegrationService {
 
   private get integrationKey(): string | undefined {
     return this.config.get<string>('LUXUS_TASK_INTEGRATION_KEY')?.trim();
+  }
+
+  private get timeoutMs(): number {
+    const configured = Number(this.config.get<string>('LUXUS_TASK_TIMEOUT_MS'));
+    return Number.isFinite(configured) && configured >= 15_000
+      ? Math.min(configured, 120_000)
+      : 90_000;
   }
 }
