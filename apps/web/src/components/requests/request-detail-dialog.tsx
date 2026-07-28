@@ -80,6 +80,13 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
     }
   }, [requestId]);
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    onOpenChange(nextOpen);
+    if (!nextOpen) {
+      onUpdated();
+    }
+  };
+
   useEffect(() => {
     if (open && requestId) load();
     if (!open) {
@@ -141,7 +148,7 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{request?.protocol ?? 'Solicitação'}</DialogTitle>
@@ -244,7 +251,7 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
           <p className="text-sm text-muted-foreground">Solicitação não encontrada.</p>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>Fechar</Button>
           <Button onClick={handleComment} disabled={sending || !comment.trim()}>Enviar comentário</Button>
         </DialogFooter>
       </DialogContent>

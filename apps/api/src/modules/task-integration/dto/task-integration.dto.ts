@@ -50,8 +50,21 @@ export class CreateTaskDemandInput {
   @IsUUID()
   responsibleId: string;
 
+  @IsOptional()
   @IsUUID()
-  clientId: string;
+  clientId?: string;
+
+  @IsOptional()
+  @IsString()
+  clientName?: string;
+
+  @IsOptional()
+  @IsIn(['pf', 'pj'])
+  clientDocumentType?: 'pf' | 'pj';
+
+  @IsOptional()
+  @IsString()
+  clientDocument?: string;
 
   @IsDateString()
   deadline: string;

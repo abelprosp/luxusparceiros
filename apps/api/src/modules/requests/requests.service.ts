@@ -33,6 +33,8 @@ interface TaskSyncSource {
   createdBy: { name: string; email: string };
   taskClientId?: string | null;
   taskClientName?: string | null;
+  taskClientDocumentType?: string | null;
+  taskClientDocument?: string | null;
   taskDeadline?: string | null;
   taskPriority?: boolean;
 }
@@ -60,6 +62,7 @@ export class RequestsService {
     },
   ) {
     const where = this.buildWhere(user, params);
+    await this.syncLinkedTaskStatuses(where);
 
     const [data, total] = await Promise.all([
       this.prisma.request.findMany({
@@ -92,8 +95,10 @@ export class RequestsService {
       branchId?: string;
     },
   ) {
+    const where = this.buildWhere(user, params);
+    await this.syncLinkedTaskStatuses(where);
     const data = await this.prisma.request.findMany({
-      where: this.buildWhere(user, params),
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         partner: { select: { id: true, name: true } },
@@ -190,8 +195,21 @@ export class RequestsService {
       if (!dto.taskResponsibleId) {
         throw new BadRequestException('Selecione o responsável pela demanda');
       }
-      if (!dto.taskClientId || !dto.taskClientName) {
-        throw new BadRequestException('Selecione o cliente do Luxus Task');
+      const document = dto.taskClientDocument?.replace(/\D/g, '');
+      const hasSelectedClient = Boolean(dto.taskClientId && dto.taskClientName);
+      const hasManualClient = Boolean(
+        dto.taskClientName
+        && ['pf', 'pj'].includes(dto.taskClientDocumentType ?? '')
+        && document
+        && (
+          (dto.taskClientDocumentType === 'pf' && document.length === 11)
+          || (dto.taskClientDocumentType === 'pj' && document.length === 14)
+        ),
+      );
+      if (!hasSelectedClient && !hasManualClient) {
+        throw new BadRequestException(
+          'Selecione um cliente do Luxus Task ou informe nome e CPF/CNPJ',
+        );
       }
       if (!dto.taskDeadline) {
         throw new BadRequestException('Informe o prazo da demanda');
@@ -210,6 +228,8 @@ export class RequestsService {
         taskResponsibleId: dto.taskResponsibleId,
         taskClientId: dto.taskClientId,
         taskClientName: dto.taskClientName,
+        taskClientDocumentType: dto.taskClientDocumentType,
+        taskClientDocument: dto.taskClientDocument?.replace(/\D/g, ''),
         taskDeadline: dto.taskDeadline,
         taskPriority: dto.taskPriority ?? false,
       },
@@ -237,7 +257,10 @@ export class RequestsService {
         void this.sendToTask(
           request,
           dto.taskResponsibleId!,
-          dto.taskClientId!,
+          dto.taskClientId,
+          dto.taskClientName!,
+          dto.taskClientDocumentType,
+          dto.taskClientDocument,
           dto.taskDeadline!,
           dto.taskPriority,
         );
@@ -261,13 +284,23 @@ export class RequestsService {
       // Se o primeiro envio terminou no Task após o timeout, a consulta acima
       // recupera o vínculo. Um novo POST só ocorre quando não há vínculo remoto.
     }
-    if (!request.taskClientId || !request.taskDeadline) {
+    if (
+      !request.taskDeadline
+      || !request.taskClientName
+      || (
+        !request.taskClientId
+        && (!request.taskClientDocumentType || !request.taskClientDocument)
+      )
+    ) {
       throw new BadRequestException('Cliente e prazo do Luxus Task são obrigatórios');
     }
     return this.sendToTask(
       request,
       request.taskResponsibleId,
       request.taskClientId,
+      request.taskClientName,
+      request.taskClientDocumentType ?? undefined,
+      request.taskClientDocument ?? undefined,
       request.taskDeadline,
       request.taskPriority,
     );
@@ -443,6 +476,40 @@ export class RequestsService {
     return where;
   }
 
+  private async syncLinkedTaskStatuses(where: Prisma.RequestWhereInput) {
+    if (!this.taskIntegration.isConfigured()) return;
+
+    const linked = await this.prisma.request.findMany({
+      where: {
+        AND: [
+          where,
+          { taskDemandId: { not: null } },
+          { status: { notIn: [RequestStatus.COMPLETED, RequestStatus.REJECTED] } },
+        ],
+      },
+      select: { id: true },
+      orderBy: { taskLastSyncAt: 'asc' },
+      take: 30,
+    });
+
+    await Promise.allSettled(
+      linked.map(async ({ id }) => {
+        const taskDemand = await this.taskIntegration.getDemand(id);
+        await this.taskIntegration.applyCallback({
+          externalRequestId: id,
+          demandId: taskDemand.id,
+          protocol: taskDemand.protocol,
+          status: taskDemand.status,
+          resolution: taskDemand.resolution,
+          observations: taskDemand.observations,
+          responsibleId: taskDemand.responsible?.id,
+          responsibleName: taskDemand.responsible?.name,
+          updatedAt: taskDemand.updatedAt,
+        });
+      }),
+    );
+  }
+
   private async addTimeline(
     requestId: string,
     action: string,
@@ -459,7 +526,10 @@ export class RequestsService {
   private async sendToTask(
     request: TaskSyncSource,
     responsibleId: string,
-    clientId: string,
+    clientId: string | undefined | null,
+    clientName: string,
+    clientDocumentType: string | undefined | null,
+    clientDocument: string | undefined | null,
     deadline: string,
     priority = false,
   ) {
@@ -479,7 +549,10 @@ export class RequestsService {
       const task = await this.taskIntegration.createDemand({
         requestId: request.id,
         responsibleId,
-        clientId,
+        clientId: clientId ?? undefined,
+        clientName,
+        clientDocumentType: clientDocumentType as 'pf' | 'pj' | undefined,
+        clientDocument: clientDocument?.replace(/\D/g, '') || undefined,
         deadline,
         subject: `${typeLabel[request.type]} — ${request.partner.name}`,
         description: [
@@ -527,6 +600,8 @@ export class RequestsService {
         taskStatus: task.status,
         taskResponsibleId: task.responsible?.id ?? responsibleId,
         taskResponsibleName: task.responsible?.name,
+        taskClientId: task.client?.id ?? request.taskClientId,
+        taskClientName: task.client?.name ?? request.taskClientName,
         taskSyncError: null,
         taskLastSyncAt: new Date(),
       },

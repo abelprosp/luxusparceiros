@@ -92,6 +92,16 @@ export class CreateRequestDto {
   @IsString()
   taskClientName?: string;
 
+  @ApiPropertyOptional({ description: 'Tipo do documento do novo cliente: pf ou pj' })
+  @IsOptional()
+  @IsString()
+  taskClientDocumentType?: string;
+
+  @ApiPropertyOptional({ description: 'CPF ou CNPJ do novo cliente' })
+  @IsOptional()
+  @IsString()
+  taskClientDocument?: string;
+
   @ApiPropertyOptional({ description: 'Prazo da demanda no formato YYYY-MM-DD' })
   @IsOptional()
   @IsDateString()
@@ -106,7 +116,15 @@ export class CreateRequestDto {
 export class UpdateRequestDto extends PartialType(
   OmitType(
     CreateRequestDto,
-    ['taskResponsibleId', 'taskClientId', 'taskClientName', 'taskDeadline', 'taskPriority'] as const,
+    [
+      'taskResponsibleId',
+      'taskClientId',
+      'taskClientName',
+      'taskClientDocumentType',
+      'taskClientDocument',
+      'taskDeadline',
+      'taskPriority',
+    ] as const,
   ),
 ) {
   @ApiPropertyOptional({ enum: RequestStatus })

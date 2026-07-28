@@ -33,7 +33,10 @@ interface TaskClient {
   name: string;
   document?: string;
   tradeName?: string;
+  personType?: string;
 }
+
+type TaskClientMode = 'existing' | 'manual';
 
 interface CreateRequestDialogProps {
   open: boolean;
@@ -58,6 +61,12 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
   const [taskClientSearch, setTaskClientSearch] = useState('');
   const [taskClientId, setTaskClientId] = useState('');
   const [taskClientName, setTaskClientName] = useState('');
+  const [taskClientMode, setTaskClientMode] = useState<TaskClientMode>('existing');
+  const [manualClientName, setManualClientName] = useState('');
+  const [manualDocumentType, setManualDocumentType] = useState<'pf' | 'pj'>('pj');
+  const [manualDocument, setManualDocument] = useState('');
+  const [documentMatch, setDocumentMatch] = useState<TaskClient | null>(null);
+  const [checkingDocument, setCheckingDocument] = useState(false);
   const [taskDeadline, setTaskDeadline] = useState('');
   const [priority, setPriority] = useState(false);
   const [integrationError, setIntegrationError] = useState('');
@@ -73,6 +82,12 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
     setTaskClientSearch('');
     setTaskClientId('');
     setTaskClientName('');
+    setTaskClientMode('existing');
+    setManualClientName('');
+    setManualDocumentType('pj');
+    setManualDocument('');
+    setDocumentMatch(null);
+    setCheckingDocument(false);
     setTaskDeadline('');
     setPriority(false);
     setIntegrationError('');
@@ -103,6 +118,32 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
     return () => clearTimeout(timer);
   }, [open, taskClientSearch]);
 
+  useEffect(() => {
+    if (!open || taskClientMode !== 'manual') return;
+    const digits = manualDocument.replace(/\D/g, '');
+    const expectedLength = manualDocumentType === 'pf' ? 11 : 14;
+    if (digits.length !== expectedLength) {
+      setDocumentMatch(null);
+      setCheckingDocument(false);
+      return;
+    }
+
+    setCheckingDocument(true);
+    const timer = setTimeout(() => {
+      api<TaskClient[]>(
+        `/task-integration/clients?search=${encodeURIComponent(digits)}`,
+      )
+        .then((items) => {
+          setDocumentMatch(
+            items.find((item) => item.document?.replace(/\D/g, '') === digits) ?? null,
+          );
+        })
+        .catch(() => setDocumentMatch(null))
+        .finally(() => setCheckingDocument(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [open, taskClientMode, manualDocument, manualDocumentType]);
+
   const handleSubmit = async () => {
     if (!description.trim()) {
       toast({ title: 'Descreva a solicitação', variant: 'destructive' });
@@ -116,8 +157,23 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
       toast({ title: 'Selecione o responsável pela demanda', variant: 'destructive' });
       return;
     }
-    if (!taskClientId || !taskClientName) {
+    const manualDigits = manualDocument.replace(/\D/g, '');
+    const expectedDocumentLength = manualDocumentType === 'pf' ? 11 : 14;
+    const selectedTaskClient = taskClientMode === 'existing'
+      ? taskClients.find((client) => client.id === taskClientId)
+      : documentMatch;
+    if (taskClientMode === 'existing' && (!taskClientId || !taskClientName)) {
       toast({ title: 'Selecione o cliente do Luxus Task', variant: 'destructive' });
+      return;
+    }
+    if (
+      taskClientMode === 'manual'
+      && (!manualClientName.trim() || manualDigits.length !== expectedDocumentLength)
+    ) {
+      toast({
+        title: `Informe o nome e um ${manualDocumentType === 'pf' ? 'CPF' : 'CNPJ'} válido`,
+        variant: 'destructive',
+      });
       return;
     }
     if (!taskDeadline) {
@@ -134,8 +190,16 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
           clientId: clientId || undefined,
           partnerId: isAdmin && partnerId ? partnerId : undefined,
           taskResponsibleId: responsibleId,
-          taskClientId,
-          taskClientName,
+          taskClientId: selectedTaskClient?.id || undefined,
+          taskClientName: selectedTaskClient?.name || manualClientName.trim(),
+          taskClientDocumentType:
+            taskClientMode === 'manual' && !selectedTaskClient
+              ? manualDocumentType
+              : undefined,
+          taskClientDocument:
+            taskClientMode === 'manual' && !selectedTaskClient
+              ? manualDigits
+              : undefined,
           taskDeadline,
           taskPriority: priority,
         },
@@ -219,38 +283,126 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
               <p className="text-xs text-destructive">{integrationError}</p>
             )}
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label>Cliente no Luxus Task *</Label>
-            <Input
-              value={taskClientSearch}
-              onChange={(event) => setTaskClientSearch(event.target.value)}
-              placeholder="Digite para buscar clientes do Luxus Task"
-            />
-            <Select
-              value={taskClientId}
-              onValueChange={(value) => {
-                setTaskClientId(value);
-                setTaskClientName(
-                  taskClients.find((client) => client.id === value)?.name ?? '',
-                );
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione o cliente" />
-              </SelectTrigger>
-              <SelectContent>
-                {taskClients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>
-                    {client.name}
-                    {client.document ? ` — ${client.document}` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {taskClients.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                Nenhum cliente encontrado para a busca.
-              </p>
+            <div className="grid grid-cols-2 gap-2 rounded-lg border p-1">
+              <Button
+                type="button"
+                size="sm"
+                variant={taskClientMode === 'existing' ? 'secondary' : 'ghost'}
+                onClick={() => setTaskClientMode('existing')}
+              >
+                Já cadastrado
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={taskClientMode === 'manual' ? 'secondary' : 'ghost'}
+                onClick={() => setTaskClientMode('manual')}
+              >
+                Cadastrar manualmente
+              </Button>
+            </div>
+
+            {taskClientMode === 'existing' ? (
+              <>
+                <Input
+                  value={taskClientSearch}
+                  onChange={(event) => setTaskClientSearch(event.target.value)}
+                  placeholder="Busque por nome, CPF ou CNPJ"
+                />
+                <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border bg-popover p-1">
+                  {taskClients.length > 0 ? taskClients.map((client) => (
+                    <button
+                      key={client.id}
+                      type="button"
+                      className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                        taskClientId === client.id
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-accent'
+                      }`}
+                      onClick={() => {
+                        setTaskClientId(client.id);
+                        setTaskClientName(client.name);
+                      }}
+                    >
+                      <span className="block font-medium">{client.name}</span>
+                      {(client.tradeName || client.document) && (
+                        <span className="block text-xs opacity-75">
+                          {[client.tradeName, client.document].filter(Boolean).join(' — ')}
+                        </span>
+                      )}
+                    </button>
+                  )) : (
+                    <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                      Nenhum cliente encontrado. Use “Cadastrar manualmente”.
+                    </p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3 rounded-lg border p-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={manualDocumentType === 'pj' ? 'secondary' : 'outline'}
+                    onClick={() => {
+                      setManualDocumentType('pj');
+                      setManualDocument('');
+                    }}
+                  >
+                    CNPJ
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={manualDocumentType === 'pf' ? 'secondary' : 'outline'}
+                    onClick={() => {
+                      setManualDocumentType('pf');
+                      setManualDocument('');
+                    }}
+                  >
+                    CPF
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <Label>Nome do cliente *</Label>
+                  <Input
+                    value={manualClientName}
+                    onChange={(event) => setManualClientName(event.target.value)}
+                    placeholder={manualDocumentType === 'pj' ? 'Razão social ou nome fantasia' : 'Nome completo'}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{manualDocumentType === 'pj' ? 'CNPJ' : 'CPF'} *</Label>
+                  <Input
+                    inputMode="numeric"
+                    value={manualDocument}
+                    onChange={(event) => {
+                      const limit = manualDocumentType === 'pf' ? 11 : 14;
+                      setManualDocument(event.target.value.replace(/\D/g, '').slice(0, limit));
+                    }}
+                    placeholder={manualDocumentType === 'pj' ? '14 dígitos' : '11 dígitos'}
+                  />
+                </div>
+                {checkingDocument && (
+                  <p className="text-xs text-muted-foreground">Verificando documento...</p>
+                )}
+                {!checkingDocument && documentMatch && (
+                  <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                    Este documento já está cadastrado para <strong>{documentMatch.name}</strong>.
+                    A demanda usará esse cliente existente.
+                  </p>
+                )}
+                {!checkingDocument
+                  && !documentMatch
+                  && manualDocument.length === (manualDocumentType === 'pf' ? 11 : 14) && (
+                    <p className="rounded-md border border-green-500/40 bg-green-500/10 p-2 text-xs text-green-700 dark:text-green-300">
+                      Documento não encontrado. O cliente será cadastrado automaticamente no Luxus Task.
+                    </p>
+                  )}
+              </div>
             )}
           </div>
           <div className="space-y-2">
