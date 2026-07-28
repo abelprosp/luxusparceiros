@@ -18,6 +18,7 @@ import {
   RequestType,
   REQUEST_STATUS_LABELS,
   REQUEST_TYPE_LABELS,
+  UserRole,
 } from '@luxus/types';
 import { formatDate } from '@luxus/utils';
 import { api, getPaginated, API_URL } from '@/lib/api';
@@ -66,6 +67,7 @@ export default function SolicitacoesPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isPartner = isPartnerUser(user);
+  const canCreateDemand = user?.role === UserRole.ADMIN;
   const [items, setItems] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -311,10 +313,12 @@ export default function SolicitacoesPage() {
               Exportar CSV
             </Button>
           )}
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nova demanda
-          </Button>
+          {canCreateDemand && (
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nova demanda
+            </Button>
+          )}
         </div>
       </div>
 
@@ -503,7 +507,9 @@ export default function SolicitacoesPage() {
         </>
       )}
 
-      <CreateRequestDialog open={createOpen} onOpenChange={setCreateOpen} onSuccess={load} />
+      {canCreateDemand && (
+        <CreateRequestDialog open={createOpen} onOpenChange={setCreateOpen} onSuccess={load} />
+      )}
       <RequestDetailDialog
         requestId={selectedId}
         open={detailOpen}
