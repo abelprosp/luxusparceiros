@@ -31,6 +31,7 @@ import { AuditModule } from '@/modules/audit/audit.module';
 import { UploadsModule } from '@/modules/uploads/uploads.module';
 import { StockModule } from '@/modules/stock/stock.module';
 import { BranchesModule } from '@/modules/branches/branches.module';
+import { TaskIntegrationModule } from '@/modules/task-integration/task-integration.module';
 import { HealthController } from './health.controller';
 import { RootController } from './root.controller';
 
@@ -69,6 +70,7 @@ import { RootController } from './root.controller';
     UploadsModule,
     StockModule,
     BranchesModule,
+    TaskIntegrationModule,
   ],
   controllers: [RootController, HealthController],
   providers: [

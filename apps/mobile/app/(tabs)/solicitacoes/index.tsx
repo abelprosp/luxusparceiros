@@ -62,10 +62,17 @@ export default function SolicitacoesScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.content}>
-        <ScreenHeader title="Solicitações" subtitle={`${requests.length} solicitação(ões)`} showBack />
+        <ScreenHeader title="Demandas" subtitle={`${requests.length} demanda(s)`} showBack />
 
         <Button
-          title="Exportar solicitações"
+          title="Chamados anteriores"
+          variant="outline"
+          onPress={() => router.push('/(tabs)/chamados' as never)}
+          fullWidth
+        />
+
+        <Button
+          title="Exportar demandas"
           variant="outline"
           onPress={handleExport}
           icon={<Download size={18} color={colors.primary} />}
@@ -84,8 +91,8 @@ export default function SolicitacoesScreen() {
             ListEmptyComponent={
               <EmptyState
                 icon={<FileText size={48} color={colors.textSecondary} />}
-                title="Nenhuma solicitação"
-                actionLabel="Nova solicitação"
+                title="Nenhuma demanda"
+                actionLabel="Nova demanda"
                 onAction={() => router.push('/(tabs)/solicitacoes/nova' as never)}
               />
             }

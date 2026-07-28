@@ -21,6 +21,12 @@ interface Client {
   name: string;
 }
 
+interface TaskResponsible {
+  id: string;
+  name: string;
+  email: string;
+}
+
 interface CreateRequestDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,6 +44,10 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
   const [clientId, setClientId] = useState('');
   const [partners, setPartners] = useState<Partner[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [responsibles, setResponsibles] = useState<TaskResponsible[]>([]);
+  const [responsibleId, setResponsibleId] = useState('');
+  const [priority, setPriority] = useState(false);
+  const [integrationError, setIntegrationError] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -45,10 +55,21 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
     setDescription('');
     setPartnerId('');
     setClientId('');
+    setResponsibleId('');
+    setPriority(false);
+    setIntegrationError('');
     if (isAdmin) {
       getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' }).then((r) => setPartners(r.data));
     }
     getPaginated<Client>('/clients', { limit: 50 }).then((r) => setClients(r.data));
+    api<TaskResponsible[]>('/task-integration/responsibles')
+      .then(setResponsibles)
+      .catch((error) => {
+        setResponsibles([]);
+        setIntegrationError(
+          error instanceof Error ? error.message : 'Não foi possível carregar os responsáveis.',
+        );
+      });
   }, [open, isAdmin]);
 
   const handleSubmit = async () => {
@@ -60,18 +81,32 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
       toast({ title: 'Selecione o parceiro', variant: 'destructive' });
       return;
     }
+    if (!responsibleId) {
+      toast({ title: 'Selecione o responsável pela demanda', variant: 'destructive' });
+      return;
+    }
     setLoading(true);
     try {
-      await api('/requests', {
+      const created = await api<{ taskSyncError?: string; taskProtocol?: string }>('/requests', {
         method: 'POST',
         body: {
           type,
           description,
           clientId: clientId || undefined,
           partnerId: isAdmin && partnerId ? partnerId : undefined,
+          taskResponsibleId: responsibleId,
+          taskPriority: priority,
         },
       });
-      toast({ title: 'Solicitação criada', variant: 'success' });
+      toast({
+        title: created.taskSyncError
+          ? 'Demanda salva, aguardando sincronização'
+          : 'Demanda criada',
+        description: created.taskSyncError || (
+          created.taskProtocol ? `Protocolo no Luxus Task: ${created.taskProtocol}` : undefined
+        ),
+        variant: created.taskSyncError ? 'default' : 'success',
+      });
       onOpenChange(false);
       onSuccess();
     } catch (err) {
@@ -85,7 +120,7 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Nova solicitação</DialogTitle>
+          <DialogTitle>Nova demanda</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
@@ -125,13 +160,42 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
             </Select>
           </div>
           <div className="space-y-2">
+            <Label>Responsável no Luxus Task *</Label>
+            <Select value={responsibleId} onValueChange={setResponsibleId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione quem receberá a demanda" />
+              </SelectTrigger>
+              <SelectContent>
+                {responsibles.map((responsible) => (
+                  <SelectItem key={responsible.id} value={responsible.id}>
+                    {responsible.name} — {responsible.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {integrationError && (
+              <p className="text-xs text-destructive">{integrationError}</p>
+            )}
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={priority}
+              onChange={(event) => setPriority(event.target.checked)}
+              className="h-4 w-4 rounded border-border"
+            />
+            Marcar como prioridade
+          </label>
+          <div className="space-y-2">
             <Label>Descrição</Label>
             <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Descreva o que precisa..." />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={loading}>{loading ? 'Enviando...' : 'Criar'}</Button>
+          <Button onClick={handleSubmit} disabled={loading || responsibles.length === 0}>
+            {loading ? 'Enviando...' : 'Criar demanda'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,0 +1,163 @@
+import {
+  BadGatewayException,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '@/prisma/prisma.service';
+import { TaskDemandCallbackDto, CreateTaskDemandInput } from './dto/task-integration.dto';
+
+export interface TaskResponsible {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface CreatedTaskDemand {
+  id: string;
+  protocol: string;
+  status: string;
+  responsible?: TaskResponsible;
+  updatedAt?: string;
+}
+
+@Injectable()
+export class TaskIntegrationService {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  isConfigured(): boolean {
+    return Boolean(this.apiUrl && this.integrationKey);
+  }
+
+  async listResponsibles(): Promise<TaskResponsible[]> {
+    return this.request<TaskResponsible[]>('/integrations/luxus-parceiros/responsaveis');
+  }
+
+  async createDemand(input: CreateTaskDemandInput): Promise<CreatedTaskDemand> {
+    return this.request<CreatedTaskDemand>('/integrations/luxus-parceiros/demandas', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async getDemand(externalRequestId: string): Promise<CreatedTaskDemand & {
+    resolution?: string;
+    observations?: string[];
+  }> {
+    return this.request(
+      `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}`,
+    );
+  }
+
+  async applyCallback(dto: TaskDemandCallbackDto) {
+    const existing = await this.prisma.request.findUnique({
+      where: { id: dto.externalRequestId },
+      select: {
+        id: true,
+        taskDemandId: true,
+        status: true,
+      },
+    });
+    if (!existing) return { accepted: true };
+    if (existing.taskDemandId && existing.taskDemandId !== dto.demandId) {
+      throw new BadGatewayException('A demanda não corresponde à solicitação informada');
+    }
+
+    const status = this.mapTaskStatus(dto.status);
+    const resolution =
+      dto.resolution?.trim() ||
+      dto.observations?.filter(Boolean).at(-1)?.trim() ||
+      undefined;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.request.update({
+        where: { id: existing.id },
+        data: {
+          taskDemandId: dto.demandId,
+          taskProtocol: dto.protocol,
+          taskStatus: dto.status,
+          taskResponsibleId: dto.responsibleId,
+          taskResponsibleName: dto.responsibleName,
+          taskSyncError: null,
+          taskLastSyncAt: dto.updatedAt ? new Date(dto.updatedAt) : new Date(),
+          status,
+          ...(resolution && { resolution }),
+          ...(status === 'COMPLETED' && { completedAt: new Date() }),
+        },
+      });
+      if (status !== existing.status || resolution) {
+        await tx.requestTimeline.create({
+          data: {
+            requestId: existing.id,
+            action: status !== existing.status
+              ? 'Status sincronizado pelo Luxus Task'
+              : 'Resposta sincronizada pelo Luxus Task',
+            fromStatus: existing.status,
+            toStatus: status,
+            details: resolution,
+          },
+        });
+      }
+    });
+    return { accepted: true };
+  }
+
+  private mapTaskStatus(status: string) {
+    const values = {
+      em_aberto: 'OPEN',
+      em_andamento: 'IN_PROGRESS',
+      concluido: 'COMPLETED',
+      standby: 'IN_ANALYSIS',
+      cancelado: 'REJECTED',
+    } as const;
+    return values[status as keyof typeof values] ?? 'IN_ANALYSIS';
+  }
+
+  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+    if (!this.isConfigured()) {
+      throw new ServiceUnavailableException(
+        'Integração com o Luxus Task ainda não foi configurada',
+      );
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const response = await fetch(`${this.apiUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-integration-key': this.integrationKey!,
+          ...init?.headers,
+        },
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new BadGatewayException(
+          body?.message || `Luxus Task respondeu com HTTP ${response.status}`,
+        );
+      }
+      return body as T;
+    } catch (error) {
+      if (error instanceof BadGatewayException) throw error;
+      throw new BadGatewayException(
+        error instanceof Error
+          ? `Não foi possível acessar o Luxus Task: ${error.message}`
+          : 'Não foi possível acessar o Luxus Task',
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private get apiUrl(): string | undefined {
+    return this.config.get<string>('LUXUS_TASK_API_URL')?.trim().replace(/\/+$/, '');
+  }
+
+  private get integrationKey(): string | undefined {
+    return this.config.get<string>('LUXUS_TASK_INTEGRATION_KEY')?.trim();
+  }
+}

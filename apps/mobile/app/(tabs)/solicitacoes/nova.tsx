@@ -4,7 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { RequestType } from '@luxus/types';
 import { useTheme } from '@/contexts/ThemeContext';
-import { requestsApi, clientsApi, type Client } from '@/services/api';
+import {
+  requestsApi,
+  clientsApi,
+  taskIntegrationApi,
+  type Client,
+  type TaskResponsible,
+} from '@/services/api';
 import { Button, Input } from '@/components/ui';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { REQUEST_TYPE_LABELS } from '@/utils/labels';
@@ -20,9 +26,14 @@ export default function NovaSolicitacaoScreen() {
   const [description, setDescription] = useState('');
   const [clientId, setClientId] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
+  const [responsibles, setResponsibles] = useState<TaskResponsible[]>([]);
+  const [responsibleId, setResponsibleId] = useState('');
 
   useEffect(() => {
     clientsApi.list({ limit: 50 }).then((r) => r.success && r.data && setClients(r.data.data));
+    taskIntegrationApi.responsibles()
+      .then((r) => r.success && r.data && setResponsibles(r.data))
+      .catch(() => setResponsibles([]));
   }, []);
 
   const handleSubmit = async () => {
@@ -30,11 +41,20 @@ export default function NovaSolicitacaoScreen() {
       Alert.alert('Atenção', 'Descreva a solicitação');
       return;
     }
+    if (!responsibleId) {
+      Alert.alert('Atenção', 'Selecione o responsável pela demanda');
+      return;
+    }
     setLoading(true);
     try {
-      const response = await requestsApi.create({ type, description, clientId: clientId || undefined });
+      const response = await requestsApi.create({
+        type,
+        description,
+        clientId: clientId || undefined,
+        taskResponsibleId: responsibleId,
+      });
       if (response.success) {
-        Alert.alert('Sucesso', 'Solicitação criada', [{ text: 'OK', onPress: () => router.back() }]);
+        Alert.alert('Sucesso', 'Demanda criada', [{ text: 'OK', onPress: () => router.back() }]);
       }
     } catch (err) {
       Alert.alert('Erro', err instanceof Error ? err.message : 'Falha ao criar solicitação');
@@ -47,7 +67,7 @@ export default function NovaSolicitacaoScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <ScreenHeader title="Nova Solicitação" showBack />
+          <ScreenHeader title="Nova Demanda" showBack />
 
           <Text style={[styles.label, { color: colors.text }]}>Tipo</Text>
           <View style={styles.types}>
@@ -79,7 +99,26 @@ export default function NovaSolicitacaoScreen() {
 
           <Input label="Descrição *" value={description} onChangeText={setDescription} multiline numberOfLines={4} placeholder="Descreva o que precisa..." />
 
-          <Button title="Enviar solicitação" onPress={handleSubmit} loading={loading} fullWidth />
+          <Text style={[styles.label, { color: colors.text }]}>Responsável no Luxus Task *</Text>
+          <View style={styles.clients}>
+            {responsibles.map((responsible) => (
+              <TouchableOpacity
+                key={responsible.id}
+                style={[
+                  styles.clientChip,
+                  {
+                    backgroundColor: responsibleId === responsible.id ? `${colors.primary}20` : colors.surface,
+                    borderColor: responsibleId === responsible.id ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={() => setResponsibleId(responsible.id)}
+              >
+                <Text style={{ color: colors.text, ...typography.caption }}>{responsible.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Button title="Enviar demanda" onPress={handleSubmit} loading={loading} fullWidth />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -1,12 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
   Download,
   FileText,
   GripVertical,
   LayoutGrid,
   List,
+  MessageSquare,
   Plus,
   RotateCcw,
   Search,
@@ -110,7 +112,7 @@ export default function SolicitacoesPage() {
     } catch (err) {
       setItems([]);
       toast({
-        title: 'Erro ao carregar solicitações',
+        title: 'Erro ao carregar demandas',
         description: err instanceof Error ? err.message : 'Tente novamente.',
         variant: 'destructive',
       });
@@ -149,7 +151,7 @@ export default function SolicitacoesPage() {
     } catch (err) {
       setItems(previous);
       toast({
-        title: 'Erro ao mover solicitação',
+        title: 'Erro ao mover demanda',
         description: err instanceof Error ? err.message : 'Tente novamente.',
         variant: 'destructive',
       });
@@ -212,7 +214,7 @@ export default function SolicitacoesPage() {
   };
 
   return (
-    <DashboardLayout title="Solicitações" description={isPartner ? 'Suas solicitações' : 'Gestão de solicitações dos parceiros'}>
+    <DashboardLayout title="Demandas" description={isPartner ? 'Suas demandas e retornos' : 'Demandas enviadas pelos parceiros'}>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1 sm:max-w-sm">
@@ -273,6 +275,12 @@ export default function SolicitacoesPage() {
           )}
         </div>
         <div className="flex gap-2">
+          <Button asChild variant="ghost">
+            <Link href="/chamados">
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Chamados anteriores
+            </Link>
+          </Button>
           <div className="flex rounded-lg border p-1">
             <Button
               variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
@@ -305,7 +313,7 @@ export default function SolicitacoesPage() {
           )}
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            Nova solicitação
+            Nova demanda
           </Button>
         </div>
       </div>
@@ -322,11 +330,11 @@ export default function SolicitacoesPage() {
       ) : items.length === 0 ? (
         <EmptyState
           icon={FileText}
-          title="Nenhuma solicitação"
+          title="Nenhuma demanda"
           description={
             hasActiveFilters
-              ? 'Nenhuma solicitação corresponde aos filtros selecionados.'
-              : 'As solicitações aparecerão aqui.'
+              ? 'Nenhuma demanda corresponde aos filtros selecionados.'
+              : 'As demandas aparecerão aqui.'
           }
         />
       ) : viewMode === 'kanban' ? (
@@ -376,7 +384,7 @@ export default function SolicitacoesPage() {
                       <div className="min-h-[120px] space-y-2 p-1">
                         {columnItems.length === 0 && (
                           <p className="py-8 text-center text-xs text-muted-foreground">
-                            {isDropTarget ? 'Solte aqui' : 'Nenhuma solicitação'}
+                            {isDropTarget ? 'Solte aqui' : 'Nenhuma demanda'}
                           </p>
                         )}
                         {columnItems.map((request) => (

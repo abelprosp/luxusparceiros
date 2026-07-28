@@ -646,6 +646,13 @@ model Request {
   assignedTo   User?         @relation("RequestAssignedTo", fields: [assignedToId], references: [id])
   description  String
   resolution   String?
+  taskDemandId String?        @unique
+  taskProtocol String?
+  taskStatus   String?
+  taskResponsibleId String?
+  taskResponsibleName String?
+  taskSyncError String?
+  taskLastSyncAt DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   completedAt  DateTime?
@@ -658,6 +665,7 @@ model Request {
   @@index([branchId])
   @@index([status])
   @@index([protocol])
+  @@index([taskProtocol])
   @@map("requests")
 }
 

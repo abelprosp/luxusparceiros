@@ -1,4 +1,4 @@
-import { PartialType } from '@nestjs/swagger';
+import { OmitType, PartialType } from '@nestjs/swagger';
 import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RequestStatus, RequestType } from '@prisma/client';
@@ -76,9 +76,21 @@ export class CreateRequestDto {
   @IsOptional()
   @IsUUID()
   branchId?: string;
+
+  @ApiPropertyOptional({ description: 'Responsável ativo no Luxus Task' })
+  @IsOptional()
+  @IsUUID()
+  taskResponsibleId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  taskPriority?: boolean;
 }
 
-export class UpdateRequestDto extends PartialType(CreateRequestDto) {
+export class UpdateRequestDto extends PartialType(
+  OmitType(CreateRequestDto, ['taskResponsibleId', 'taskPriority'] as const),
+) {
   @ApiPropertyOptional({ enum: RequestStatus })
   @IsOptional()
   @IsEnum(RequestStatus)

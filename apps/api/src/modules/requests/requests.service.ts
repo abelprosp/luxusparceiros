@@ -11,6 +11,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { EventsGateway } from '@/gateway/events.gateway';
+import { TaskIntegrationService } from '@/modules/task-integration/task-integration.service';
 import { MESSAGES } from '@/common/constants/messages';
 import { assertBranchBelongsToPartner, resolveBranchId } from '@/common/utils/branch-scope';
 import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
@@ -21,6 +22,17 @@ import {
   UpdateRequestStatusDto,
 } from './dto/request.dto';
 
+interface TaskSyncSource {
+  id: string;
+  protocol: string;
+  type: RequestType;
+  description: string;
+  partner: { name: string };
+  branch?: { name: string } | null;
+  client?: { name: string } | null;
+  createdBy: { name: string; email: string };
+}
+
 @Injectable()
 export class RequestsService {
   constructor(
@@ -28,6 +40,7 @@ export class RequestsService {
     private auditService: AuditService,
     private notificationsService: NotificationsService,
     private eventsGateway: EventsGateway,
+    private taskIntegration: TaskIntegrationService,
   ) {}
 
   async findAll(
@@ -97,7 +110,7 @@ export class RequestsService {
   }
 
   async findOne(id: string, user: AuthUser) {
-    const request = await this.prisma.request.findUnique({
+    let request = await this.prisma.request.findUnique({
       where: { id },
       include: {
         partner: true,
@@ -118,6 +131,40 @@ export class RequestsService {
       throw new ForbiddenException(MESSAGES.FORBIDDEN);
     }
 
+    if (request.taskDemandId && this.taskIntegration.isConfigured()) {
+      try {
+        const taskDemand = await this.taskIntegration.getDemand(request.id);
+        await this.taskIntegration.applyCallback({
+          externalRequestId: request.id,
+          demandId: taskDemand.id,
+          protocol: taskDemand.protocol,
+          status: taskDemand.status,
+          resolution: taskDemand.resolution,
+          observations: taskDemand.observations,
+          responsibleId: taskDemand.responsible?.id,
+          responsibleName: taskDemand.responsible?.name,
+          updatedAt: taskDemand.updatedAt,
+        });
+        request = (await this.prisma.request.findUnique({
+          where: { id },
+          include: {
+            partner: true,
+            client: true,
+            createdBy: { select: { id: true, name: true, email: true } },
+            assignedTo: { select: { id: true, name: true, email: true } },
+            comments: {
+              orderBy: { createdAt: 'asc' },
+              include: { user: { select: { id: true, name: true } } },
+            },
+            timeline: { orderBy: { createdAt: 'asc' } },
+            documents: true,
+          },
+        }))!;
+      } catch {
+        // A tela continua disponível com o último estado conhecido.
+      }
+    }
+
     if (!isAdminRole(user.role)) {
       return {
         ...request,
@@ -135,6 +182,9 @@ export class RequestsService {
     if (branchId) {
       await assertBranchBelongsToPartner(this.prisma, branchId, partnerId);
     }
+    if (this.taskIntegration.isConfigured() && !dto.taskResponsibleId) {
+      throw new BadRequestException('Selecione o responsável pela demanda');
+    }
 
     const request = await this.prisma.request.create({
       data: {
@@ -148,7 +198,9 @@ export class RequestsService {
       },
       include: {
         partner: { select: { id: true, name: true } },
-        createdBy: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, email: true } },
       },
     });
 
@@ -162,7 +214,22 @@ export class RequestsService {
     });
 
     this.eventsGateway.emitToPartner(partnerId, 'request:created', request);
+
+    if (this.taskIntegration.isConfigured() && dto.taskResponsibleId) {
+      return this.sendToTask(request, dto.taskResponsibleId, dto.taskPriority);
+    }
     return request;
+  }
+
+  async retryTaskSync(id: string, user: AuthUser) {
+    const request = await this.findOne(id, user);
+    if (request.taskDemandId) {
+      return request;
+    }
+    if (!request.taskResponsibleId) {
+      throw new BadRequestException('Selecione um responsável do Luxus Task');
+    }
+    return this.sendToTask(request, request.taskResponsibleId, false);
   }
 
   async update(id: string, dto: UpdateRequestDto, user: AuthUser) {
@@ -346,5 +413,87 @@ export class RequestsService {
     return this.prisma.requestTimeline.create({
       data: { requestId, action, fromStatus, toStatus, userId, details },
     });
+  }
+
+  private async sendToTask(
+    request: TaskSyncSource,
+    responsibleId: string,
+    priority = false,
+  ) {
+    const typeLabel: Record<RequestType, string> = {
+      NEW_ACTIVATION: 'Nova ativação',
+      BLOCK: 'Bloqueio',
+      UNBLOCK: 'Desbloqueio',
+      CANCELLATION: 'Cancelamento',
+      DELETION: 'Exclusão',
+      CHIP_EXCHANGE: 'Troca de chip',
+      PLAN_CHANGE: 'Troca de plano',
+      PORTABILITY: 'Portabilidade',
+      SECOND_COPY: 'Segunda via',
+      REGISTRATION_CHANGE: 'Alteração cadastral',
+    };
+    try {
+      const task = await this.taskIntegration.createDemand({
+        requestId: request.id,
+        responsibleId,
+        subject: `${typeLabel[request.type]} — ${request.partner.name}`,
+        description: [
+          request.description,
+          request.client?.name ? `Cliente: ${request.client.name}` : '',
+        ].filter(Boolean).join('\n\n'),
+        localProtocol: request.protocol,
+        partnerName: request.partner.name,
+        branchName: request.branch?.name,
+        requesterName: request.createdBy.name,
+        requesterEmail: request.createdBy.email,
+        priority,
+      });
+      const updated = await this.prisma.request.update({
+        where: { id: request.id },
+        data: {
+          taskDemandId: task.id,
+          taskProtocol: task.protocol,
+          taskStatus: task.status,
+          taskResponsibleId: task.responsible?.id ?? responsibleId,
+          taskResponsibleName: task.responsible?.name,
+          taskSyncError: null,
+          taskLastSyncAt: new Date(),
+        },
+        include: {
+          partner: { select: { id: true, name: true } },
+          branch: { select: { id: true, name: true } },
+          client: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, name: true, email: true } },
+        },
+      });
+      await this.addTimeline(
+        request.id,
+        `Demanda ${task.protocol} criada no Luxus Task`,
+        null,
+        null,
+        undefined,
+        task.responsible?.name
+          ? `Responsável: ${task.responsible.name}`
+          : undefined,
+      );
+      return updated;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao sincronizar';
+      const updated = await this.prisma.request.update({
+        where: { id: request.id },
+        data: {
+          taskResponsibleId: responsibleId,
+          taskSyncError: message,
+          taskLastSyncAt: new Date(),
+        },
+        include: {
+          partner: { select: { id: true, name: true } },
+          branch: { select: { id: true, name: true } },
+          client: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, name: true, email: true } },
+        },
+      });
+      return updated;
+    }
   }
 }
