@@ -267,6 +267,12 @@ export interface RequestItem {
   timeline?: ActivityItem[];
 }
 
+export interface TaskResponsible {
+  id: string;
+  name: string;
+  email: string;
+}
+
 export interface ActivityItem {
   id: string;
   action: string;
@@ -465,6 +471,11 @@ export const requestsApi = {
     if (!response.ok) throw new ApiError(response.status, 'Falha ao exportar');
     return response.text();
   },
+};
+
+export const taskIntegrationApi = {
+  responsibles: () =>
+    api.get<ApiResponse<TaskResponsible[]>>('/task-integration/responsibles'),
 };
 
 export const ticketsApi = {

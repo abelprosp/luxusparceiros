@@ -1,0 +1,2250 @@
+DOCUMENTAÇÃO COMPLETA — LUXUS PARCEIROS
+========================================
+
+Versão do sistema: 1.0.0
+Data de atualização desta documentação: 28/07/2026
+Repositório: https://github.com/abelprosp/luxusparceiros
+Sistema web: https://parceiros.grupoluxus.com.br
+Propriedade: Luxus Telefonia
+Licença: software proprietário
+
+
+SUMÁRIO
+-------
+
+1. Apresentação
+2. Objetivo do sistema
+3. Arquitetura e organização do projeto
+4. Linguagens, frameworks e bibliotecas
+5. Perfis, permissões e hierarquia
+6. Isolamento entre empresas e filiais
+7. Funcionalidades por módulo
+8. Fluxos de negócio importantes
+9. Situações e enumerações do sistema
+10. Banco de dados
+11. API e catálogo de rotas
+12. Variáveis de ambiente
+13. Execução local com Docker
+14. Desenvolvimento sem Docker
+15. Aplicativo móvel
+16. Publicação na Railway
+17. Arquivos, documentos e volume persistente
+18. Autenticação e criação de usuários
+19. Segurança
+20. Testes e validação
+21. Orientações para desenvolvimento
+22. Operação, manutenção e backups
+23. Solução de problemas
+24. Decisões funcionais conhecidas
+25. Glossário
+26. Checklist de entrega
+
+
+1. APRESENTAÇÃO
+===============
+
+Luxus Parceiros é uma plataforma de gestão da operação comercial da Luxus
+Telefonia. O sistema centraliza o relacionamento entre a administração da
+plataforma, empresas parceiras, matrizes, filiais e usuários operacionais.
+
+O projeto possui:
+
+- sistema web responsivo;
+- API própria;
+- aplicativo móvel;
+- banco de dados PostgreSQL;
+- autenticação e permissões;
+- notificações em tempo real;
+- armazenamento protegido de documentos;
+- ambiente Docker;
+- configuração de produção para Railway.
+
+O sistema é multiempresa. Cada empresa parceira trabalha dentro do seu próprio
+espaço e não pode visualizar dados de empresas concorrentes.
+
+
+2. OBJETIVO DO SISTEMA
+======================
+
+O sistema permite administrar:
+
+- parceiros comerciais;
+- matriz e filiais;
+- usuários e acessos;
+- operadoras e planos;
+- linhas e chips;
+- estoque e movimentações;
+- clientes;
+- vendas e portabilidades;
+- documentos das vendas;
+- campanhas e metas;
+- comissões;
+- registros financeiros;
+- solicitações operacionais;
+- chamados de atendimento;
+- notificações;
+- auditoria;
+- indicadores e relatórios.
+
+O modelo hierárquico é:
+
+Administrador da plataforma
+  └── Parceiro comercial (matriz)
+        ├── Filial 1
+        ├── Filial 2
+        ├── Filial N
+        └── Usuários vinculados ao parceiro ou a uma filial
+
+O administrador global pode acompanhar todo o ecossistema. Um parceiro enxerga
+somente sua própria empresa e suas filiais. Um usuário de filial fica limitado
+à loja em que está vinculado.
+
+
+3. ARQUITETURA E ORGANIZAÇÃO DO PROJETO
+=======================================
+
+O repositório é um monorepo gerenciado com pnpm workspaces.
+
+Estrutura principal:
+
+luxusparceiros/
+  apps/
+    api/                 API NestJS
+    web/                 Sistema web Next.js
+    mobile/              Aplicativo Expo/React Native
+  packages/
+    types/               Tipos, enumerações e permissões compartilhadas
+    utils/               Funções utilitárias compartilhadas
+    ui/                  Componentes compartilháveis
+  docker/
+    api.Dockerfile       Imagem de produção da API
+    web.Dockerfile       Imagem de produção do site
+    api-entrypoint.sh    Migrações e inicialização da API
+    nginx.conf           Proxy local
+  docs/                  Documentação complementar
+  uploads/               Arquivos locais em desenvolvimento
+  docker-compose.yml     Ambiente local completo
+  railway.toml           Configuração Railway da API
+  railway.web.toml       Configuração Railway do site
+  .env.example           Exemplo de variáveis
+  README.md              Apresentação técnica resumida
+  pnpm-workspace.yaml    Definição do monorepo
+  package.json           Comandos gerais
+
+Arquitetura de produção:
+
+Navegador ou aplicativo
+  ├── HTTPS → Next.js (web)
+  ├── HTTPS → NestJS (API)
+  └── WebSocket → Socket.IO
+
+API NestJS
+  ├── Prisma → PostgreSQL
+  ├── Redis
+  └── Volume persistente → /app/uploads
+
+No desenvolvimento local, o NGINX expõe tudo em http://localhost e encaminha:
+
+- / para o serviço web;
+- /api para a API;
+- /socket.io para a comunicação em tempo real.
+
+
+4. LINGUAGENS, FRAMEWORKS E BIBLIOTECAS
+=======================================
+
+4.1 Linguagens
+--------------
+
+- TypeScript: linguagem principal do backend, web, mobile e pacotes.
+- JavaScript: utilizado nos testes automatizados compilados da API.
+- SQL: gerenciado por migrations do Prisma para PostgreSQL.
+- Shell Script: inicialização da imagem Linux da API.
+- HTML e CSS: gerados e organizados pelo Next.js e Tailwind CSS.
+
+4.2 Backend/API
+---------------
+
+- Node.js 20 ou superior;
+- NestJS 10;
+- Prisma ORM 6;
+- PostgreSQL 16;
+- Redis 7;
+- JWT e Passport;
+- bcrypt para hash de senhas;
+- class-validator e class-transformer;
+- Swagger/OpenAPI;
+- Socket.IO;
+- Helmet;
+- rate limiting;
+- Multer para uploads.
+
+4.3 Sistema web
+---------------
+
+- Next.js 14 com App Router;
+- React 18;
+- TypeScript;
+- Tailwind CSS;
+- Radix UI;
+- Lucide Icons;
+- Recharts;
+- jsPDF;
+- Leaflet e React Leaflet;
+- Socket.IO Client;
+- next-themes.
+
+4.4 Aplicativo móvel
+--------------------
+
+- Expo 52;
+- React Native 0.76;
+- Expo Router;
+- Expo Secure Store;
+- Expo Camera;
+- Expo Image Picker;
+- Expo Document Picker;
+- Expo Local Authentication;
+- Socket.IO Client.
+
+4.5 Infraestrutura
+------------------
+
+- Docker e Docker Compose;
+- imagens Linux Alpine;
+- NGINX;
+- Railway;
+- Git e GitHub;
+- pnpm 9;
+- Corepack.
+
+
+5. PERFIS, PERMISSÕES E HIERARQUIA
+==================================
+
+5.1 ADMIN
+---------
+
+Possui todas as permissões.
+
+Existem dois comportamentos:
+
+- ADMIN sem partnerId: administrador global da plataforma;
+- ADMIN com partnerId: administrador limitado ao parceiro vinculado.
+
+O vínculo comercial sempre prevalece. Um ADMIN vinculado a um parceiro não pode
+usar o papel administrativo para consultar concorrentes.
+
+5.2 SUPERVISOR
+--------------
+
+Perfil de gestão operacional. Pode visualizar parceiros e filiais, trabalhar
+com clientes, vendas, estoque, chamados, solicitações, usuários, campanhas e
+dashboard conforme as permissões definidas.
+
+Não recebe automaticamente todas as permissões destrutivas ou financeiras.
+
+5.3 PARTNER
+-----------
+
+Representa o responsável pelo parceiro comercial/matriz.
+
+Pode:
+
+- visualizar e administrar suas filiais;
+- cadastrar clientes e vendas;
+- consultar operadoras e planos disponíveis;
+- consultar linhas e estoque do seu escopo;
+- acompanhar comissões;
+- usar chamados e solicitações;
+- visualizar seu dashboard.
+
+Não pode consultar outro parceiro.
+
+5.4 ATTENDANT
+-------------
+
+Usuário de filial.
+
+Pode operar clientes, vendas, estoque, chamados, solicitações e dashboard, mas
+fica limitado à filial vinculada no login.
+
+Na criação de venda, a filial responsável já vem preenchida e não pode ser
+trocada por outra loja.
+
+5.5 FINANCIAL
+-------------
+
+Perfil voltado a:
+
+- consulta e gestão de comissões;
+- aprovação de comissões;
+- registros financeiros;
+- chamados relacionados;
+- dashboard compatível com seu escopo.
+
+5.6 Permissões granulares
+-------------------------
+
+As permissões seguem o formato modulo:acao, por exemplo:
+
+- partners:read, partners:write, partners:delete;
+- branches:read, branches:write, branches:delete;
+- clients:read, clients:write, clients:delete;
+- sales:read, sales:write, sales:delete;
+- plans:read, plans:write;
+- stock:read, stock:write;
+- commissions:read, commissions:write, commissions:approve;
+- tickets:read, tickets:write;
+- requests:read, requests:write;
+- users:read, users:write;
+- financial:read, financial:write;
+- campaigns:read, campaigns:write;
+- audit:read;
+- dashboard:read.
+
+As definições ficam em packages/types/src/index.ts.
+
+
+6. ISOLAMENTO ENTRE EMPRESAS E FILIAIS
+======================================
+
+O isolamento é feito na API e não depende apenas de esconder opções na tela.
+
+Regras:
+
+1. Usuário com partnerId sempre usa o parceiro do próprio login.
+2. Se tentar enviar o ID de outro parceiro, a API rejeita o acesso.
+3. Usuário ATTENDANT deve possuir branchId.
+4. Usuário de filial consulta somente sua filial.
+5. Administrador global é ADMIN ou SUPERVISOR sem partnerId.
+6. Dados de vendas, clientes, documentos, dashboard e relatórios respeitam o
+   mesmo escopo.
+7. Exportações não ampliam a permissão do usuário.
+
+Comportamento das filiais:
+
+- parceiro matriz vê somente suas próprias filiais;
+- parceiro não vê lojas concorrentes;
+- atendente vê somente sua loja;
+- filial escolhida em uma venda deve pertencer ao parceiro da venda;
+- qualquer tentativa de acesso direto por URL também é validada pela API.
+
+Helpers principais:
+
+- apps/api/src/common/utils/partner-scope.ts
+- apps/api/src/common/utils/branch-scope.ts
+
+
+7. FUNCIONALIDADES POR MÓDULO
+=============================
+
+7.1 Autenticação
+----------------
+
+- login com e-mail e senha;
+- access token JWT;
+- refresh token;
+- opção de manter sessão;
+- renovação automática;
+- logout;
+- recuperação de senha;
+- redefinição de senha;
+- troca de senha autenticada;
+- revogação de tokens antigos após troca de senha;
+- consulta do usuário autenticado;
+- validação de parceiro e filial no login.
+
+7.2 Perfil
+----------
+
+- consulta e edição dos dados pessoais;
+- alteração de nome, telefone e preferências;
+- foto de perfil;
+- recorte quadrado em 512 × 512;
+- zoom e posicionamento da imagem;
+- dados bancários do parceiro;
+- alteração de senha;
+- temas claro, escuro e conforme o sistema.
+
+7.3 Parceiros comerciais
+------------------------
+
+- listagem e pesquisa;
+- cadastro de parceiro;
+- criação do usuário inicial do parceiro;
+- edição;
+- visualização de usuários, filiais, planos e números relacionados;
+- vínculo de planos;
+- comissão personalizada por plano;
+- redefinição de senha;
+- suspensão;
+- reativação;
+- exclusão conforme regras de integridade;
+- geolocalização aproximada para uso no mapa do dashboard;
+- contagem de filiais, clientes, vendas e planos.
+
+Um administrador vinculado a parceiro não pode criar outro parceiro.
+
+7.4 Filiais
+-----------
+
+- listagem das filiais do parceiro;
+- pesquisa;
+- cadastro;
+- edição;
+- ativação/desativação;
+- exclusão quando não existem vendas ou clientes vinculados;
+- criação automática de login ATTENDANT;
+- atualização sincronizada do login da filial;
+- visualização de quantidade de clientes e vendas;
+- limitação do atendente à própria filial.
+
+Se a filial possui histórico, deve ser desativada em vez de excluída.
+
+7.5 Usuários
+------------
+
+- listagem conforme escopo;
+- criação;
+- edição;
+- ativação e desativação;
+- associação a parceiro;
+- associação a filial;
+- definição de perfil;
+- permissões derivadas do perfil;
+- proteção contra exposição de senha.
+
+7.6 Operadoras
+--------------
+
+- cadastro;
+- listagem;
+- edição;
+- exclusão conforme uso;
+- consulta das operadoras que possuem planos disponíveis para o parceiro.
+
+Parceiros e filiais não recebem operadoras concorrentes fora dos seus planos.
+
+7.7 Planos
+----------
+
+- cadastro de nome, operadora, preço e descrição;
+- franquia de dados e velocidade;
+- comissão percentual ou fixa;
+- vínculo com um parceiro específico;
+- criação como plano global para parceiros ativos;
+- edição;
+- ativação/desativação;
+- exclusão;
+- comissão personalizada por parceiro.
+
+Herança matriz/filiais:
+
+- o plano é vinculado ao parceiro, não individualmente à filial;
+- matriz e todas as filiais do parceiro utilizam o mesmo catálogo;
+- uma nova filial já herda os planos existentes;
+- retirar um plano do parceiro reflete em todas as filiais;
+- não existe divergência de planos entre lojas do mesmo parceiro.
+
+7.8 Clientes
+------------
+
+- listagem e pesquisa;
+- cadastro;
+- edição;
+- exclusão conforme integridade;
+- CPF/CNPJ;
+- RG;
+- contato;
+- endereço;
+- parceiro e filial responsáveis;
+- documentos relacionados;
+- histórico de vendas.
+
+O telefone de contato deve ser diferente do número da linha vendida.
+
+7.9 Vendas
+----------
+
+- protocolo automático;
+- listagem completa, incluindo vendas rejeitadas;
+- pesquisa por protocolo e cliente;
+- filtro por situação;
+- ordenação;
+- detalhamento;
+- criação;
+- edição de dados permitidos;
+- edição dos dados do cliente;
+- plano, operadora, filial e campanha;
+- valor e cálculo de comissão;
+- linha e ICCID;
+- chip virgem;
+- portabilidade;
+- contrato impresso ou ZapSign;
+- anexos;
+- aprovação;
+- rejeição com motivo;
+- contestação;
+- solicitação e reenvio de documentos;
+- histórico de situação;
+- exportação da listagem;
+- visualização e download protegido dos documentos.
+
+Contrato:
+
+- o contrato assinado é opcional no cadastro inicial;
+- o usuário pode marcar que já foi assinado e anexar o arquivo;
+- não é possível marcar como assinado sem arquivo;
+- o contrato pode ser anexado depois em Editar venda;
+- a aprovação é bloqueada enquanto o contrato não existir;
+- ao tentar aprovar sem contrato, o sistema informa o motivo e abre a edição.
+
+Edição:
+
+- disponível em situações operacionais permitidas;
+- permite corrigir valor, linha, ICCID, formato do contrato e observações;
+- permite corrigir dados do cliente;
+- permite anexar contrato pendente;
+- não permite trocar o cliente por um cliente de outra venda;
+- valida novamente parceiro, filial, plano e telefone;
+- recalcula a comissão se valor ou plano forem alterados.
+
+7.10 Portabilidade
+------------------
+
+- marcação de venda com portabilidade;
+- operadora doadora;
+- número a ser portado;
+- validação dos campos obrigatórios;
+- contrato pode ser anexado depois;
+- aprovação continua exigindo toda a documentação.
+
+Operadoras doadoras cadastradas:
+
+- Vivo;
+- TIM;
+- Claro;
+- Surf;
+- Outras.
+
+7.11 Documentos e uploads
+-------------------------
+
+Tipos suportados:
+
+- CPF;
+- CNPJ;
+- RG;
+- selfie;
+- contrato;
+- assinatura;
+- foto da linha;
+- foto do chip;
+- outros.
+
+Recursos:
+
+- upload autenticado;
+- JPG, PNG, WebP e PDF;
+- limite configurável;
+- visualização protegida;
+- download protegido;
+- abertura individual;
+- abertura dos documentos;
+- reanexo quando o arquivo físico foi perdido;
+- bloqueio da substituição quando o arquivo ainda existe;
+- validação de propriedade do parceiro.
+
+Documentos básicos da venda:
+
+- foto do chip;
+- CPF;
+- RG;
+- contrato.
+
+O contrato permanece pendente até ser anexado e impede a aprovação.
+
+7.12 Linhas e chips
+-------------------
+
+- cadastro de linha;
+- edição;
+- reserva;
+- exclusão;
+- vínculo com operadora;
+- vínculo opcional com plano;
+- vínculo com parceiro;
+- situação da linha;
+- cadastro de chip/SIM Card;
+- ICCID;
+- resumo de estoque;
+- transferência de chips.
+
+Situações de linha:
+
+- disponível;
+- reservada;
+- utilizada;
+- bloqueada;
+- ativada;
+- cancelada.
+
+7.13 Estoque
+------------
+
+- resumo;
+- linhas disponíveis;
+- reserva;
+- chips;
+- movimentações;
+- entrada;
+- saída;
+- transferência;
+- reserva;
+- ativação;
+- baixa;
+- importação;
+- exportação;
+- leitura/digitação de ICCID;
+- restrição por parceiro e filial.
+
+7.14 Comissões
+--------------
+
+- cálculo na venda;
+- comissão percentual;
+- comissão de valor fixo;
+- comissão personalizada do parceiro;
+- previsão;
+- aprovação;
+- pagamento;
+- cancelamento;
+- resumo por situação;
+- vínculo com a venda;
+- proteção contra pagamento duplicado.
+
+Fluxo:
+
+PREVISÃO → APROVADA → PAGA
+PREVISÃO/APROVADA → CANCELADA
+
+7.15 Campanhas
+--------------
+
+- cadastro;
+- edição;
+- exclusão;
+- rascunho;
+- ativação;
+- pausa;
+- finalização;
+- período;
+- meta;
+- vendas e receita;
+- métricas;
+- desempenho por parceiro;
+- uso nos filtros do dashboard.
+
+7.16 Dashboard
+--------------
+
+Dashboard administrativo:
+
+- total de parceiros;
+- parceiros ativos;
+- linhas disponíveis;
+- linhas vendidas;
+- linhas ativadas;
+- receita;
+- comissões;
+- evolução das vendas;
+- ranking de parceiros;
+- campanhas;
+- mapa de parceiros.
+
+Dashboard do parceiro:
+
+- vendas de hoje e do mês;
+- linhas ativas e canceladas;
+- meta e progresso;
+- comissão prevista e paga;
+- posição no ranking compatível com o escopo;
+- gráficos;
+- produtos e operadoras mais vendidos.
+
+Filtros:
+
+- período;
+- parceiro;
+- filial;
+- campanha;
+- operadora;
+- estado/região.
+
+Detalhamento:
+
+- os cards e blocos podem ser expandidos;
+- o detalhamento mostra os registros que compõem o indicador;
+- o escopo continua sendo aplicado.
+
+Exportação:
+
+- PDF;
+- CSV compatível com Excel;
+- TXT;
+- menu discreto;
+- confirmação;
+- indicação de processamento;
+- parceiro exporta somente seus próprios dados.
+
+Regra de contagem:
+
+- somente vendas APPROVED e ACTIVATED são vendas realizadas;
+- vendas REJECTED continuam visíveis na listagem;
+- vendas rejeitadas não entram em cards, gráficos, ranking, receita ou comissão
+  realizada.
+
+7.17 Financeiro
+---------------
+
+- receitas;
+- despesas;
+- transferências;
+- data;
+- descrição;
+- valor;
+- parceiro;
+- listagem;
+- criação;
+- edição;
+- exclusão;
+- filtro conforme escopo.
+
+7.18 Solicitações
+-----------------
+
+Solicitações são pedidos operacionais estruturados.
+
+Tipos:
+
+- nova ativação;
+- bloqueio;
+- desbloqueio;
+- cancelamento;
+- exclusão;
+- troca de chip;
+- troca de plano;
+- portabilidade;
+- segunda via;
+- alteração cadastral.
+
+Recursos:
+
+- listagem;
+- Kanban;
+- criação;
+- edição;
+- comentários;
+- linha do tempo;
+- alteração de situação;
+- resolução;
+- exportação CSV;
+- exclusão quando permitido.
+
+7.19 Chamados
+-------------
+
+Chamados representam atendimento e suporte.
+
+Categorias:
+
+- financeiro;
+- suporte;
+- operadora;
+- sistema;
+- cadastro;
+- comissão;
+- urgente.
+
+Prioridades:
+
+- baixa;
+- média;
+- alta;
+- urgente.
+
+Recursos:
+
+- listagem;
+- Kanban;
+- criação;
+- edição;
+- mensagens;
+- linha do tempo;
+- alteração de situação;
+- resolução;
+- cancelamento;
+- exclusão conforme regra.
+
+Chamados e solicitações continuam como módulos separados. A possível unificação
+depende de validação funcional com o responsável pelo processo.
+
+7.20 Notificações
+-----------------
+
+- central de notificações;
+- contador de não lidas;
+- marcar uma como lida;
+- marcar todas como lidas;
+- exclusão;
+- notificação de comissão;
+- linha ativada;
+- resposta em chamado;
+- venda aprovada;
+- venda rejeitada;
+- venda contestada;
+- documentos solicitados;
+- campanha;
+- solicitação;
+- aviso de sistema;
+- atualização em tempo real.
+
+7.21 Auditoria
+--------------
+
+- consulta de ações relevantes;
+- usuário responsável;
+- módulo;
+- entidade;
+- ação;
+- data;
+- dados de alteração quando disponíveis;
+- escopo por parceiro;
+- rastreabilidade de cadastros, edições, exclusões e mudanças importantes.
+
+7.22 Interface e acessibilidade operacional
+-------------------------------------------
+
+- layout responsivo;
+- suporte a desktop e celular;
+- temas claro e escuro;
+- menu lateral rolável;
+- indicação de que existem mais opções no menu;
+- preservação da posição do menu ao navegar;
+- tabelas responsivas;
+- cartões no celular;
+- cabeçalhos de tabela ordenáveis;
+- estados de carregamento;
+- mensagens de vazio;
+- mensagens de erro e sucesso;
+- confirmações para ações importantes.
+
+
+8. FLUXOS DE NEGÓCIO IMPORTANTES
+================================
+
+8.1 Cadastro de parceiro
+------------------------
+
+1. Administrador global abre Parceiros.
+2. Cadastra dados da empresa.
+3. Pode cadastrar o primeiro usuário.
+4. Define ou associa planos.
+5. O parceiro passa a acessar somente o próprio ambiente.
+6. O parceiro pode criar suas filiais.
+
+8.2 Cadastro de filial
+----------------------
+
+1. Parceiro abre Filiais.
+2. Informa dados da loja, login e senha.
+3. O backend confirma que o parceiro pode administrar a filial.
+4. Cria a filial.
+5. Cria um usuário ATTENDANT vinculado à filial.
+6. A filial herda planos e operadoras do parceiro.
+
+8.3 Criação de plano
+--------------------
+
+Plano específico:
+
+1. Administrador cria o plano.
+2. Informa partnerId.
+3. O sistema cria um vínculo PartnerPlan.
+4. Matriz e todas as filiais desse parceiro passam a utilizá-lo.
+
+Plano global:
+
+1. Administrador cria sem partnerId.
+2. O sistema vincula o plano aos parceiros ativos.
+3. Parceiros elegíveis passam a visualizá-lo.
+
+8.4 Nova venda
+--------------
+
+1. Selecionar parceiro quando o usuário for global.
+2. Selecionar matriz ou filial responsável.
+3. Selecionar operadora e plano permitido.
+4. Informar linha, chip e ICCID.
+5. Informar formato do contrato.
+6. Opcionalmente marcar contrato assinado e anexá-lo.
+7. Informar cliente.
+8. Anexar CPF, RG e foto do chip.
+9. Informar portabilidade quando aplicável.
+10. Registrar a venda.
+11. A venda entra em análise.
+
+8.5 Aprovação da venda
+----------------------
+
+1. Administrador/supervisor analisa a venda.
+2. Confere os dados e documentos.
+3. Se faltar documento, solicita ao parceiro.
+4. Parceiro reenvia os arquivos solicitados.
+5. Para aprovar, o contrato assinado deve existir.
+6. Todos os documentos obrigatórios devem estar cumpridos.
+7. Ao aprovar, o sistema registra data e processa a comissão.
+8. A venda pode depois ser ativada ou cancelada conforme a transição permitida.
+
+8.6 Correção de venda
+---------------------
+
+1. Abrir Vendas.
+2. Abrir o menu de ações.
+3. Selecionar Editar venda.
+4. Corrigir os campos permitidos.
+5. Anexar o contrato quando pendente.
+6. Salvar.
+7. A API revalida escopo, telefone, plano e filial.
+
+8.7 Documento perdido
+----------------------
+
+1. O registro continua aparecendo na venda.
+2. A interface detecta que o arquivo físico não está disponível.
+3. Exibe Reanexar arquivo.
+4. O usuário autorizado escolhe novamente o documento.
+5. O sistema preserva o registro e grava o novo arquivo.
+
+Esse recurso não recupera automaticamente arquivos antigos apagados do
+armazenamento. É necessário possuir a cópia original.
+
+
+9. SITUAÇÕES E ENUMERAÇÕES DO SISTEMA
+=====================================
+
+9.1 Venda
+---------
+
+- IN_ANALYSIS: em análise;
+- APPROVED: aprovada;
+- PENDING: pendente;
+- REJECTED: rejeitada;
+- ACTIVATED: ativada;
+- CANCELLED: cancelada;
+- CONTESTED: contestada;
+- DOCUMENTS_PENDING: documentos pendentes.
+
+Transições principais:
+
+- Em análise → aprovada, rejeitada, pendente, contestada ou docs pendentes.
+- Pendente → em análise, aprovada, rejeitada, contestada ou docs pendentes.
+- Docs pendentes → em análise, aprovada, rejeitada ou contestada.
+- Contestada → em análise, aprovada, rejeitada ou docs pendentes.
+- Aprovada → ativada ou cancelada.
+- Ativada → cancelada.
+- Rejeitada e cancelada são situações finais no fluxo atual.
+
+9.2 Parceiro
+------------
+
+- ACTIVE;
+- SUSPENDED;
+- INACTIVE.
+
+9.3 Filial
+----------
+
+- ACTIVE;
+- INACTIVE.
+
+9.4 Comissão
+------------
+
+- FORECAST;
+- APPROVED;
+- PAID;
+- CANCELLED.
+
+9.5 Solicitação
+---------------
+
+- OPEN;
+- IN_ANALYSIS;
+- IN_PROGRESS;
+- COMPLETED;
+- REJECTED.
+
+9.6 Chamado
+-----------
+
+- NEW;
+- IN_PROGRESS;
+- PENDING;
+- RESOLVED;
+- CANCELLED.
+
+9.7 Campanha
+------------
+
+- DRAFT;
+- ACTIVE;
+- PAUSED;
+- FINISHED.
+
+
+10. BANCO DE DADOS
+==================
+
+Banco: PostgreSQL.
+ORM: Prisma.
+Schema: apps/api/prisma/schema.prisma.
+Migrations: apps/api/prisma/migrations.
+Seed: apps/api/prisma/seed.ts.
+
+Principais tabelas/modelos:
+
+- User: usuários;
+- RefreshToken: tokens de renovação;
+- Session: sessões;
+- Permission e UserPermission: permissões adicionais;
+- Partner: parceiros;
+- Branch: filiais;
+- Client: clientes;
+- Operator: operadoras;
+- Plan: planos;
+- PartnerPlan: vínculo entre plano e parceiro;
+- SimCard: chips;
+- Line: linhas;
+- Sale: vendas;
+- Document: documentos;
+- Commission: comissões;
+- CommissionRule: regras de comissão;
+- Request: solicitações;
+- RequestComment: comentários;
+- RequestTimeline: histórico da solicitação;
+- Ticket: chamados;
+- TicketMessage: mensagens;
+- TicketTimeline: histórico do chamado;
+- Notification: notificações;
+- Campaign: campanhas;
+- StockMovement: movimentações;
+- FinancialRecord: financeiro;
+- AuditLog: auditoria.
+
+Regras para alterações no banco:
+
+1. Alterar schema.prisma.
+2. Criar uma migration.
+3. Revisar o SQL gerado.
+4. Testar com dados locais.
+5. Nunca alterar uma migration já aplicada em produção.
+6. Fazer backup antes de mudanças destrutivas.
+
+Comandos:
+
+pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
+pnpm db:studio
+
+Na produção, a API executa prisma migrate deploy ao iniciar.
+
+
+11. API E CATÁLOGO DE ROTAS
+===========================
+
+Prefixo geral: /api
+Swagger local: http://localhost:3001/api/docs
+Healthcheck: /api/health
+
+11.1 Autenticação — /api/auth
+-----------------------------
+
+POST /login
+POST /refresh
+POST /logout
+POST /forgot-password
+POST /reset-password
+POST /change-password
+GET  /me
+
+11.2 Perfil — /api/profile
+--------------------------
+
+GET /profile
+PUT /profile
+PUT /profile/partner
+
+11.3 Uploads — /api/uploads
+---------------------------
+
+POST /uploads
+POST /uploads/avatar
+POST /uploads/:documentId/replace
+GET  /uploads/:filename
+
+11.4 Parceiros — /api/partners
+------------------------------
+
+GET    /partners
+GET    /partners/:id
+GET    /partners/:id/plans
+PUT    /partners/:id/plans
+POST   /partners
+PATCH  /partners/:id
+POST   /partners/:id/reset-password
+POST   /partners/:id/suspend
+POST   /partners/:id/activate
+DELETE /partners/:id
+
+11.5 Filiais — /api/branches
+----------------------------
+
+GET    /branches
+GET    /branches/:id
+POST   /branches
+POST   /branches/partner/:partnerId
+PATCH  /branches/:id
+DELETE /branches/:id
+
+11.6 Usuários — /api/users
+--------------------------
+
+GET    /users
+GET    /users/:id
+POST   /users
+PATCH  /users/:id
+DELETE /users/:id
+
+11.7 Clientes — /api/clients
+----------------------------
+
+GET    /clients
+GET    /clients/:id
+POST   /clients
+PATCH  /clients/:id
+DELETE /clients/:id
+
+11.8 Vendas — /api/sales
+------------------------
+
+GET    /sales
+GET    /sales/:id
+POST   /sales
+PATCH  /sales/:id
+PATCH  /sales/:id/status
+POST   /sales/:id/approve
+POST   /sales/:id/reject
+POST   /sales/:id/contest
+POST   /sales/:id/request-documents
+POST   /sales/:id/resubmit-documents
+DELETE /sales/:id
+
+11.9 Operadoras — /api/operators
+--------------------------------
+
+GET    /operators
+GET    /operators/:id
+POST   /operators
+PATCH  /operators/:id
+DELETE /operators/:id
+
+11.10 Planos — /api/plans
+-------------------------
+
+GET    /plans/available
+GET    /plans
+GET    /plans/:id
+POST   /plans
+PATCH  /plans/:id
+DELETE /plans/:id
+
+11.11 Linhas — /api/lines
+-------------------------
+
+GET    /lines
+GET    /lines/:id
+POST   /lines
+PATCH  /lines/:id
+POST   /lines/:id/reserve
+DELETE /lines/:id
+
+11.12 Chips — /api/sim-cards
+----------------------------
+
+GET    /sim-cards
+GET    /sim-cards/stock/summary
+GET    /sim-cards/:id
+POST   /sim-cards
+PATCH  /sim-cards/:id
+POST   /sim-cards/transfer
+DELETE /sim-cards/:id
+
+11.13 Estoque — /api/stock
+--------------------------
+
+GET  /stock/summary
+GET  /stock/export
+GET  /stock/lines
+POST /stock/lines/:id/reserve
+GET  /stock/movements
+POST /stock/movements
+POST /stock/import
+
+11.14 Comissões — /api/commissions
+----------------------------------
+
+GET  /commissions/summary
+GET  /commissions
+GET  /commissions/:id
+POST /commissions/:id/approve
+POST /commissions/:id/pay
+POST /commissions/:id/cancel
+
+11.15 Campanhas — /api/campaigns
+--------------------------------
+
+GET    /campaigns
+GET    /campaigns/:id/metrics
+GET    /campaigns/:id
+POST   /campaigns
+PATCH  /campaigns/:id
+DELETE /campaigns/:id
+
+11.16 Dashboard — /api/dashboard
+--------------------------------
+
+GET /dashboard
+GET /dashboard/admin
+GET /dashboard/partner
+GET /dashboard/details
+
+11.17 Financeiro — /api/financial
+---------------------------------
+
+GET    /financial
+GET    /financial/:id
+POST   /financial
+PATCH  /financial/:id
+DELETE /financial/:id
+
+11.18 Solicitações — /api/requests
+----------------------------------
+
+GET    /requests
+GET    /requests/kanban
+GET    /requests/export/csv
+GET    /requests/:id
+POST   /requests
+PATCH  /requests/:id
+PATCH  /requests/:id/status
+POST   /requests/:id/comments
+DELETE /requests/:id
+
+11.19 Chamados — /api/tickets
+-----------------------------
+
+GET    /tickets
+GET    /tickets/kanban
+GET    /tickets/:id
+POST   /tickets
+PATCH  /tickets/:id
+PATCH  /tickets/:id/status
+POST   /tickets/:id/messages
+DELETE /tickets/:id
+
+11.20 Notificações — /api/notifications
+---------------------------------------
+
+GET    /notifications
+PATCH  /notifications/read-all
+GET    /notifications/:id
+POST   /notifications
+PATCH  /notifications/:id/read
+DELETE /notifications/:id
+
+11.21 Auditoria — /api/audit
+----------------------------
+
+GET /audit
+
+Todas as rotas protegidas usam JWT e permissões. A documentação Swagger é a
+referência interativa para parâmetros, corpos e respostas.
+
+
+12. VARIÁVEIS DE AMBIENTE
+=========================
+
+Arquivo de referência: .env.example
+Arquivo local: .env
+
+Nunca enviar .env para o GitHub.
+
+Banco:
+
+POSTGRES_PASSWORD
+  Senha do PostgreSQL local no Compose.
+
+DATABASE_URL
+  URL completa usada pelo Prisma.
+
+Redis:
+
+REDIS_URL
+  Endereço de conexão do Redis.
+
+Autenticação:
+
+JWT_SECRET
+  Chave do token de acesso. Use no mínimo 32 caracteres aleatórios.
+
+JWT_EXPIRES_IN
+  Duração do token de acesso. Padrão recomendado: 15m.
+
+JWT_REFRESH_SECRET
+  Chave separada para refresh token.
+
+JWT_REFRESH_EXPIRES_IN
+  Duração do refresh token. Exemplo: 7d.
+
+API:
+
+API_PORT
+  Porta local da API. Padrão: 3001.
+
+API_URL
+  URL de referência da API.
+
+CORS_ORIGINS
+  Origens web permitidas, separadas por vírgula.
+
+Web:
+
+NEXT_PUBLIC_API_URL
+  URL pública base da API, sem /api no final.
+
+NEXT_PUBLIC_WS_URL
+  URL do Socket.IO, normalmente terminada em /events.
+
+Mobile:
+
+EXPO_PUBLIC_API_URL
+  URL acessível pelo celular ou emulador.
+
+EXPO_PUBLIC_WS_URL
+  URL em tempo real acessível pelo celular.
+
+Uploads:
+
+UPLOAD_MAX_SIZE
+  Limite geral em bytes. Exemplo: 10485760 para 10 MB.
+
+UPLOAD_DIR
+  Diretório de armazenamento.
+
+Inicialização:
+
+RUN_DB_SEED
+  true apenas quando for necessário criar dados iniciais.
+  Em produção normal, usar false.
+
+Rate limiting:
+
+THROTTLE_TTL
+  Janela de limitação.
+
+THROTTLE_LIMIT
+  Quantidade de requisições permitidas na janela.
+
+
+13. EXECUÇÃO LOCAL COM DOCKER
+=============================
+
+13.1 Requisitos
+---------------
+
+- Git;
+- Docker Desktop;
+- mecanismo de contêineres Linux em execução;
+- portas 80, 3000, 3001, 5432 e 6379 disponíveis.
+
+O Docker Desktop utilizar WSL internamente não transforma o Windows em Linux.
+O WSL funciona como componente interno necessário para contêineres Linux.
+
+13.2 Preparação
+---------------
+
+Na raiz do projeto:
+
+Copy-Item .env.example .env
+
+Editar .env e trocar:
+
+- POSTGRES_PASSWORD;
+- JWT_SECRET;
+- JWT_REFRESH_SECRET.
+
+13.3 Iniciar
+------------
+
+docker compose up -d --build
+
+13.4 Verificar
+--------------
+
+docker compose ps
+docker compose logs --tail 100 api web nginx postgres redis
+
+Endereços:
+
+- sistema: http://localhost
+- web direto: http://localhost:3000
+- API: http://localhost:3001/api
+- Swagger: http://localhost:3001/api/docs
+- healthcheck: http://localhost:3001/api/health
+
+13.5 Parar
+----------
+
+docker compose down
+
+Esse comando preserva os volumes.
+
+Não executar docker compose down -v sem backup e confirmação. O parâmetro -v
+remove os volumes locais de banco, Redis e uploads.
+
+13.6 Serviços do Compose
+------------------------
+
+postgres:
+  PostgreSQL 16 e volume postgres_data.
+
+redis:
+  Redis 7 e volume redis_data.
+
+api:
+  NestJS na porta 3001 e volume uploads_data.
+
+web:
+  Next.js na porta 3000.
+
+nginx:
+  entrada única na porta 80.
+
+
+14. DESENVOLVIMENTO SEM DOCKER
+==============================
+
+Requisitos:
+
+- Node.js 20 ou superior;
+- pnpm 9;
+- PostgreSQL acessível;
+- Redis acessível.
+
+Preparação:
+
+corepack enable
+corepack prepare pnpm@9.15.0 --activate
+pnpm install
+pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
+
+Iniciar tudo:
+
+pnpm dev
+
+Iniciar individualmente:
+
+pnpm --filter @luxus/api dev
+pnpm --filter @luxus/web dev
+pnpm --filter @luxus/mobile dev
+
+Build:
+
+pnpm build
+
+Lint/tipagem:
+
+pnpm lint
+
+Testes:
+
+pnpm test
+
+
+15. APLICATIVO MÓVEL
+====================
+
+Diretório: apps/mobile
+
+Telas principais:
+
+- login;
+- dashboard;
+- vendas;
+- nova venda;
+- detalhes da venda;
+- clientes;
+- novo cliente;
+- detalhes do cliente;
+- filiais;
+- nova filial;
+- detalhes da filial;
+- estoque;
+- comissões;
+- chamados;
+- novo chamado;
+- detalhes do chamado;
+- solicitações;
+- nova solicitação;
+- detalhes da solicitação;
+- perfil;
+- menu adicional.
+
+Execução:
+
+pnpm --filter @luxus/mobile dev
+
+Android:
+
+pnpm --filter @luxus/mobile android
+
+iOS:
+
+pnpm --filter @luxus/mobile ios
+
+Para aparelho físico, EXPO_PUBLIC_API_URL não pode usar localhost. Deve usar um
+IP da rede local acessível pelo celular ou uma API HTTPS pública.
+
+O token é armazenado no Secure Store e o aplicativo possui suporte a recursos
+como biometria, câmera e seleção de documentos.
+
+
+16. PUBLICAÇÃO NA RAILWAY
+=========================
+
+Produção utiliza:
+
+- PostgreSQL;
+- serviço da API chamado luxusparceiros;
+- serviço web;
+- eventualmente um segundo serviço web ligado ao mesmo repositório;
+- volume persistente conectado somente à API.
+
+16.1 API
+--------
+
+Config file path:
+
+railway.toml
+
+Dockerfile:
+
+docker/api.Dockerfile
+
+Healthcheck:
+
+/api/health
+
+Variáveis mínimas:
+
+- DATABASE_URL;
+- JWT_SECRET;
+- JWT_REFRESH_SECRET;
+- CORS_ORIGINS;
+- RUN_DB_SEED=false;
+- UPLOAD_DIR=/app/uploads, quando definido manualmente.
+
+Volume:
+
+- conectar ao serviço luxusparceiros/API;
+- mount path exato: /app/uploads.
+
+16.2 Web
+--------
+
+Config file path:
+
+railway.web.toml
+
+Dockerfile:
+
+docker/web.Dockerfile
+
+Healthcheck:
+
+/login
+
+Variáveis de build:
+
+NEXT_PUBLIC_API_URL=https://DOMINIO-DA-API
+NEXT_PUBLIC_WS_URL=https://DOMINIO-DA-API/events
+
+Não acrescentar /api ao final de NEXT_PUBLIC_API_URL. O cliente web acrescenta
+esse prefixo.
+
+16.3 Domínio
+------------
+
+Site oficial:
+
+https://parceiros.grupoluxus.com.br
+
+O domínio web deve constar em CORS_ORIGINS na API.
+
+16.4 Fluxo de publicação
+------------------------
+
+1. Criar uma branch.
+2. Implementar a alteração.
+3. Executar testes.
+4. Criar commit.
+5. Enviar a branch.
+6. Criar Pull Request.
+7. Revisar.
+8. Fazer merge na main.
+9. Railway inicia os deploys.
+10. Aguardar build, deploy e healthcheck.
+11. Testar site e API.
+
+
+17. ARQUIVOS, DOCUMENTOS E VOLUME PERSISTENTE
+=============================================
+
+Desenvolvimento local:
+
+- arquivos ficam em ./uploads ou no volume uploads_data do Docker.
+
+Railway:
+
+- arquivos devem ficar no volume montado em /app/uploads;
+- o filesystem comum do contêiner é temporário;
+- um novo deploy pode substituir o contêiner;
+- sem volume, arquivos enviados podem desaparecer.
+
+Importante:
+
+- PostgreSQL guarda o registro e o endereço do documento;
+- o volume guarda os bytes reais do arquivo;
+- backup do banco não substitui backup dos uploads;
+- backup dos uploads não substitui backup do banco;
+- os dois devem ser protegidos.
+
+Arquivos antigos perdidos:
+
+- não podem ser recriados a partir do nome;
+- precisam ser anexados novamente;
+- a função Reanexar arquivo resolve o vínculo quando existe a cópia original.
+
+
+18. AUTENTICAÇÃO E CRIAÇÃO DE USUÁRIOS
+======================================
+
+18.1 Usuário administrativo
+---------------------------
+
+Um ADMIN com permissão users:write pode abrir Usuários e criar um novo acesso,
+definindo:
+
+- nome;
+- e-mail;
+- telefone;
+- senha;
+- perfil;
+- parceiro, quando necessário;
+- filial, quando necessário;
+- situação ativa/inativa.
+
+18.2 Primeiro usuário do parceiro
+---------------------------------
+
+Pode ser criado junto com o cadastro do parceiro.
+
+Esse usuário recebe partnerId e passa a operar somente dentro da empresa.
+
+18.3 Usuário de filial
+----------------------
+
+É criado automaticamente ao cadastrar a filial com login e senha.
+
+Recebe:
+
+- role ATTENDANT;
+- partnerId da matriz;
+- branchId da filial.
+
+18.4 Senhas
+-----------
+
+- armazenadas com hash bcrypt;
+- nunca devem aparecer em respostas da API;
+- senha inicial deve ser trocada;
+- redefinição deve ser feita pelo fluxo de senha ou administração autorizada;
+- após alteração, refresh tokens antigos são revogados.
+
+18.5 Credenciais locais de demonstração
+---------------------------------------
+
+Somente quando RUN_DB_SEED=true:
+
+Administrador:
+  admin@luxus.com.br
+  Luxus@2024
+
+Administrador alternativo:
+  admin@luxusparceiros.com
+  Luxus@2024
+
+Parceiro de demonstração:
+  parceiro@demotelecom.com.br
+  Luxus@2024
+
+Não utilizar essas senhas em produção.
+
+
+19. SEGURANÇA
+=============
+
+Controles existentes:
+
+- JWT de curta duração;
+- refresh token separado;
+- revogação de sessão;
+- hash bcrypt;
+- RBAC;
+- permissões granulares;
+- escopo obrigatório por parceiro;
+- escopo por filial;
+- Helmet;
+- CORS configurável;
+- rate limiting;
+- validação global dos DTOs;
+- remoção de campos não permitidos;
+- bloqueio de propriedades desconhecidas;
+- validação de MIME, extensão e tamanho dos uploads;
+- arquivos autenticados;
+- auditoria;
+- portas internas limitadas a 127.0.0.1 no Compose;
+- segredos obrigatórios;
+- consultas Prisma parametrizadas.
+
+Boas práticas obrigatórias:
+
+1. Nunca confiar no partnerId enviado pelo frontend.
+2. Nunca confiar somente em botão oculto.
+3. Validar permissões no controller e escopo no service.
+4. Nunca versionar .env.
+5. Nunca registrar tokens ou senhas em logs.
+6. Usar transação em operações com várias gravações relacionadas.
+7. Auditar alterações sensíveis.
+8. Manter dependências atualizadas com testes.
+9. Fazer backup antes de migrations destrutivas.
+10. Usar HTTPS em produção.
+
+
+20. TESTES E VALIDAÇÃO
+======================
+
+Comando principal:
+
+pnpm test
+
+Suíte atual da API:
+
+- filtros do dashboard;
+- isolamento por parceiro;
+- situações de venda realizada;
+- documentos obrigatórios;
+- edição de venda;
+- recuperação e substituição segura de uploads.
+
+Na última alteração do fluxo de venda, 18 testes foram aprovados.
+
+Validações recomendadas:
+
+pnpm test
+pnpm lint
+pnpm build
+git diff --check
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+
+Teste manual mínimo:
+
+- login ADMIN global;
+- login de parceiro;
+- login de filial;
+- tentativa de acesso cruzado;
+- criação e edição de venda;
+- venda sem contrato;
+- anexo posterior do contrato;
+- aprovação;
+- rejeição visível na listagem e ausente no dashboard;
+- download de documentos;
+- exportação de dashboard;
+- responsividade no celular.
+
+
+21. ORIENTAÇÕES PARA DESENVOLVIMENTO
+====================================
+
+21.1 Backend
+------------
+
+Cada módulo normalmente contém:
+
+- controller;
+- service;
+- DTOs;
+- module;
+- testes relacionados.
+
+Regras:
+
+- controller recebe e autoriza;
+- DTO valida entrada;
+- service concentra regra de negócio;
+- Prisma acessa os dados;
+- auditoria registra ações relevantes;
+- eventos notificam atualizações.
+
+Ao adicionar endpoint:
+
+1. criar DTO;
+2. aplicar class-validator;
+3. adicionar permissão;
+4. aplicar escopo;
+5. documentar no Swagger;
+6. escrever teste;
+7. revisar dados retornados.
+
+21.2 Frontend web
+-----------------
+
+Páginas autenticadas:
+
+apps/web/src/app/(dashboard)
+
+Componentes:
+
+apps/web/src/components
+
+Cliente da API:
+
+apps/web/src/lib/api.ts
+
+Regras:
+
+- usar o cliente autenticado existente;
+- tratar carregamento, erro, sucesso e lista vazia;
+- não duplicar regras críticas do backend;
+- manter versão mobile;
+- usar componentes compartilhados;
+- preservar ordenação e filtros;
+- pedir confirmação em ações importantes;
+- não expor dados fora do escopo.
+
+21.3 Tipos compartilhados
+-------------------------
+
+Quando API, web e mobile usam o mesmo conceito, adicionar em:
+
+packages/types
+
+Funções reutilizáveis:
+
+packages/utils
+
+Componentes reutilizáveis:
+
+packages/ui
+
+21.4 Git
+--------
+
+Fluxo recomendado:
+
+git switch main
+git pull
+git switch -c agent/nome-da-alteracao
+
+Depois:
+
+git status
+git diff
+pnpm test
+pnpm build
+git add ARQUIVOS
+git commit -m "Descrição objetiva"
+git push -u origin agent/nome-da-alteracao
+
+Criar Pull Request e fazer merge após a revisão.
+
+
+22. OPERAÇÃO, MANUTENÇÃO E BACKUPS
+==================================
+
+22.1 Rotina diária
+------------------
+
+- conferir serviços online;
+- conferir healthchecks;
+- observar erros recentes;
+- verificar espaço do volume;
+- verificar notificações e operações pendentes.
+
+22.2 Rotina semanal
+-------------------
+
+- revisar logs;
+- revisar auditoria;
+- conferir backups;
+- testar download de documento;
+- verificar vendas presas em documentos pendentes;
+- conferir comissões previstas e aprovadas.
+
+22.3 Backup
+-----------
+
+Proteger separadamente:
+
+- banco PostgreSQL;
+- volume /app/uploads;
+- variáveis/segredos em local seguro;
+- configuração de domínio;
+- repositório GitHub.
+
+Um backup válido deve ser testado por restauração em ambiente separado.
+
+22.4 Atualização
+----------------
+
+Antes de atualizar:
+
+1. criar backup;
+2. revisar migration;
+3. testar build;
+4. testar regras de escopo;
+5. publicar por Pull Request;
+6. acompanhar Railway;
+7. testar produção;
+8. manter plano de retorno.
+
+
+23. SOLUÇÃO DE PROBLEMAS
+========================
+
+23.1 Docker não conecta
+-----------------------
+
+Sintoma:
+
+failed to connect to docker API
+
+Verificar:
+
+1. Docker Desktop está aberto?
+2. O status mostra Engine running?
+3. Contêineres Linux estão habilitados?
+4. WSL/Virtual Machine Platform estão disponíveis?
+5. docker version responde com Client e Server?
+
+Comandos:
+
+docker version
+docker compose ps
+
+23.2 Railway falha no healthcheck
+---------------------------------
+
+API:
+
+- config file deve ser railway.toml;
+- healthcheck /api/health;
+- DATABASE_URL válida;
+- PORT fornecida pela Railway;
+- migrations sem erro;
+- volume com permissão de escrita.
+
+Web:
+
+- config file deve ser railway.web.toml;
+- healthcheck /login;
+- NEXT_PUBLIC_API_URL correta durante o build;
+- API e CORS corretos.
+
+23.3 Site abre, mas API falha
+-----------------------------
+
+- conferir NEXT_PUBLIC_API_URL;
+- não colocar /api duas vezes;
+- conferir CORS_ORIGINS;
+- conferir HTTPS;
+- abrir /api/health;
+- olhar logs da API.
+
+23.4 Documento não aparece
+--------------------------
+
+- conferir volume na API;
+- mount path /app/uploads;
+- conferir se o arquivo existe;
+- conferir autenticação;
+- usar Reanexar arquivo quando o original foi perdido.
+
+23.5 Parceiro vê dados errados
+------------------------------
+
+- conferir partnerId do usuário;
+- conferir branchId do atendente;
+- conferir perfil;
+- renovar o login após mudar vínculos;
+- testar a API diretamente;
+- revisar uso dos helpers de escopo.
+
+23.6 Plano não aparece para filial
+----------------------------------
+
+- conferir vínculo PartnerPlan;
+- conferir se isActive está true;
+- conferir situação do plano;
+- conferir operadora;
+- conferir partnerId do login;
+- lembrar que o plano pertence ao parceiro, não à filial.
+
+23.7 Venda não aprova
+---------------------
+
+- conferir contrato assinado;
+- conferir foto do chip;
+- conferir CPF e RG;
+- conferir documentos adicionais solicitados;
+- conferir situação atual;
+- conferir se o usuário pode aprovar;
+- abrir Editar venda para anexar contrato pendente.
+
+23.8 Venda rejeitada não aparece no dashboard
+---------------------------------------------
+
+Esse é o comportamento correto:
+
+- a venda rejeitada aparece em Vendas;
+- não é venda realizada;
+- não entra nos indicadores.
+
+
+24. DECISÕES FUNCIONAIS CONHECIDAS
+==================================
+
+1. Matriz e filiais compartilham planos e operadoras.
+2. Planos são vinculados ao parceiro, não copiados para cada filial.
+3. Parceiro vê todas as suas filiais.
+4. Atendente vê somente sua filial.
+5. Parceiros não veem concorrentes.
+6. Contrato é opcional no cadastro e obrigatório na aprovação.
+7. Marcar contrato assinado exige arquivo real.
+8. Venda rejeitada continua disponível para consulta.
+9. Somente APPROVED e ACTIVATED contam como venda realizada.
+10. Chamados e solicitações continuam separados até definição do fluxo.
+11. Documentos são protegidos e dependem de armazenamento persistente.
+12. Exportações respeitam o mesmo isolamento da tela.
+
+
+25. GLOSSÁRIO
+=============
+
+Administrador global:
+  ADMIN/SUPERVISOR sem parceiro vinculado.
+
+Parceiro:
+  empresa comercial/matriz cadastrada na plataforma.
+
+Filial:
+  loja pertencente a um parceiro.
+
+Atendente:
+  usuário operacional vinculado a uma filial.
+
+PartnerPlan:
+  vínculo que torna um plano disponível para um parceiro e suas filiais.
+
+ICCID:
+  identificador único do chip/SIM Card.
+
+Portabilidade:
+  transferência de número de outra operadora.
+
+Venda realizada:
+  venda APPROVED ou ACTIVATED para fins de indicador.
+
+Tenant/escopo:
+  limite de dados de cada parceiro.
+
+JWT:
+  token usado na autenticação.
+
+Refresh token:
+  token usado para renovar a sessão.
+
+Migration:
+  alteração versionada da estrutura do banco.
+
+Seed:
+  carga inicial ou demonstrativa de dados.
+
+Healthcheck:
+  endereço usado para confirmar que o serviço está saudável.
+
+Volume:
+  armazenamento persistente separado do contêiner.
+
+Pull Request:
+  proposta de alteração revisada antes de entrar na main.
+
+
+26. CHECKLIST DE ENTREGA
+========================
+
+Antes de considerar uma alteração concluída:
+
+[ ] A regra foi entendida e documentada.
+[ ] O isolamento por parceiro foi preservado.
+[ ] O isolamento por filial foi preservado.
+[ ] DTOs validam a entrada.
+[ ] Permissões foram aplicadas.
+[ ] Não existem segredos no código.
+[ ] Testes automatizados passaram.
+[ ] TypeScript passou.
+[ ] Build passou.
+[ ] git diff --check passou.
+[ ] Docker/configuração foi validado.
+[ ] Migração foi criada quando necessária.
+[ ] Uploads continuam persistentes.
+[ ] Interface desktop foi testada.
+[ ] Interface celular foi testada.
+[ ] ADMIN foi testado.
+[ ] Parceiro foi testado.
+[ ] Filial foi testada.
+[ ] Pull Request foi revisado.
+[ ] Railway concluiu o deploy.
+[ ] Site respondeu HTTP 200.
+[ ] API respondeu status ok.
+[ ] Fluxo alterado foi testado em produção.
+
+
+27. INTEGRAÇÃO COM O LUXUS TASK
+===============================
+
+Objetivo:
+  permitir que uma demanda seja aberta no Luxus Parceiros e trabalhada
+  normalmente dentro do Luxus Task.
+
+O Luxus Task continua independente:
+  usuários do próprio Task continuam criando, editando e concluindo demandas
+  pelo fluxo já existente. A integração é apenas uma entrada adicional.
+
+Fluxo:
+
+1. O usuário abre Demandas no Luxus Parceiros.
+2. Informa tipo, descrição, cliente opcional e responsável do Luxus Task.
+3. A API do Parceiros cria um registro local e envia a demanda ao Task.
+4. O Task cria ou reutiliza o usuário técnico inativo LUXUSPARCEIROS.
+5. A nova demanda aparece no Task como criada por LUXUSPARCEIROS.
+6. O responsável trabalha nela normalmente no Task.
+7. Alterações e conclusão geram callback para a API do Parceiros.
+8. O Parceiros atualiza status, resolução, responsável e protocolo externo.
+9. Ao abrir o detalhe, também é feita reconciliação por consulta, protegendo
+   contra callbacks temporariamente perdidos.
+
+Chamados e solicitações:
+  o menu principal passa a possuir somente Demandas como entrada para novos
+  atendimentos. Chamados antigos permanecem acessíveis pelo botão
+  "Chamados anteriores", sem perda ou migração destrutiva de histórico.
+
+Segurança:
+  a comunicação usa x-integration-key e comparação em tempo constante.
+  A chave existe somente nas APIs e nunca é enviada ao navegador ou aplicativo.
+  O parceiro e a filial são obtidos da sessão autenticada no backend.
+
+Variáveis no serviço API do Luxus Parceiros:
+
+  LUXUS_TASK_API_URL
+  LUXUS_TASK_INTEGRATION_KEY
+
+Variáveis no backend C# do Luxus Task:
+
+  LUXUS_PARCEIROS_INTEGRATION_KEY
+  LUXUS_PARCEIROS_CALLBACK_URL
+  LUXUS_PARCEIROS_TECHNICAL_USER_EMAIL
+
+LUXUS_TASK_INTEGRATION_KEY e LUXUS_PARCEIROS_INTEGRATION_KEY precisam conter
+exatamente o mesmo segredo forte.
+
+Migrações obrigatórias:
+
+  Luxus Parceiros:
+    apps/api/prisma/migrations/20260728120000_luxus_task_integration/migration.sql
+
+  Luxus Task/Supabase:
+    supabase/migrations/20260728_luxus_parceiros_integration.sql
+
+Endpoints no Luxus Task:
+
+  GET  /integrations/luxus-parceiros/responsaveis
+  POST /integrations/luxus-parceiros/demandas
+  GET  /integrations/luxus-parceiros/demandas/{requestId}
+
+Endpoint de retorno no Luxus Parceiros:
+
+  POST /api/integrations/luxus-task/callback
+
+Falhas:
+  se o Task estiver indisponível, a demanda local não é apagada e mostra o erro
+  de sincronização. O usuário pode usar "Tentar sincronizar novamente".
+  O Task não perde uma conclusão caso o callback falhe, pois o Parceiros
+  reconcilia os dados ao consultar o detalhe.
+
+
+28. PRIVACIDADE DO RANKING
+==========================
+
+O ranking usa somente vendas realizadas: APPROVED ou ACTIVATED.
+
+Administrador:
+  pode ver o ranking geral e os detalhes globais permitidos pela função.
+
+Parceiro e filial:
+  veem somente a própria posição no ranking. Qualquer abertura de detalhes,
+  relatório ou exportação usa partnerId e branchId derivados da autenticação.
+  Um partnerId enviado pelo navegador não substitui o escopo autenticado.
+  Nenhum cliente, documento, valor ou venda de concorrente é retornado.
+
+
+FIM DA DOCUMENTAÇÃO
+===================
+
+Arquivos complementares:
+
+- README.md
+- RELATORIO_TECNICO.md
+- .env.example
+- docker-compose.yml
+- railway.toml
+- railway.web.toml
+- apps/api/prisma/schema.prisma
+- packages/types/src/index.ts

@@ -323,6 +323,31 @@ Namespace Socket.IO: `/events`.
 - `ticket:updated`
 - `stock:updated`
 
+## Integração com o Luxus Task
+
+O menu “Demandas” é o ponto único para novos atendimentos. O usuário escolhe um
+responsável ativo do Luxus Task e a API cria a demanda externa com o usuário
+técnico `LUXUSPARCEIROS`. O Task continua aceitando demandas próprias sem
+qualquer alteração no fluxo existente.
+
+Ao atualizar ou concluir uma demanda integrada, o Task envia status e resposta
+de volta ao Parceiros. O detalhe também faz reconciliação por consulta e oferece
+nova tentativa quando a criação externa falha. Chamados antigos permanecem
+disponíveis em “Chamados anteriores”.
+
+Configuração da API do Parceiros:
+
+```env
+LUXUS_TASK_API_URL=https://API-DO-LUXUS-TASK
+LUXUS_TASK_INTEGRATION_KEY=SEGREDO-COMPARTILHADO
+```
+
+Antes do deploy, aplique a migration
+`20260728120000_luxus_task_integration`.
+
+No ranking, parceiros recebem somente a própria posição. Detalhes e exportações
+continuam obrigatoriamente limitados à empresa e filial da sessão.
+
 ## Deploy na Railway
 
 O projeto utiliza dois serviços ligados ao mesmo repositório, além do PostgreSQL.

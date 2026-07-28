@@ -50,6 +50,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:3000,http://localhost:8081}
       UPLOAD_DIR: /app/uploads
       RUN_DB_SEED: ${RUN_DB_SEED:-true}
+      LUXUS_TASK_API_URL: ${LUXUS_TASK_API_URL:-http://host.docker.internal:4000}
+      LUXUS_TASK_INTEGRATION_KEY: ${LUXUS_TASK_INTEGRATION_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

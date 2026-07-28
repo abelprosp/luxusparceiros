@@ -6,7 +6,6 @@ import {
   Package,
   Store,
   FileText,
-  Headphones,
   DollarSign,
   User,
   ChevronRight,
@@ -42,16 +41,10 @@ export default function MaisScreen() {
       href: '/(tabs)/estoque',
     },
     {
-      title: 'Solicitações',
-      subtitle: 'Ativações, bloqueios e mais',
+      title: 'Demandas',
+      subtitle: 'Atendimento integrado ao Luxus Task',
       icon: <FileText size={22} color={colors.primary} />,
       href: '/(tabs)/solicitacoes',
-    },
-    {
-      title: 'Chamados',
-      subtitle: 'Suporte e atendimento',
-      icon: <Headphones size={22} color={colors.primary} />,
-      href: '/(tabs)/chamados',
     },
     {
       title: 'Comissões',

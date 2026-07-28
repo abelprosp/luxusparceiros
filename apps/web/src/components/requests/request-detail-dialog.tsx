@@ -37,6 +37,12 @@ interface RequestDetail {
   createdAt: string;
   comments: RequestComment[];
   timeline: ActivityEntry[];
+  taskDemandId?: string;
+  taskProtocol?: string;
+  taskStatus?: string;
+  taskResponsibleName?: string;
+  taskSyncError?: string;
+  taskLastSyncAt?: string;
 }
 
 interface RequestDetailDialogProps {
@@ -113,6 +119,25 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
     }
   };
 
+  const retrySync = async () => {
+    if (!requestId) return;
+    setSending(true);
+    try {
+      await api(`/requests/${requestId}/sync-task`, { method: 'POST' });
+      toast({ title: 'Sincronização realizada', variant: 'success' });
+      await load();
+      onUpdated();
+    } catch (err) {
+      toast({
+        title: 'Erro ao sincronizar',
+        description: err instanceof Error ? err.message : 'Falha',
+        variant: 'destructive',
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
@@ -134,13 +159,29 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
               {request.partner && <span>Parceiro: {request.partner.name}</span>}
               {request.client && <span>Cliente: {request.client.name}</span>}
             </div>
+            {(request.taskProtocol || request.taskSyncError) && (
+              <div className="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm">
+                <p className="text-xs font-medium text-muted-foreground">Integração Luxus Task</p>
+                {request.taskProtocol && <p>Protocolo: <strong>{request.taskProtocol}</strong></p>}
+                {request.taskResponsibleName && <p>Responsável: {request.taskResponsibleName}</p>}
+                {request.taskStatus && <p>Status de origem: {request.taskStatus}</p>}
+                {request.taskSyncError && (
+                  <>
+                    <p className="text-destructive">{request.taskSyncError}</p>
+                    <Button size="sm" variant="outline" onClick={retrySync} disabled={sending}>
+                      Tentar sincronizar novamente
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
             {request.resolution && (
               <div className="rounded-lg border bg-muted/30 p-3 text-sm">
                 <p className="font-medium text-xs text-muted-foreground mb-1">Resolução</p>
                 {request.resolution}
               </div>
             )}
-            {isAdmin && (
+            {isAdmin && !request.taskDemandId && (
               <div className="space-y-2 rounded-lg border p-3">
                 <Label>Alterar status</Label>
                 <Select value={status} onValueChange={(v) => setStatus(v as RequestStatus)}>

@@ -117,6 +117,13 @@ export class RequestsController {
     return this.requestsService.addComment(id, dto, user);
   }
 
+  @Post(':id/sync-task')
+  @RequirePermissions(PERMISSIONS.REQUESTS_WRITE)
+  @ApiOperation({ summary: 'Repetir envio da demanda ao Luxus Task' })
+  retryTaskSync(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.requestsService.retryTaskSync(id, user);
+  }
+
   @Delete(':id')
   @RequirePermissions(PERMISSIONS.REQUESTS_WRITE)
   @ApiOperation({ summary: 'Remover solicitação' })

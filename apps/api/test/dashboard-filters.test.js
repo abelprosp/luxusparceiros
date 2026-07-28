@@ -31,3 +31,44 @@ test('comissões do dashboard respeitam venda realizada, campanha, operadora e f
     operatorId: 'operator-1',
   });
 });
+
+test('detalhes do ranking nunca retornam vendas de outro parceiro', async () => {
+  let capturedSaleWhere;
+  const prisma = {
+    sale: {
+      findMany: async ({ where }) => {
+        capturedSaleWhere = where;
+        return [];
+      },
+      groupBy: async () => [],
+    },
+    partner: {
+      findMany: async () => [{
+        id: 'partner-1',
+        name: 'Parceiro 1',
+        city: null,
+        state: null,
+        status: 'ACTIVE',
+        createdAt: new Date('2026-07-01T00:00:00.000Z'),
+      }],
+    },
+    line: { findMany: async () => [] },
+    commission: { findMany: async () => [] },
+    campaign: { findMany: async () => [] },
+    branch: { findUnique: async () => null },
+  };
+  const service = new DashboardService(prisma);
+  const user = {
+    id: 'user-1',
+    name: 'Parceiro',
+    email: 'parceiro@local',
+    role: 'PARTNER',
+    partnerId: 'partner-1',
+  };
+
+  const result = await service.getDetails(user, { partnerId: 'partner-2' });
+
+  assert.equal(capturedSaleWhere.partnerId, 'partner-1');
+  assert.deepEqual(result.sales, []);
+  assert.equal(JSON.stringify(result).includes('partner-2'), false);
+});
