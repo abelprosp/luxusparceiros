@@ -29,6 +29,22 @@ test('callback exige a chave compartilhada exata', () => {
   );
 });
 
+test('integração tolera o tempo de despertar do Render', () => {
+  const configured = new TaskIntegrationService(
+    {
+      get: (key) => key === 'LUXUS_TASK_TIMEOUT_MS' ? '45000' : undefined,
+    },
+    {},
+  );
+  const defaultTimeout = new TaskIntegrationService(
+    { get: () => undefined },
+    {},
+  );
+
+  assert.equal(configured.timeoutMs, 45000);
+  assert.equal(defaultTimeout.timeoutMs, 90000);
+});
+
 test('callback concluído atualiza somente a solicitação vinculada', async () => {
   const updates = [];
   const timelines = [];
