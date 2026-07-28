@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal, Upload, Eye } from 'lucide-react';
+import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal, Upload, Eye, Pencil } from 'lucide-react';
 import { SaleStatus, DocumentType, SALE_STATUS_LABELS } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
@@ -21,6 +21,7 @@ import { useToast } from '@/components/ui/toaster';
 import { CreateSaleButton } from '@/components/sales/create-sale-dialog';
 import { ResubmitSaleDocumentsDialog } from '@/components/sales/resubmit-sale-documents-dialog';
 import { SaleDetailDialog } from '@/components/sales/sale-detail-dialog';
+import { EditSaleDialog } from '@/components/sales/edit-sale-dialog';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerUser } from '@/lib/rbac';
@@ -66,9 +67,13 @@ export default function VendasPage() {
   const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
   const [resubmitSaleId, setResubmitSaleId] = useState<string | null>(null);
   const [detailSaleId, setDetailSaleId] = useState<string | null>(null);
+  const [editSaleId, setEditSaleId] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const isPartner = isPartnerUser(user);
+  const canEdit = (sale: Sale) =>
+    [SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.CONTESTED].includes(sale.status) ||
+    (!isPartner && sale.status === SaleStatus.DOCUMENTS_PENDING);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -99,7 +104,11 @@ export default function VendasPage() {
       toast({ title: 'Venda aprovada', variant: 'success' });
       load();
     } catch (err) {
-      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha', variant: 'destructive' });
+      const message = err instanceof Error ? err.message : 'Falha';
+      toast({ title: 'Não foi possível aprovar', description: message, variant: 'destructive' });
+      if (message.toLowerCase().includes('contrato assinado')) {
+        setEditSaleId(sale.id);
+      }
     }
   };
 
@@ -230,6 +239,11 @@ export default function VendasPage() {
                             <Button size="sm" variant="ghost" onClick={() => setDetailSaleId(s.id)}>
                               <Eye className="mr-2 h-4 w-4" /> Ver
                             </Button>
+                            {canEdit(s) && (
+                              <Button size="sm" variant="outline" onClick={() => setEditSaleId(s.id)}>
+                                <Pencil className="mr-2 h-4 w-4" /> Editar
+                              </Button>
+                            )}
                             {s.status === SaleStatus.DOCUMENTS_PENDING && (
                               <Button size="sm" variant="outline" onClick={() => setResubmitSaleId(s.id)}>
                                 <Upload className="mr-2 h-4 w-4" /> Enviar docs
@@ -245,6 +259,11 @@ export default function VendasPage() {
                               <DropdownMenuItem onClick={() => setDetailSaleId(s.id)}>
                                 <Eye className="mr-2 h-4 w-4" /> Ver detalhes
                               </DropdownMenuItem>
+                              {canEdit(s) && (
+                                <DropdownMenuItem onClick={() => setEditSaleId(s.id)}>
+                                  <Pencil className="mr-2 h-4 w-4" /> Editar venda
+                                </DropdownMenuItem>
+                              )}
                               {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
                                 <DropdownMenuItem onClick={() => handleApprove(s)}>
                                   <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
@@ -297,6 +316,11 @@ export default function VendasPage() {
                           <Upload className="h-4 w-4" />
                         </Button>
                       )}
+                      {canEdit(s) && (
+                        <Button size="sm" variant="outline" onClick={() => setEditSaleId(s.id)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     <DropdownMenu>
@@ -307,6 +331,11 @@ export default function VendasPage() {
                         <DropdownMenuItem onClick={() => setDetailSaleId(s.id)}>
                           <Eye className="mr-2 h-4 w-4" /> Ver detalhes
                         </DropdownMenuItem>
+                        {canEdit(s) && (
+                          <DropdownMenuItem onClick={() => setEditSaleId(s.id)}>
+                            <Pencil className="mr-2 h-4 w-4" /> Editar venda
+                          </DropdownMenuItem>
+                        )}
                         {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
                           <DropdownMenuItem onClick={() => handleApprove(s)}>
                             <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
@@ -404,6 +433,13 @@ export default function VendasPage() {
           setDetailSaleId(null);
           setResubmitSaleId(saleId);
         }}
+      />
+
+      <EditSaleDialog
+        saleId={editSaleId}
+        open={!!editSaleId}
+        onOpenChange={(open) => { if (!open) setEditSaleId(null); }}
+        onSuccess={load}
       />
     </DashboardLayout>
   );

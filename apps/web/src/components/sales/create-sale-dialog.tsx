@@ -9,6 +9,7 @@ import { isPartnerScopedUser } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toaster';
@@ -87,6 +88,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
   const [cpfPhoto, setCpfPhoto] = useState<File | null>(null);
   const [rgPhoto, setRgPhoto] = useState<File | null>(null);
   const [contractFile, setContractFile] = useState<File | null>(null);
+  const [contractSigned, setContractSigned] = useState(false);
   const [contractFormat, setContractFormat] = useState<ContractFormat | ''>('');
   const [client, setClient] = useState(emptyClient);
   const [isPortability, setIsPortability] = useState(false);
@@ -170,6 +172,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     setCpfPhoto(null);
     setRgPhoto(null);
     setContractFile(null);
+    setContractSigned(false);
     setContractFormat('');
     setClient(emptyClient);
     setIsPortability(false);
@@ -231,6 +234,15 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     const phoneDigits = client.phone.replace(/\D/g, '');
     if (lineDigits && phoneDigits && lineDigits === phoneDigits) {
       toast({ title: 'Telefone de contato deve ser diferente da linha vendida', variant: 'destructive' });
+      return;
+    }
+
+    if (contractSigned && !contractFile) {
+      toast({
+        title: 'Anexe o contrato assinado',
+        description: 'Ao marcar que o contrato está assinado, o arquivo precisa ser anexado.',
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -412,18 +424,45 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label>Contrato assinado (opcional no cadastro)</Label>
+            </div>
+          </section>
+
+          <section className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+            <div>
+              <h3 className="text-sm font-semibold">Contrato da venda</h3>
+              <p className="text-xs text-muted-foreground">
+                O contrato pode ser anexado agora ou depois, pela opção Editar venda.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="contract-signed"
+                checked={contractSigned}
+                onCheckedChange={(checked) => {
+                  setContractSigned(checked === true);
+                  if (checked !== true) setContractFile(null);
+                }}
+              />
+              <Label htmlFor="contract-signed">O contrato já foi assinado</Label>
+            </div>
+            {contractSigned ? (
+              <div className="space-y-2">
+                <Label htmlFor="signed-contract-file">Anexar contrato assinado *</Label>
                 <Input
+                  id="signed-contract-file"
                   type="file"
                   accept="image/*,application/pdf"
                   onChange={(e) => setContractFile(e.target.files?.[0] ?? null)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Foto do contrato impresso ou PDF do ZapSign. Obrigatório antes de aprovar a venda.
+                  Aceita foto do contrato impresso ou PDF do ZapSign.
                 </p>
               </div>
-            </div>
+            ) : (
+              <p className="rounded-md bg-background/70 p-3 text-xs text-muted-foreground">
+                A venda ficará em análise. Antes da aprovação, abra Editar venda, anexe o contrato e marque-o como assinado.
+              </p>
+            )}
           </section>
 
           <section className="space-y-3">
