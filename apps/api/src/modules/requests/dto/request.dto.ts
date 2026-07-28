@@ -1,5 +1,5 @@
 import { OmitType, PartialType } from '@nestjs/swagger';
-import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RequestStatus, RequestType } from '@prisma/client';
 import { PaginationDto } from '@/common/dto/pagination.dto';
@@ -82,6 +82,21 @@ export class CreateRequestDto {
   @IsUUID()
   taskResponsibleId?: string;
 
+  @ApiPropertyOptional({ description: 'Cliente ativo cadastrado no Luxus Task' })
+  @IsOptional()
+  @IsUUID()
+  taskClientId?: string;
+
+  @ApiPropertyOptional({ description: 'Nome do cliente selecionado no Luxus Task' })
+  @IsOptional()
+  @IsString()
+  taskClientName?: string;
+
+  @ApiPropertyOptional({ description: 'Prazo da demanda no formato YYYY-MM-DD' })
+  @IsOptional()
+  @IsDateString()
+  taskDeadline?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
@@ -89,7 +104,10 @@ export class CreateRequestDto {
 }
 
 export class UpdateRequestDto extends PartialType(
-  OmitType(CreateRequestDto, ['taskResponsibleId', 'taskPriority'] as const),
+  OmitType(
+    CreateRequestDto,
+    ['taskResponsibleId', 'taskClientId', 'taskClientName', 'taskDeadline', 'taskPriority'] as const,
+  ),
 ) {
   @ApiPropertyOptional({ enum: RequestStatus })
   @IsOptional()

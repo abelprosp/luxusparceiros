@@ -651,6 +651,10 @@ model Request {
   taskStatus   String?
   taskResponsibleId String?
   taskResponsibleName String?
+  taskClientId String?
+  taskClientName String?
+  taskDeadline String?
+  taskPriority Boolean @default(false)
   taskSyncError String?
   taskLastSyncAt DateTime?
   createdAt    DateTime      @default(now())

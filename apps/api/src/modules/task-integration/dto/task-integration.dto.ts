@@ -50,6 +50,12 @@ export class CreateTaskDemandInput {
   @IsUUID()
   responsibleId: string;
 
+  @IsUUID()
+  clientId: string;
+
+  @IsDateString()
+  deadline: string;
+
   @IsString()
   subject: string;
 

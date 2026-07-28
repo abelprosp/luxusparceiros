@@ -41,6 +41,8 @@ interface RequestDetail {
   taskProtocol?: string;
   taskStatus?: string;
   taskResponsibleName?: string;
+  taskClientName?: string;
+  taskDeadline?: string;
   taskSyncError?: string;
   taskLastSyncAt?: string;
 }
@@ -159,11 +161,18 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
               {request.partner && <span>Parceiro: {request.partner.name}</span>}
               {request.client && <span>Cliente: {request.client.name}</span>}
             </div>
-            {(request.taskProtocol || request.taskSyncError) && (
+            {(request.taskProtocol || request.taskSyncError || request.taskClientName) && (
               <div className="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm">
                 <p className="text-xs font-medium text-muted-foreground">Integração Luxus Task</p>
+                {!request.taskProtocol && !request.taskSyncError && (
+                  <p className="text-primary">Sincronização em processamento...</p>
+                )}
                 {request.taskProtocol && <p>Protocolo: <strong>{request.taskProtocol}</strong></p>}
                 {request.taskResponsibleName && <p>Responsável: {request.taskResponsibleName}</p>}
+                {request.taskClientName && <p>Cliente: {request.taskClientName}</p>}
+                {request.taskDeadline && (
+                  <p>Prazo: {new Date(`${request.taskDeadline}T12:00:00`).toLocaleDateString('pt-BR')}</p>
+                )}
                 {request.taskStatus && <p>Status de origem: {request.taskStatus}</p>}
                 {request.taskSyncError && (
                   <>
