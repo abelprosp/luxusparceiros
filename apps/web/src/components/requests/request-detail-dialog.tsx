@@ -5,6 +5,7 @@ import { RequestStatus, REQUEST_STATUS_LABELS, REQUEST_TYPE_LABELS, UserRole } f
 import { formatDateTime } from '@luxus/utils';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
+import { isPartnerUser } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -64,6 +65,7 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
   const [status, setStatus] = useState<RequestStatus | ''>('');
   const [resolution, setResolution] = useState('');
   const [sending, setSending] = useState(false);
+  const isPartner = isPartnerUser(user);
 
   const load = useCallback(async () => {
     if (!requestId) return;
@@ -95,12 +97,42 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
     }
   }, [open, requestId, load]);
 
-  const handleComment = async () => {
-    if (!requestId || !comment.trim()) return;
+  const statusChanged = Boolean(
+    isAdmin
+      && request
+      && !request.taskDemandId
+      && status
+      && (
+        status !== request.status
+        || resolution.trim() !== (request.resolution ?? '').trim()
+      ),
+  );
+
+  const handleSubmit = async () => {
+    if (!requestId || !request || (!comment.trim() && !statusChanged)) return;
     setSending(true);
     try {
-      await api(`/requests/${requestId}/comments`, { method: 'POST', body: { content: comment.trim() } });
+      if (statusChanged && status) {
+        await api(`/requests/${requestId}/status`, {
+          method: 'PATCH',
+          body: { status, resolution: resolution.trim() || undefined },
+        });
+      }
+      if (comment.trim()) {
+        await api(`/requests/${requestId}/comments`, {
+          method: 'POST',
+          body: { content: comment.trim() },
+        });
+      }
       setComment('');
+      toast({
+        title: comment.trim() && statusChanged
+          ? 'Status e comentário enviados'
+          : comment.trim()
+            ? 'Comentário enviado'
+            : 'Status atualizado',
+        variant: 'success',
+      });
       await load();
       onUpdated();
     } catch (err) {
@@ -218,7 +250,7 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
               </div>
             )}
             <ActivityLog entries={request.timeline} />
-            <div className="min-h-0 flex-1">
+            <div className="shrink-0">
               <Label className="mb-2 block">Comentários</Label>
               <ScrollArea className="h-40 rounded-lg border p-3">
                 <div className="space-y-3">
@@ -238,13 +270,24 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
                 </div>
               </ScrollArea>
             </div>
-            <div className="space-y-2">
+            <div className="relative z-10 shrink-0 space-y-2 rounded-lg border border-primary/30 bg-background p-3 shadow-sm">
+              <Label htmlFor="request-comment">
+                {isPartner ? 'Mensagem para o administrador' : 'Mensagem para o parceiro'}
+              </Label>
               <Textarea
+                id="request-comment"
                 placeholder="Novo comentário..."
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                rows={2}
+                rows={3}
+                disabled={sending}
+                className="pointer-events-auto bg-background"
               />
+              {isAdmin && !request.taskDemandId && (
+                <p className="text-xs text-muted-foreground">
+                  Ao enviar, alterações de status e resolução também serão salvas.
+                </p>
+              )}
             </div>
           </div>
         ) : (
@@ -252,7 +295,12 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => handleOpenChange(false)}>Fechar</Button>
-          <Button onClick={handleComment} disabled={sending || !comment.trim()}>Enviar comentário</Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={sending || (!comment.trim() && !statusChanged)}
+          >
+            {isAdmin && !request?.taskDemandId ? 'Salvar e enviar' : 'Enviar comentário'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
