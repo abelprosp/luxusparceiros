@@ -85,6 +85,13 @@ export class TicketsController {
     return this.ticketsService.updateStatus(id, dto, user);
   }
 
+  @Patch(':id/acknowledge')
+  @RequirePermissions(PERMISSIONS.TICKETS_WRITE)
+  @ApiOperation({ summary: 'Registrar que o atendimento visualizou o ticket' })
+  acknowledge(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.ticketsService.acknowledge(id, user);
+  }
+
   @Post(':id/messages')
   @RequirePermissions(PERMISSIONS.TICKETS_WRITE)
   @ApiOperation({ summary: 'Adicionar mensagem ao ticket' })

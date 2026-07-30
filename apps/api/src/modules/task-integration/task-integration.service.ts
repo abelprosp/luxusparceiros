@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/prisma/prisma.service';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TaskDemandCallbackDto, CreateTaskDemandInput } from './dto/task-integration.dto';
 
 export interface TaskResponsible {
@@ -35,6 +36,7 @@ export class TaskIntegrationService {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   isConfigured(): boolean {
@@ -77,6 +79,10 @@ export class TaskIntegrationService {
       where: { id: dto.externalRequestId },
       select: {
         id: true,
+        protocol: true,
+        partnerId: true,
+        createdById: true,
+        createdBy: { select: { partnerId: true } },
         taskDemandId: true,
         status: true,
         resolution: true,
@@ -126,6 +132,36 @@ export class TaskIntegrationService {
         });
       }
     });
+    if (status !== existing.status || resolutionChanged) {
+      const statusLabels: Record<string, string> = {
+        OPEN: 'aberta',
+        IN_ANALYSIS: 'em análise',
+        IN_PROGRESS: 'em andamento',
+        COMPLETED: 'concluída',
+        REJECTED: 'rejeitada',
+      };
+      const notification = {
+        type: 'REQUEST' as const,
+        title: status !== existing.status
+          ? 'Atualização do Luxus Task'
+          : 'Nova resposta do Luxus Task',
+        message: status !== existing.status
+          ? `A solicitação ${existing.protocol} agora está ${statusLabels[status] ?? 'atualizada'}.`
+          : `A solicitação ${existing.protocol} recebeu uma nova resposta.`,
+        data: { requestId: existing.id },
+      };
+      await this.notifications.createForPartnerUsers(
+        existing.partnerId,
+        notification,
+        [existing.createdById],
+      );
+      if (!existing.createdBy.partnerId) {
+        await this.notifications.create({
+          userId: existing.createdById,
+          ...notification,
+        });
+      }
+    }
     return { accepted: true };
   }
 

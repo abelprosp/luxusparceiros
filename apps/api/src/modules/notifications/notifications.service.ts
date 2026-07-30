@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { NotificationType, Prisma } from '@prisma/client';
+import { NotificationType, Prisma, UserRole } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { EventsGateway } from '@/gateway/events.gateway';
@@ -73,9 +73,15 @@ export class NotificationsService {
   async createForPartnerUsers(
     partnerId: string,
     data: { type: NotificationType; title: string; message: string; data?: Record<string, unknown> },
+    excludeUserIds: string[] = [],
   ) {
     const users = await this.prisma.user.findMany({
-      where: { partnerId, isActive: true, notificationsEnabled: true },
+      where: {
+        partnerId,
+        isActive: true,
+        notificationsEnabled: true,
+        ...(excludeUserIds.length ? { id: { notIn: excludeUserIds } } : {}),
+      },
       select: { id: true },
     });
 
@@ -92,6 +98,33 @@ export class NotificationsService {
     );
 
     return notifications;
+  }
+
+  async createForAdminUsers(
+    data: { type: NotificationType; title: string; message: string; data?: Record<string, unknown> },
+    excludeUserIds: string[] = [],
+  ) {
+    const users = await this.prisma.user.findMany({
+      where: {
+        role: { in: [UserRole.ADMIN, UserRole.SUPERVISOR] },
+        isActive: true,
+        notificationsEnabled: true,
+        ...(excludeUserIds.length ? { id: { notIn: excludeUserIds } } : {}),
+      },
+      select: { id: true },
+    });
+
+    return Promise.all(
+      users.map((user) =>
+        this.create({
+          userId: user.id,
+          type: data.type,
+          title: data.title,
+          message: data.message,
+          data: data.data,
+        }),
+      ),
+    );
   }
 
   async markAsRead(id: string, user: AuthUser) {
