@@ -37,9 +37,10 @@ import { CreateRequestDialog } from '@/components/requests/create-request-dialog
 import { RequestDetailDialog } from '@/components/requests/request-detail-dialog';
 import { useToast } from '@/components/ui/toaster';
 import { useAuth } from '@/hooks/useAuth';
-import { isPartnerUser } from '@/lib/rbac';
+import { isPartnerScopedUser } from '@/lib/rbac';
 import { cn } from '@/lib/utils';
 import { requestStatusBadge } from '@/lib/status-badge';
+import { useNotifications } from '@/components/notifications/notifications-provider';
 
 interface Request {
   id: string;
@@ -50,6 +51,7 @@ interface Request {
   partner?: { name: string };
   client?: { name: string };
   createdAt: string;
+  taskDemandId?: string;
 }
 
 type ViewMode = 'kanban' | 'list';
@@ -66,8 +68,10 @@ const columns: { status: RequestStatus; color: string }[] = [
 export default function SolicitacoesPage() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const isPartner = isPartnerUser(user);
+  const isPartner = isPartnerScopedUser(user);
   const canCreateDemand = user?.role === UserRole.ADMIN;
+  const canManageDemand =
+    user?.role === UserRole.ADMIN || user?.role === UserRole.SUPERVISOR;
   const [items, setItems] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -82,6 +86,7 @@ export default function SolicitacoesPage() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<RequestStatus | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
+  const { notifications } = useNotifications();
   const didDragRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -127,6 +132,20 @@ export default function SolicitacoesPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const requestId = new URLSearchParams(window.location.search).get('request');
+    if (requestId) {
+      setSelectedId(requestId);
+      setDetailOpen(true);
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
+    const latest = notifications[0];
+    if (latest?.data?.requestId) void load();
+  }, [notifications, load]);
+
   const clearFilters = () => {
     setSearch('');
     setStatusFilter('all');
@@ -138,7 +157,12 @@ export default function SolicitacoesPage() {
 
   const moveRequest = async (id: string, status: RequestStatus) => {
     const request = items.find((item) => item.id === id);
-    if (!request || request.status === status) return;
+    if (
+      !canManageDemand
+      || !request
+      || request.taskDemandId
+      || request.status === status
+    ) return;
 
     const previous = items;
     setMovingId(id);
@@ -394,14 +418,20 @@ export default function SolicitacoesPage() {
                         {columnItems.map((request) => (
                           <Card
                             key={request.id}
-                            draggable
-                            onDragStart={(event) => handleDragStart(event, request.id)}
+                            draggable={canManageDemand && !request.taskDemandId}
+                            onDragStart={(event) => {
+                              if (canManageDemand && !request.taskDemandId) {
+                                handleDragStart(event, request.id);
+                              }
+                            }}
                             onDragEnd={handleDragEnd}
                             onClick={() => {
                               if (!didDragRef.current) openDetail(request.id);
                             }}
                             className={cn(
-                              'cursor-grab shadow-sm transition-all active:cursor-grabbing hover:shadow-card',
+                              'shadow-sm transition-all hover:shadow-card',
+                              canManageDemand && !request.taskDemandId
+                                && 'cursor-grab active:cursor-grabbing',
                               draggingId === request.id && 'opacity-50',
                               movingId === request.id && 'pointer-events-none opacity-70',
                             )}

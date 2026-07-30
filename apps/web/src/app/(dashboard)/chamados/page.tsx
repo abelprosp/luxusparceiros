@@ -7,6 +7,8 @@ import {
   TicketPriority,
   TICKET_STATUS_LABELS,
   TICKET_PRIORITY_LABELS,
+  PERMISSIONS,
+  UserRole,
 } from '@luxus/types';
 import { formatDateTime } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
@@ -19,7 +21,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/toaster';
 import { useAuth } from '@/hooks/useAuth';
-import { isPartnerUser } from '@/lib/rbac';
+import { hasPermission, isPartnerScopedUser } from '@/lib/rbac';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { TICKET_CATEGORY_LABELS } from '@luxus/types';
 import { CreateTicketDialog } from '@/components/tickets/create-ticket-dialog';
@@ -28,6 +30,7 @@ import { TicketDetailDialog } from '@/components/tickets/ticket-detail-dialog';
 import { cn } from '@/lib/utils';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { ticketStatusBadge } from '@/lib/status-badge';
+import { useNotifications } from '@/components/notifications/notifications-provider';
 
 interface Ticket {
   id: string;
@@ -57,7 +60,10 @@ const priorityVariant = (p: TicketPriority) => {
 export default function ChamadosPage() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const isPartner = isPartnerUser(user);
+  const isPartner = isPartnerScopedUser(user);
+  const canWriteTickets = hasPermission(user, PERMISSIONS.TICKETS_WRITE);
+  const canManageTickets =
+    user?.role === UserRole.ADMIN || user?.role === UserRole.SUPERVISOR;
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -66,6 +72,7 @@ export default function ChamadosPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const { notifications } = useNotifications();
   const [dragOverColumn, setDragOverColumn] = useState<TicketStatus | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
   const didDragRef = useRef(false);
@@ -87,6 +94,20 @@ export default function ChamadosPage() {
   }, [load]);
 
   useEffect(() => {
+    const ticketId = new URLSearchParams(window.location.search).get('ticket');
+    if (ticketId) {
+      setSelectedId(ticketId);
+      setDetailOpen(true);
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
+    const latest = notifications[0];
+    if (latest?.data?.ticketId) void load();
+  }, [notifications, load]);
+
+  useEffect(() => {
     if (isPartner && window.location.hash === '#abrir-chamado') {
       setCreateOpen(true);
       window.history.replaceState(null, '', window.location.pathname);
@@ -95,7 +116,7 @@ export default function ChamadosPage() {
 
   const moveTicket = async (id: string, status: TicketStatus) => {
     const ticket = tickets.find((t) => t.id === id);
-    if (!ticket || ticket.status === status) return;
+    if (!canManageTickets || !ticket || ticket.status === status) return;
 
     const previous = tickets;
     setMovingId(id);
@@ -159,10 +180,12 @@ export default function ChamadosPage() {
   return (
     <DashboardLayout title="Chamados" description={isPartner ? 'Seus chamados de suporte' : 'Quadro Kanban de atendimento'}>
       <div className="mb-6 flex justify-end">
-        <Button className="shadow-sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Abrir chamado
-        </Button>
+        {canWriteTickets && (
+          <Button className="shadow-sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Abrir chamado
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -218,6 +241,7 @@ export default function ChamadosPage() {
                     </TableCell>
                     <TableCell>{formatDateTime(ticket.createdAt)}</TableCell>
                     <TableCell>
+                      {canWriteTickets && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -229,6 +253,7 @@ export default function ChamadosPage() {
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -255,7 +280,7 @@ export default function ChamadosPage() {
                 </>
               }
               onClick={() => openDetail(ticket.id)}
-              actions={
+              actions={canWriteTickets ? (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -264,7 +289,7 @@ export default function ChamadosPage() {
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
-              }
+              ) : undefined}
             />
           ))}
         />
@@ -308,11 +333,14 @@ export default function ChamadosPage() {
                         {colTickets.map((ticket) => (
                           <Card
                             key={ticket.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, ticket.id)}
+                            draggable={canManageTickets}
+                            onDragStart={(e) => {
+                              if (canManageTickets) handleDragStart(e, ticket.id);
+                            }}
                             onDragEnd={handleDragEnd}
                             className={cn(
-                              'cursor-grab shadow-sm transition-all active:cursor-grabbing hover:shadow-card',
+                              'shadow-sm transition-all hover:shadow-card',
+                              canManageTickets && 'cursor-grab active:cursor-grabbing',
                               draggingId === ticket.id && 'opacity-50',
                               movingId === ticket.id && 'pointer-events-none opacity-70',
                             )}
@@ -329,6 +357,7 @@ export default function ChamadosPage() {
                                       {ticket.protocol}
                                     </span>
                                     <div className="flex shrink-0 items-center gap-1">
+                                      {canWriteTickets && (
                                       <Button
                                         variant="ghost"
                                         size="icon"
@@ -340,6 +369,7 @@ export default function ChamadosPage() {
                                       >
                                         <Pencil className="h-3.5 w-3.5" />
                                       </Button>
+                                      )}
                                       <Badge variant={priorityVariant(ticket.priority)} className="text-[10px]">
                                         {TICKET_PRIORITY_LABELS[ticket.priority]}
                                       </Badge>
@@ -367,23 +397,27 @@ export default function ChamadosPage() {
         </div>
       )}
 
-      <CreateTicketDialog open={createOpen} onOpenChange={setCreateOpen} onSuccess={load} />
+      {canWriteTickets && (
+        <CreateTicketDialog open={createOpen} onOpenChange={setCreateOpen} onSuccess={load} />
+      )}
       <TicketDetailDialog
         ticketId={selectedId}
         open={detailOpen}
         onOpenChange={setDetailOpen}
         onUpdated={load}
-        onEdit={(id) => {
+        onEdit={canWriteTickets ? (id) => {
           setDetailOpen(false);
           openEdit(id);
-        }}
+        } : undefined}
       />
-      <EditTicketDialog
-        ticketId={editId}
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        onSuccess={load}
-      />
+      {canWriteTickets && (
+        <EditTicketDialog
+          ticketId={editId}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onSuccess={load}
+        />
+      )}
     </DashboardLayout>
   );
 }

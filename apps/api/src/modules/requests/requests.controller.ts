@@ -11,6 +11,7 @@ import {
   CreateRequestDto,
   RequestFiltersDto,
   RequestListQueryDto,
+  RespondRequestDto,
   UpdateRequestDto,
   UpdateRequestStatusDto,
 } from './dto/request.dto';
@@ -91,6 +92,7 @@ export class RequestsController {
   }
 
   @Patch(':id')
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
   @RequirePermissions(PERMISSIONS.REQUESTS_WRITE)
   @ApiOperation({ summary: 'Atualizar solicitação' })
   update(@Param('id') id: string, @Body() dto: UpdateRequestDto, @CurrentUser() user: AuthUser) {
@@ -98,6 +100,7 @@ export class RequestsController {
   }
 
   @Patch(':id/status')
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
   @RequirePermissions(PERMISSIONS.REQUESTS_WRITE)
   @ApiOperation({ summary: 'Atualizar status da solicitação' })
   updateStatus(
@@ -119,7 +122,19 @@ export class RequestsController {
     return this.requestsService.addComment(id, dto, user);
   }
 
+  @Post(':id/respond')
+  @RequirePermissions(PERMISSIONS.REQUESTS_WRITE)
+  @ApiOperation({ summary: 'Salvar status e comentário em uma única operação' })
+  respond(
+    @Param('id') id: string,
+    @Body() dto: RespondRequestDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.requestsService.respond(id, dto, user);
+  }
+
   @Post(':id/sync-task')
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
   @RequirePermissions(PERMISSIONS.REQUESTS_WRITE)
   @ApiOperation({ summary: 'Repetir envio da demanda ao Luxus Task' })
   retryTaskSync(@Param('id') id: string, @CurrentUser() user: AuthUser) {
@@ -127,6 +142,7 @@ export class RequestsController {
   }
 
   @Delete(':id')
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
   @RequirePermissions(PERMISSIONS.REQUESTS_WRITE)
   @ApiOperation({ summary: 'Remover solicitação' })
   remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {

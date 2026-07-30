@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RequestStatus, REQUEST_STATUS_LABELS, REQUEST_TYPE_LABELS, UserRole } from '@luxus/types';
 import { formatDateTime } from '@luxus/utils';
-import { api } from '@/lib/api';
+import { api, openAuthenticatedFile, uploadFile } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
-import { isPartnerUser } from '@/lib/rbac';
+import { isPartnerScopedUser } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -17,6 +18,7 @@ import { useToast } from '@/components/ui/toaster';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ActivityLog, type ActivityEntry } from '@/components/ActivityLog';
 import { requestStatusBadge } from '@/lib/status-badge';
+import { FileText, Paperclip } from 'lucide-react';
 
 interface RequestComment {
   id: string;
@@ -46,6 +48,7 @@ interface RequestDetail {
   taskDeadline?: string;
   taskSyncError?: string;
   taskLastSyncAt?: string;
+  documents: Array<{ id: string; name: string; url: string; mimeType: string }>;
 }
 
 interface RequestDetailDialogProps {
@@ -65,7 +68,8 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
   const [status, setStatus] = useState<RequestStatus | ''>('');
   const [resolution, setResolution] = useState('');
   const [sending, setSending] = useState(false);
-  const isPartner = isPartnerUser(user);
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const isPartner = isPartnerScopedUser(user);
 
   const load = useCallback(async () => {
     if (!requestId) return;
@@ -112,18 +116,14 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
     if (!requestId || !request || (!comment.trim() && !statusChanged)) return;
     setSending(true);
     try {
-      if (statusChanged && status) {
-        await api(`/requests/${requestId}/status`, {
-          method: 'PATCH',
-          body: { status, resolution: resolution.trim() || undefined },
-        });
-      }
-      if (comment.trim()) {
-        await api(`/requests/${requestId}/comments`, {
-          method: 'POST',
-          body: { content: comment.trim() },
-        });
-      }
+      await api(`/requests/${requestId}/respond`, {
+        method: 'POST',
+        body: {
+          status: statusChanged ? status : undefined,
+          resolution: statusChanged ? resolution.trim() : undefined,
+          content: comment.trim() || undefined,
+        },
+      });
       setComment('');
       toast({
         title: comment.trim() && statusChanged
@@ -171,6 +171,25 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
     } catch (err) {
       toast({
         title: 'Erro ao sincronizar',
+        description: err instanceof Error ? err.message : 'Falha',
+        variant: 'destructive',
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleAttachment = async () => {
+    if (!requestId || !attachment) return;
+    setSending(true);
+    try {
+      await uploadFile(attachment, 'OTHER', { requestId });
+      setAttachment(null);
+      toast({ title: 'Anexo enviado', variant: 'success' });
+      await load();
+    } catch (err) {
+      toast({
+        title: 'Erro no anexo',
         description: err instanceof Error ? err.message : 'Falha',
         variant: 'destructive',
       });
@@ -250,6 +269,43 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
               </div>
             )}
             <ActivityLog entries={request.timeline} />
+            <div className="space-y-2">
+              <Label>Anexos</Label>
+              {request.documents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum anexo.</p>
+              ) : (
+                request.documents.map((document) => (
+                  <Button
+                    key={document.id}
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => void openAuthenticatedFile(document.url, document.name)}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    <span className="truncate">{document.name}</span>
+                  </Button>
+                ))
+              )}
+              <div className="flex gap-2">
+                <Input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.pdf"
+                  onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+                  disabled={sending}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  title="Anexar arquivo"
+                  disabled={!attachment || sending}
+                  onClick={handleAttachment}
+                >
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
             <div className="shrink-0">
               <Label className="mb-2 block">Comentários</Label>
               <ScrollArea className="h-40 rounded-lg border p-3">

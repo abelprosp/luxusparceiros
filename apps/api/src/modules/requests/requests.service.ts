@@ -3,6 +3,8 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { RequestStatus, RequestType, Prisma } from '@prisma/client';
 import { AuthUser, UserRole } from '@luxus/types';
@@ -18,6 +20,7 @@ import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/uti
 import {
   CreateRequestCommentDto,
   CreateRequestDto,
+  RespondRequestDto,
   UpdateRequestDto,
   UpdateRequestStatusDto,
 } from './dto/request.dto';
@@ -28,6 +31,14 @@ const REQUEST_STATUS_MESSAGES: Record<RequestStatus, string> = {
   IN_PROGRESS: 'Em andamento',
   COMPLETED: 'Concluída',
   REJECTED: 'Rejeitada',
+};
+
+const REQUEST_STATUS_TRANSITIONS: Record<RequestStatus, RequestStatus[]> = {
+  OPEN: [RequestStatus.IN_ANALYSIS, RequestStatus.IN_PROGRESS, RequestStatus.REJECTED],
+  IN_ANALYSIS: [RequestStatus.OPEN, RequestStatus.IN_PROGRESS, RequestStatus.REJECTED],
+  IN_PROGRESS: [RequestStatus.IN_ANALYSIS, RequestStatus.COMPLETED, RequestStatus.REJECTED],
+  COMPLETED: [RequestStatus.IN_PROGRESS],
+  REJECTED: [RequestStatus.IN_ANALYSIS],
 };
 
 interface TaskSyncSource {
@@ -45,10 +56,14 @@ interface TaskSyncSource {
   taskClientDocument?: string | null;
   taskDeadline?: string | null;
   taskPriority?: boolean;
+  taskSyncAttempts?: number;
 }
 
 @Injectable()
-export class RequestsService {
+export class RequestsService implements OnModuleInit, OnModuleDestroy {
+  private taskSyncTimer?: NodeJS.Timeout;
+  private taskSyncRunning = false;
+
   constructor(
     private prisma: PrismaService,
     private auditService: AuditService,
@@ -56,6 +71,18 @@ export class RequestsService {
     private eventsGateway: EventsGateway,
     private taskIntegration: TaskIntegrationService,
   ) {}
+
+  onModuleInit() {
+    this.taskSyncTimer = setInterval(() => {
+      void this.processTaskSyncQueue();
+    }, 30_000);
+    this.taskSyncTimer.unref();
+    setImmediate(() => void this.processTaskSyncQueue());
+  }
+
+  onModuleDestroy() {
+    if (this.taskSyncTimer) clearInterval(this.taskSyncTimer);
+  }
 
   async findAll(
     user: AuthUser,
@@ -240,6 +267,8 @@ export class RequestsService {
         taskClientDocument: dto.taskClientDocument?.replace(/\D/g, ''),
         taskDeadline: dto.taskDeadline,
         taskPriority: dto.taskPriority ?? false,
+        taskSyncState: this.taskIntegration.isConfigured() ? 'PENDING' : 'DISABLED',
+        taskNextRetryAt: this.taskIntegration.isConfigured() ? new Date() : null,
       },
       include: {
         partner: { select: { id: true, name: true } },
@@ -261,18 +290,7 @@ export class RequestsService {
     this.eventsGateway.emitToPartner(partnerId, 'request:created', request);
 
     if (this.taskIntegration.isConfigured() && dto.taskResponsibleId) {
-      setImmediate(() => {
-        void this.sendToTask(
-          request,
-          dto.taskResponsibleId!,
-          dto.taskClientId,
-          dto.taskClientName!,
-          dto.taskClientDocumentType,
-          dto.taskClientDocument,
-          dto.taskDeadline!,
-          dto.taskPriority,
-        );
-      });
+      setImmediate(() => void this.processTaskSyncQueue());
     }
     return request;
   }
@@ -285,13 +303,6 @@ export class RequestsService {
     if (!request.taskResponsibleId) {
       throw new BadRequestException('Selecione um responsável do Luxus Task');
     }
-    try {
-      const existingTask = await this.taskIntegration.getDemand(request.id);
-      return this.saveTaskLink(request, request.taskResponsibleId, existingTask);
-    } catch {
-      // Se o primeiro envio terminou no Task após o timeout, a consulta acima
-      // recupera o vínculo. Um novo POST só ocorre quando não há vínculo remoto.
-    }
     if (
       !request.taskDeadline
       || !request.taskClientName
@@ -302,23 +313,55 @@ export class RequestsService {
     ) {
       throw new BadRequestException('Cliente e prazo do Luxus Task são obrigatórios');
     }
-    return this.sendToTask(
-      request,
-      request.taskResponsibleId,
-      request.taskClientId,
-      request.taskClientName,
-      request.taskClientDocumentType ?? undefined,
-      request.taskClientDocument ?? undefined,
-      request.taskDeadline,
-      request.taskPriority,
-    );
+    await this.prisma.request.update({
+      where: { id },
+      data: {
+        taskSyncState: 'PENDING',
+        taskSyncError: null,
+        taskNextRetryAt: new Date(),
+        taskSyncLockedAt: null,
+      },
+    });
+    await this.processTaskSyncQueue();
+    return this.findOne(id, user);
   }
 
   async update(id: string, dto: UpdateRequestDto, user: AuthUser) {
     const existing = await this.findOne(id, user);
+    if (dto.partnerId && dto.partnerId !== existing.partnerId) {
+      throw new BadRequestException('O parceiro da solicitação não pode ser alterado');
+    }
+    if (dto.status && existing.taskDemandId) {
+      throw new BadRequestException(
+        'O status desta demanda é controlado pelo Luxus Task',
+      );
+    }
+    if (dto.status && dto.status !== existing.status) {
+      this.assertStatusTransition(existing.status, dto.status);
+    }
+    if (dto.branchId) {
+      await assertBranchBelongsToPartner(
+        this.prisma,
+        dto.branchId,
+        existing.partnerId,
+      );
+    }
+    if (dto.clientId) {
+      const client = await this.prisma.client.findFirst({
+        where: { id: dto.clientId, partnerId: existing.partnerId },
+        select: { id: true },
+      });
+      if (!client) {
+        throw new BadRequestException('Cliente inválido para esta solicitação');
+      }
+    }
+    if (dto.assignedToId) {
+      await this.assertAssignableUser(dto.assignedToId);
+    }
+    const { partnerId: _partnerId, ...updateData } = dto;
     const request = await this.prisma.request.update({
       where: { id },
-      data: dto,
+      data: updateData,
       include: {
         partner: { select: { id: true, name: true } },
         assignedTo: { select: { id: true, name: true } },
@@ -331,6 +374,11 @@ export class RequestsService {
         await this.prisma.request.update({
           where: { id },
           data: { completedAt: new Date(), resolution: dto.resolution },
+        });
+      } else if (existing.status === RequestStatus.COMPLETED) {
+        await this.prisma.request.update({
+          where: { id },
+          data: { completedAt: null },
         });
       }
       if (isAdminRole(user.role)) {
@@ -372,6 +420,8 @@ export class RequestsService {
         userId: user.id,
         content: dto.content,
         isInternal: dto.isInternal ?? false,
+        taskNextRetryAt:
+          request.taskDemandId && !dto.isInternal ? new Date() : null,
       },
       include: { user: { select: { id: true, name: true } } },
     });
@@ -395,6 +445,9 @@ export class RequestsService {
         }, [user.id]);
       }
       this.eventsGateway.emitToPartner(request.partnerId, 'request:comment', comment);
+      if (request.taskDemandId) {
+        setImmediate(() => void this.processTaskCommentQueue());
+      }
     }
 
     return comment;
@@ -402,6 +455,11 @@ export class RequestsService {
 
   async remove(id: string, user: AuthUser) {
     const request = await this.findOne(id, user);
+    if (request.taskDemandId) {
+      throw new BadRequestException(
+        'Demandas vinculadas ao Luxus Task não podem ser excluídas',
+      );
+    }
     if (request.status === RequestStatus.COMPLETED) {
       throw new BadRequestException('Solicitação concluída não pode ser removida');
     }
@@ -519,18 +577,29 @@ export class RequestsService {
 
     await Promise.allSettled(
       linked.map(async ({ id }) => {
-        const taskDemand = await this.taskIntegration.getDemand(id);
-        await this.taskIntegration.applyCallback({
-          externalRequestId: id,
-          demandId: taskDemand.id,
-          protocol: taskDemand.protocol,
-          status: taskDemand.status,
-          resolution: taskDemand.resolution,
-          observations: taskDemand.observations,
-          responsibleId: taskDemand.responsible?.id,
-          responsibleName: taskDemand.responsible?.name,
-          updatedAt: taskDemand.updatedAt,
-        });
+        try {
+          const taskDemand = await this.taskIntegration.getDemand(id);
+          await this.taskIntegration.applyCallback({
+            externalRequestId: id,
+            demandId: taskDemand.id,
+            protocol: taskDemand.protocol,
+            status: taskDemand.status,
+            resolution: taskDemand.resolution,
+            observations: taskDemand.observations,
+            responsibleId: taskDemand.responsible?.id,
+            responsibleName: taskDemand.responsible?.name,
+            updatedAt: taskDemand.updatedAt,
+          });
+        } catch (error) {
+          await this.prisma.request.update({
+            where: { id },
+            data: {
+              taskLastSyncAt: new Date(),
+              taskSyncError:
+                error instanceof Error ? error.message : 'Falha ao consultar o Luxus Task',
+            },
+          });
+        }
       }),
     );
   }
@@ -546,6 +615,119 @@ export class RequestsService {
     return this.prisma.requestTimeline.create({
       data: { requestId, action, fromStatus, toStatus, userId, details },
     });
+  }
+
+  async respond(id: string, dto: RespondRequestDto, user: AuthUser) {
+    const request = await this.findOne(id, user);
+    const content = dto.content?.trim();
+    const statusChanged = Boolean(dto.status && dto.status !== request.status);
+    const resolutionChanged = Boolean(
+      dto.resolution !== undefined
+      && dto.resolution.trim() !== (request.resolution ?? '').trim(),
+    );
+    if (!content && !statusChanged && !resolutionChanged) {
+      throw new BadRequestException('Informe um comentário ou uma alteração');
+    }
+    if ((statusChanged || resolutionChanged) && !isAdminRole(user.role)) {
+      throw new ForbiddenException('Somente o atendimento pode alterar o andamento');
+    }
+    if ((statusChanged || resolutionChanged) && request.taskDemandId) {
+      throw new BadRequestException('O andamento desta demanda é controlado pelo Luxus Task');
+    }
+    if (statusChanged) this.assertStatusTransition(request.status, dto.status!);
+    const isInternal = Boolean(dto.isInternal && isAdminRole(user.role));
+
+    await this.prisma.$transaction(async (tx) => {
+      if (statusChanged || resolutionChanged) {
+        await tx.request.update({
+          where: { id },
+          data: {
+            ...(statusChanged && { status: dto.status }),
+            ...(dto.resolution !== undefined && {
+              resolution: dto.resolution.trim() || null,
+            }),
+            completedAt: dto.status === RequestStatus.COMPLETED
+              ? new Date()
+              : request.status === RequestStatus.COMPLETED ? null : undefined,
+          },
+        });
+        await tx.requestTimeline.create({
+          data: {
+            requestId: id,
+            action: statusChanged ? 'Status alterado' : 'Resolução alterada',
+            fromStatus: request.status,
+            toStatus: statusChanged ? dto.status : request.status,
+            userId: user.id,
+            details: dto.resolution?.trim() || undefined,
+          },
+        });
+      }
+      if (content) {
+        await tx.requestComment.create({
+          data: {
+            requestId: id,
+            userId: user.id,
+            content,
+            isInternal,
+            taskNextRetryAt:
+              request.taskDemandId && !isInternal ? new Date() : null,
+          },
+        });
+        await tx.requestTimeline.create({
+          data: {
+            requestId: id,
+            action: 'Comentário adicionado',
+            userId: user.id,
+            details: content,
+          },
+        });
+      }
+    });
+
+    if (!isInternal) {
+      if (isAdminRole(user.role)) {
+        await this.notificationsService.createForPartnerUsers(request.partnerId, {
+          type: 'REQUEST',
+          title: 'Solicitação atualizada',
+          message: `${request.protocol} recebeu uma atualização.`,
+          data: { requestId: id },
+        }, [user.id]);
+      } else {
+        await this.notificationsService.createForAdminUsers({
+          type: 'REQUEST',
+          title: 'Comentário de parceiro',
+          message: `${user.name} comentou na solicitação ${request.protocol}.`,
+          data: { requestId: id },
+        }, [user.id]);
+      }
+    }
+    if (content && request.taskDemandId && !isInternal) {
+      setImmediate(() => void this.processTaskCommentQueue());
+    }
+    this.eventsGateway.emitToPartner(request.partnerId, 'request:updated', { id });
+    return this.findOne(id, user);
+  }
+
+  private assertStatusTransition(from: RequestStatus, to: RequestStatus) {
+    if (!REQUEST_STATUS_TRANSITIONS[from].includes(to)) {
+      throw new BadRequestException(
+        `Não é permitido alterar a solicitação de ${REQUEST_STATUS_MESSAGES[from]} para ${REQUEST_STATUS_MESSAGES[to]}`,
+      );
+    }
+  }
+
+  private async assertAssignableUser(userId: string) {
+    const target = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        isActive: true,
+        role: { in: ['ADMIN', 'SUPERVISOR'] },
+      },
+      select: { id: true },
+    });
+    if (!target) {
+      throw new BadRequestException('Responsável inválido para a solicitação');
+    }
   }
 
   private async sendToTask(
@@ -600,6 +782,12 @@ export class RequestsService {
           taskResponsibleId: responsibleId,
           taskSyncError: message,
           taskLastSyncAt: new Date(),
+          taskSyncState: 'RETRY',
+          taskSyncAttempts: { increment: 1 },
+          taskNextRetryAt: new Date(
+            Date.now() + this.retryDelayMs(request.taskSyncAttempts ?? 0),
+          ),
+          taskSyncLockedAt: null,
         },
         include: {
           partner: { select: { id: true, name: true } },
@@ -608,6 +796,14 @@ export class RequestsService {
           createdBy: { select: { id: true, name: true, email: true } },
         },
       });
+      if (!request.taskSyncAttempts) {
+        await this.notificationsService.createForAdminUsers({
+          type: 'SYSTEM',
+          title: 'Falha ao enviar demanda ao Luxus Task',
+          message: `${request.protocol} continuará tentando automaticamente. Motivo: ${message}`,
+          data: { requestId: request.id },
+        });
+      }
       return updated;
     }
   }
@@ -629,6 +825,9 @@ export class RequestsService {
         taskClientName: task.client?.name ?? request.taskClientName,
         taskSyncError: null,
         taskLastSyncAt: new Date(),
+        taskSyncState: 'SYNCED',
+        taskNextRetryAt: null,
+        taskSyncLockedAt: null,
       },
       include: {
         partner: { select: { id: true, name: true } },
@@ -648,5 +847,157 @@ export class RequestsService {
         : undefined,
     );
     return updated;
+  }
+
+  private async processTaskSyncQueue() {
+    if (this.taskSyncRunning || !this.taskIntegration.isConfigured()) return;
+    this.taskSyncRunning = true;
+    try {
+      await this.prisma.request.updateMany({
+        where: {
+          taskSyncState: 'PROCESSING',
+          taskSyncLockedAt: { lt: new Date(Date.now() - 5 * 60_000) },
+        },
+        data: {
+          taskSyncState: 'RETRY',
+          taskNextRetryAt: new Date(),
+          taskSyncLockedAt: null,
+        },
+      });
+      const candidates = await this.prisma.request.findMany({
+        where: {
+          taskDemandId: null,
+          taskResponsibleId: { not: null },
+          taskSyncState: { in: ['PENDING', 'RETRY'] },
+          OR: [
+            { taskNextRetryAt: null },
+            { taskNextRetryAt: { lte: new Date() } },
+          ],
+        },
+        select: { id: true },
+        orderBy: [{ taskNextRetryAt: 'asc' }, { createdAt: 'asc' }],
+        take: 10,
+      });
+
+      for (const candidate of candidates) {
+        const claimed = await this.prisma.request.updateMany({
+          where: {
+            id: candidate.id,
+            taskDemandId: null,
+            taskSyncState: { in: ['PENDING', 'RETRY'] },
+          },
+          data: { taskSyncState: 'PROCESSING', taskSyncLockedAt: new Date() },
+        });
+        if (!claimed.count) continue;
+
+        const request = await this.prisma.request.findUnique({
+          where: { id: candidate.id },
+          include: {
+            partner: { select: { name: true } },
+            branch: { select: { name: true } },
+            client: { select: { name: true } },
+            createdBy: { select: { name: true, email: true } },
+          },
+        });
+        if (
+          !request?.taskResponsibleId
+          || !request.taskClientName
+          || !request.taskDeadline
+        ) {
+          await this.prisma.request.update({
+            where: { id: candidate.id },
+            data: {
+              taskSyncState: 'FAILED',
+              taskSyncError: 'Dados obrigatórios da integração estão incompletos',
+              taskSyncLockedAt: null,
+            },
+          });
+          continue;
+        }
+
+        try {
+          const existingTask = await this.taskIntegration.getDemand(request.id);
+          await this.saveTaskLink(request, request.taskResponsibleId, existingTask);
+          continue;
+        } catch {
+          // O POST remoto é idempotente pelo identificador desta solicitação.
+        }
+
+        await this.sendToTask(
+          request,
+          request.taskResponsibleId,
+          request.taskClientId,
+          request.taskClientName,
+          request.taskClientDocumentType,
+          request.taskClientDocument,
+          request.taskDeadline,
+          request.taskPriority,
+        );
+      }
+    } finally {
+      this.taskSyncRunning = false;
+    }
+    await this.processTaskCommentQueue();
+  }
+
+  private async processTaskCommentQueue() {
+    if (!this.taskIntegration.isConfigured()) return;
+    const comments = await this.prisma.requestComment.findMany({
+      where: {
+        isInternal: false,
+        taskSyncedAt: null,
+        taskNextRetryAt: { lte: new Date() },
+        request: { taskDemandId: { not: null } },
+      },
+      include: {
+        user: { select: { name: true } },
+        request: { select: { id: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 20,
+    });
+    for (const comment of comments) {
+      const claimed = await this.prisma.requestComment.updateMany({
+        where: {
+          id: comment.id,
+          taskSyncedAt: null,
+          taskNextRetryAt: { lte: new Date() },
+        },
+        data: { taskNextRetryAt: new Date(Date.now() + 5 * 60_000) },
+      });
+      if (!claimed.count) continue;
+      try {
+        await this.taskIntegration.addDemandComment(
+          comment.request.id,
+          comment.content,
+          comment.user.name,
+        );
+        await this.prisma.requestComment.update({
+          where: { id: comment.id },
+          data: {
+            taskSyncedAt: new Date(),
+            taskSyncError: null,
+            taskNextRetryAt: null,
+          },
+        });
+      } catch (error) {
+        await this.prisma.requestComment.update({
+          where: { id: comment.id },
+          data: {
+            taskSyncAttempts: { increment: 1 },
+            taskSyncError:
+              error instanceof Error ? error.message : 'Falha ao sincronizar',
+            taskNextRetryAt: new Date(
+              Date.now() + this.retryDelayMs(comment.taskSyncAttempts),
+            ),
+          },
+        });
+      }
+    }
+  }
+
+  private retryDelayMs(attempts: number) {
+    const delays = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
+    return delays[Math.min(attempts, delays.length - 1)];
   }
 }

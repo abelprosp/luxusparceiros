@@ -659,6 +659,10 @@ model Request {
   taskPriority Boolean @default(false)
   taskSyncError String?
   taskLastSyncAt DateTime?
+  taskSyncState String @default("PENDING")
+  taskSyncAttempts Int @default(0)
+  taskNextRetryAt DateTime?
+  taskSyncLockedAt DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   completedAt  DateTime?
@@ -672,6 +676,7 @@ model Request {
   @@index([status])
   @@index([protocol])
   @@index([taskProtocol])
+  @@index([taskSyncState, taskNextRetryAt])
   @@map("requests")
 }
 
@@ -683,9 +688,14 @@ model RequestComment {
   user      User     @relation(fields: [userId], references: [id])
   content   String
   isInternal Boolean @default(false)
+  taskSyncedAt DateTime?
+  taskSyncError String?
+  taskSyncAttempts Int @default(0)
+  taskNextRetryAt DateTime?
   createdAt DateTime @default(now())
 
   @@index([requestId])
+  @@index([taskNextRetryAt])
   @@map("request_comments")
 }
 
@@ -708,6 +718,7 @@ model Ticket {
   id           String         @id @default(uuid())
   protocol     String         @unique
   subject      String
+  description  String?
   category     TicketCategory
   status       TicketStatus   @default(NEW)
   priority     TicketPriority @default(MEDIUM)
@@ -718,6 +729,7 @@ model Ticket {
   assignedToId String?
   assignedTo   User?          @relation("TicketAssignedTo", fields: [assignedToId], references: [id])
   slaDeadline  DateTime?
+  slaNotifiedAt DateTime?
   resolvedAt   DateTime?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt

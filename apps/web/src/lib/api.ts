@@ -243,13 +243,20 @@ export async function getPaginated<T>(
 export async function uploadFile(
   file: File,
   type: string,
-  relations?: { saleId?: string; clientId?: string },
+  relations?: {
+    saleId?: string;
+    clientId?: string;
+    requestId?: string;
+    ticketId?: string;
+  },
 ) {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('type', type);
   if (relations?.saleId) formData.append('saleId', relations.saleId);
   if (relations?.clientId) formData.append('clientId', relations.clientId);
+  if (relations?.requestId) formData.append('requestId', relations.requestId);
+  if (relations?.ticketId) formData.append('ticketId', relations.ticketId);
 
   const token = await getValidToken();
   const res = await fetch(`${API_URL}/uploads`, {

@@ -8,22 +8,24 @@ import {
   TICKET_CATEGORY_LABELS,
   TICKET_PRIORITY_LABELS,
   UserRole,
+  PERMISSIONS,
 } from '@luxus/types';
 import { formatDateTime } from '@luxus/utils';
-import { api } from '@/lib/api';
+import { api, openAuthenticatedFile, uploadFile } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
-import { isPartnerUser } from '@/lib/rbac';
+import { hasPermission, isPartnerScopedUser } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/toaster';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { Pencil } from 'lucide-react';
+import { FileText, Paperclip, Pencil } from 'lucide-react';
 import { ActivityLog, type ActivityEntry } from '@/components/ActivityLog';
 import { ticketStatusBadge } from '@/lib/status-badge';
 
@@ -39,11 +41,15 @@ interface TicketDetail {
   id: string;
   protocol: string;
   subject: string;
+  description?: string;
   status: TicketStatus;
   priority: TicketPriority;
   category: string;
   partner?: { name: string };
   createdAt: string;
+  slaDeadline?: string;
+  assignedTo?: { id: string; name: string };
+  documents: Array<{ id: string; name: string; url: string; mimeType: string }>;
   messages: TicketMessage[];
   timeline: ActivityEntry[];
 }
@@ -60,12 +66,15 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
   const { toast } = useToast();
   const { user } = useAuth();
   const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.SUPERVISOR;
+  const canWrite = hasPermission(user, PERMISSIONS.TICKETS_WRITE);
+  const isPartner = isPartnerScopedUser(user);
   const [loading, setLoading] = useState(false);
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
   const [message, setMessage] = useState('');
   const [internalNote, setInternalNote] = useState(false);
   const [status, setStatus] = useState<TicketStatus | ''>('');
   const [sending, setSending] = useState(false);
+  const [attachment, setAttachment] = useState<File | null>(null);
 
   const load = useCallback(async () => {
     if (!ticketId) return;
@@ -98,21 +107,17 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
   );
 
   const handleSubmit = async () => {
-    if (!ticketId || !ticket || (!message.trim() && !statusChanged)) return;
+    if (!canWrite || !ticketId || !ticket || (!message.trim() && !statusChanged)) return;
     setSending(true);
     try {
-      if (statusChanged && status) {
-        await api(`/tickets/${ticketId}/status`, {
-          method: 'PATCH',
-          body: { status },
-        });
-      }
-      if (message.trim()) {
-        await api(`/tickets/${ticketId}/messages`, {
-          method: 'POST',
-          body: { content: message.trim(), isInternal: isAdmin && internalNote },
-        });
-      }
+      await api(`/tickets/${ticketId}/respond`, {
+        method: 'POST',
+        body: {
+          status: statusChanged ? status : undefined,
+          content: message.trim() || undefined,
+          isInternal: isAdmin && internalNote,
+        },
+      });
       setMessage('');
       toast({
         title: message.trim() && statusChanged
@@ -146,6 +151,25 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
     }
   };
 
+  const handleAttachment = async () => {
+    if (!ticketId || !attachment) return;
+    setSending(true);
+    try {
+      await uploadFile(attachment, 'OTHER', { ticketId });
+      setAttachment(null);
+      toast({ title: 'Anexo enviado', variant: 'success' });
+      await load();
+    } catch (err) {
+      toast({
+        title: 'Erro no anexo',
+        description: err instanceof Error ? err.message : 'Falha',
+        variant: 'destructive',
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
@@ -164,8 +188,25 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
               <Badge variant="outline">{TICKET_CATEGORY_LABELS[ticket.category as keyof typeof TICKET_CATEGORY_LABELS] ?? ticket.category}</Badge>
               <Badge variant="secondary">{TICKET_PRIORITY_LABELS[ticket.priority]}</Badge>
             </div>
-            {ticket.partner && !isPartnerUser(user) && <p className="text-xs text-muted-foreground">Parceiro: {ticket.partner.name}</p>}
-            {!isPartnerUser(user) && (
+            {ticket.partner && !isPartner && <p className="text-xs text-muted-foreground">Parceiro: {ticket.partner.name}</p>}
+            {ticket.description && (
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm whitespace-pre-wrap">
+                {ticket.description}
+              </div>
+            )}
+            <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+              <span>Responsável: {ticket.assignedTo?.name ?? 'Não atribuído'}</span>
+              <span className={cn(
+                ticket.slaDeadline
+                && new Date(ticket.slaDeadline) < new Date()
+                && ![TicketStatus.RESOLVED, TicketStatus.CANCELLED].includes(ticket.status)
+                  ? 'font-medium text-destructive'
+                  : '',
+              )}>
+                Prazo: {ticket.slaDeadline ? formatDateTime(ticket.slaDeadline) : 'Não informado'}
+              </span>
+            </div>
+            {isAdmin && (
             <div className="space-y-2 rounded-lg border p-3">
               <Label>Status</Label>
               <div className="flex gap-2">
@@ -182,6 +223,45 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
             </div>
             )}
             <ActivityLog entries={ticket.timeline} />
+            <div className="space-y-2">
+              <Label>Anexos</Label>
+              {ticket.documents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum anexo.</p>
+              ) : (
+                ticket.documents.map((document) => (
+                  <Button
+                    key={document.id}
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => void openAuthenticatedFile(document.url, document.name)}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    <span className="truncate">{document.name}</span>
+                  </Button>
+                ))
+              )}
+              {canWrite && (
+                <div className="flex gap-2">
+                  <Input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,.pdf"
+                    onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+                    disabled={sending}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="Anexar arquivo"
+                    disabled={!attachment || sending}
+                    onClick={handleAttachment}
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
             <div className="shrink-0">
               <Label className="mb-2 block">Mensagens</Label>
               <ScrollArea className="h-48 rounded-lg border p-3">
@@ -211,9 +291,10 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
                 </div>
               </ScrollArea>
             </div>
+            {canWrite && (
             <div className="relative z-10 shrink-0 space-y-2 rounded-lg border border-primary/30 bg-background p-3 shadow-sm">
               <Label htmlFor="ticket-message">
-                {isPartnerUser(user) ? 'Mensagem para o administrador' : 'Mensagem para o parceiro'}
+                {isPartner ? 'Mensagem para o administrador' : 'Mensagem para o parceiro'}
               </Label>
               <Textarea
                 id="ticket-message"
@@ -236,6 +317,7 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
                 </p>
               )}
             </div>
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Chamado não encontrado.</p>
@@ -251,12 +333,14 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>
+            {canWrite && (
             <Button
               onClick={handleSubmit}
               disabled={sending || (!message.trim() && !statusChanged)}
             >
               {isAdmin ? 'Salvar e enviar' : 'Enviar mensagem'}
             </Button>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>

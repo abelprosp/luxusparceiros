@@ -1,7 +1,6 @@
 'use client';
 
 import { Bell, CheckCheck } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { formatDateTime } from '@luxus/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,14 +20,13 @@ import {
 import { cn } from '@/lib/utils';
 
 export function NotificationsBell() {
-  const router = useRouter();
   const { notifications, unreadCount, loading, markAsRead, markAllAsRead } = useNotifications();
 
   const handleClick = async (id: string, path: string | null) => {
     if (!notifications.find((n) => n.id === id)?.isRead) {
       await markAsRead(id);
     }
-    if (path) router.push(path);
+    if (path) window.location.assign(path);
   };
 
   return (
