@@ -74,6 +74,20 @@ export class TaskIntegrationService {
     );
   }
 
+  async addDemandComment(
+    externalRequestId: string,
+    content: string,
+    authorName: string,
+  ) {
+    return this.request(
+      `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}/comentarios`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ content, authorName }),
+      },
+    );
+  }
+
   async applyCallback(dto: TaskDemandCallbackDto) {
     const existing = await this.prisma.request.findUnique({
       where: { id: dto.externalRequestId },
@@ -112,10 +126,14 @@ export class TaskIntegrationService {
           taskResponsibleId: dto.responsibleId,
           taskResponsibleName: dto.responsibleName,
           taskSyncError: null,
+          taskSyncState: 'SYNCED',
           taskLastSyncAt: dto.updatedAt ? new Date(dto.updatedAt) : new Date(),
           status,
           ...(resolution && { resolution }),
           ...(status === 'COMPLETED' && { completedAt: new Date() }),
+          ...(existing.status === 'COMPLETED' && status !== 'COMPLETED'
+            ? { completedAt: null }
+            : {}),
         },
       });
       if (status !== existing.status || resolutionChanged) {
@@ -153,7 +171,6 @@ export class TaskIntegrationService {
       await this.notifications.createForPartnerUsers(
         existing.partnerId,
         notification,
-        [existing.createdById],
       );
       if (!existing.createdBy.partnerId) {
         await this.notifications.create({

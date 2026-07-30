@@ -1,5 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { TicketStatus, Prisma } from '@prisma/client';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import { TicketStatus, Prisma, UserRole } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
 import { generateProtocol } from '@luxus/utils';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -11,6 +18,7 @@ import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/uti
 import {
   CreateTicketDto,
   CreateTicketMessageDto,
+  RespondTicketDto,
   UpdateTicketDto,
   UpdateTicketStatusDto,
 } from './dto/ticket.dto';
@@ -23,14 +31,34 @@ const TICKET_STATUS_MESSAGES: Record<TicketStatus, string> = {
   CANCELLED: 'Cancelado',
 };
 
+const TICKET_STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
+  NEW: [TicketStatus.IN_PROGRESS, TicketStatus.CANCELLED],
+  IN_PROGRESS: [TicketStatus.PENDING, TicketStatus.RESOLVED, TicketStatus.CANCELLED],
+  PENDING: [TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED, TicketStatus.CANCELLED],
+  RESOLVED: [TicketStatus.IN_PROGRESS],
+  CANCELLED: [TicketStatus.IN_PROGRESS],
+};
+
 @Injectable()
-export class TicketsService {
+export class TicketsService implements OnModuleInit, OnModuleDestroy {
+  private slaTimer?: NodeJS.Timeout;
+
   constructor(
     private prisma: PrismaService,
     private auditService: AuditService,
     private notificationsService: NotificationsService,
     private eventsGateway: EventsGateway,
   ) {}
+
+  onModuleInit() {
+    this.slaTimer = setInterval(() => void this.notifyOverdueTickets(), 60_000);
+    this.slaTimer.unref();
+    setImmediate(() => void this.notifyOverdueTickets());
+  }
+
+  onModuleDestroy() {
+    if (this.slaTimer) clearInterval(this.slaTimer);
+  }
 
   async findAll(
     user: AuthUser,
@@ -129,11 +157,12 @@ export class TicketsService {
       data: {
         protocol: generateProtocol('TKT'),
         subject: dto.subject,
+        description: dto.description?.trim() || null,
         category: dto.category,
         priority: dto.priority,
         partnerId: partnerId ?? null,
         createdById: user.id,
-        slaDeadline,
+        slaDeadline: dto.slaDeadline ? new Date(dto.slaDeadline) : slaDeadline,
       },
       include: {
         createdBy: { select: { id: true, name: true } },
@@ -166,9 +195,42 @@ export class TicketsService {
 
   async update(id: string, dto: UpdateTicketDto, user: AuthUser) {
     const existing = await this.findOne(id, user);
+    if (
+      !isAdminRole(user.role)
+      && (
+        dto.status !== undefined
+        || dto.assignedToId !== undefined
+        || dto.partnerId !== undefined
+        || dto.slaDeadline !== undefined
+      )
+    ) {
+      throw new ForbiddenException('Parceiros podem editar apenas assunto, categoria e prioridade');
+    }
+    if (dto.partnerId && dto.partnerId !== existing.partnerId) {
+      throw new BadRequestException('O parceiro do chamado não pode ser alterado');
+    }
+    if (dto.status && dto.status !== existing.status) {
+      this.assertStatusTransition(existing.status, dto.status);
+    }
+    if (dto.assignedToId) {
+      await this.assertAssignableUser(dto.assignedToId);
+    }
+    const {
+      partnerId: _partnerId,
+      slaDeadline,
+      ...updateData
+    } = dto;
     const ticket = await this.prisma.ticket.update({
       where: { id },
-      data: dto,
+      data: {
+        ...updateData,
+        ...(slaDeadline && { slaDeadline: new Date(slaDeadline), slaNotifiedAt: null }),
+        ...(dto.status
+          && dto.status !== TicketStatus.RESOLVED
+          && dto.status !== TicketStatus.CANCELLED
+          ? { slaNotifiedAt: null }
+          : {}),
+      },
       include: {
         assignedTo: { select: { id: true, name: true } },
         partner: { select: { id: true, name: true } },
@@ -181,6 +243,11 @@ export class TicketsService {
         await this.prisma.ticket.update({
           where: { id },
           data: { resolvedAt: new Date() },
+        });
+      } else if (existing.status === TicketStatus.RESOLVED) {
+        await this.prisma.ticket.update({
+          where: { id },
+          data: { resolvedAt: null },
         });
       }
       if (existing.partnerId && isAdminRole(user.role)) {
@@ -281,6 +348,9 @@ export class TicketsService {
   }
 
   async remove(id: string, user: AuthUser) {
+    if (!isAdminRole(user.role)) {
+      throw new ForbiddenException('Somente administradores podem excluir chamados');
+    }
     const ticket = await this.findOne(id, user);
     await this.prisma.ticket.delete({ where: { id } });
     await this.auditService.log({
@@ -307,5 +377,142 @@ export class TicketsService {
     return this.prisma.ticketTimeline.create({
       data: { ticketId, action, fromStatus, toStatus, userId, details },
     });
+  }
+
+  listAssignees() {
+    return this.prisma.user.findMany({
+      where: {
+        role: { in: [UserRole.ADMIN, UserRole.SUPERVISOR] },
+        isActive: true,
+      },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async respond(id: string, dto: RespondTicketDto, user: AuthUser) {
+    const ticket = await this.findOne(id, user);
+    const content = dto.content?.trim();
+    const statusChanged = Boolean(dto.status && dto.status !== ticket.status);
+    if (!content && !statusChanged) {
+      throw new BadRequestException('Informe uma mensagem ou uma alteração de status');
+    }
+    if (statusChanged && !isAdminRole(user.role)) {
+      throw new ForbiddenException('Somente o atendimento pode alterar o status');
+    }
+    if (statusChanged) {
+      this.assertStatusTransition(ticket.status, dto.status!);
+    }
+    const isInternal = Boolean(dto.isInternal && isAdminRole(user.role));
+    await this.prisma.$transaction(async (tx) => {
+      if (statusChanged) {
+        await tx.ticket.update({
+          where: { id },
+          data: {
+            status: dto.status,
+            resolvedAt: dto.status === TicketStatus.RESOLVED
+              ? new Date()
+              : ticket.status === TicketStatus.RESOLVED ? null : undefined,
+            ...(dto.status !== TicketStatus.RESOLVED
+              && dto.status !== TicketStatus.CANCELLED
+              ? { slaNotifiedAt: null }
+              : {}),
+          },
+        });
+        await tx.ticketTimeline.create({
+          data: {
+            ticketId: id,
+            action: 'Status alterado',
+            fromStatus: ticket.status,
+            toStatus: dto.status,
+            userId: user.id,
+          },
+        });
+      }
+      if (content) {
+        await tx.ticketMessage.create({
+          data: { ticketId: id, userId: user.id, content, isInternal },
+        });
+        await tx.ticketTimeline.create({
+          data: {
+            ticketId: id,
+            action: 'Mensagem adicionada',
+            userId: user.id,
+          },
+        });
+      }
+    });
+
+    if (!isInternal) {
+      const statusText = statusChanged
+        ? ` Status: ${TICKET_STATUS_MESSAGES[dto.status!]}.`
+        : '';
+      if (isAdminRole(user.role) && ticket.partnerId) {
+        await this.notificationsService.createForPartnerUsers(ticket.partnerId, {
+          type: 'TICKET_REPLY',
+          title: 'Chamado atualizado',
+          message: `${ticket.protocol} foi atualizado.${statusText}`,
+          data: { ticketId: id },
+        }, [user.id]);
+      } else if (!isAdminRole(user.role)) {
+        await this.notificationsService.createForAdminUsers({
+          type: 'TICKET_REPLY',
+          title: 'Resposta de parceiro',
+          message: `${user.name} respondeu ao chamado ${ticket.protocol}.`,
+          data: { ticketId: id },
+        }, [user.id]);
+      }
+    }
+    if (ticket.partnerId) {
+      this.eventsGateway.emitToPartner(ticket.partnerId, 'ticket:updated', { id });
+    }
+    return this.findOne(id, user);
+  }
+
+  private assertStatusTransition(from: TicketStatus, to: TicketStatus) {
+    if (!TICKET_STATUS_TRANSITIONS[from].includes(to)) {
+      throw new BadRequestException(
+        `Não é permitido alterar o chamado de ${TICKET_STATUS_MESSAGES[from]} para ${TICKET_STATUS_MESSAGES[to]}`,
+      );
+    }
+  }
+
+  private async assertAssignableUser(userId: string) {
+    const target = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        isActive: true,
+        role: { in: [UserRole.ADMIN, UserRole.SUPERVISOR] },
+      },
+      select: { id: true },
+    });
+    if (!target) {
+      throw new BadRequestException('Responsável inválido para o chamado');
+    }
+  }
+
+  private async notifyOverdueTickets() {
+    const overdue = await this.prisma.ticket.findMany({
+      where: {
+        status: { notIn: [TicketStatus.RESOLVED, TicketStatus.CANCELLED] },
+        slaDeadline: { lt: new Date() },
+        slaNotifiedAt: null,
+      },
+      select: { id: true, protocol: true, subject: true },
+      take: 20,
+    });
+    for (const ticket of overdue) {
+      const claimed = await this.prisma.ticket.updateMany({
+        where: { id: ticket.id, slaNotifiedAt: null },
+        data: { slaNotifiedAt: new Date() },
+      });
+      if (!claimed.count) continue;
+      await this.notificationsService.createForAdminUsers({
+        type: 'SYSTEM',
+        title: 'Chamado com prazo vencido',
+        message: `${ticket.protocol}: ${ticket.subject}`,
+        data: { ticketId: ticket.id },
+      });
+    }
   }
 }

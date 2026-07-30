@@ -1,5 +1,5 @@
 import { OmitType, PartialType } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RequestStatus, RequestType } from '@prisma/client';
 import { PaginationDto } from '@/common/dto/pagination.dto';
@@ -60,6 +60,7 @@ export class CreateRequestDto {
 
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   description: string;
 
   @ApiPropertyOptional()
@@ -163,4 +164,26 @@ export class UpdateRequestStatusDto {
   @IsOptional()
   @IsString()
   resolution?: string;
+}
+
+export class RespondRequestDto {
+  @ApiPropertyOptional({ enum: RequestStatus })
+  @IsOptional()
+  @IsEnum(RequestStatus)
+  status?: RequestStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  resolution?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  content?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isInternal?: boolean;
 }

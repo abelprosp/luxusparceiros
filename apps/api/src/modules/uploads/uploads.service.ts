@@ -121,6 +121,35 @@ export class UploadsService {
       ticketId?: string;
     },
   ) {
+    const relationCount = [
+      relations?.clientId,
+      relations?.saleId,
+      relations?.requestId,
+      relations?.ticketId,
+    ].filter(Boolean).length;
+    if (relationCount > 2 || (relationCount === 2 && !relations?.saleId)) {
+      throw new BadRequestException('Vínculo de documento inválido');
+    }
+    if (relations?.requestId) {
+      const request = await this.prisma.request.findUnique({
+        where: { id: relations.requestId },
+        select: { partnerId: true, branchId: true },
+      });
+      if (!request) throw new BadRequestException('Solicitação não encontrada');
+      assertPartnerAccess(user, request.partnerId);
+      if (user.branchId && request.branchId && user.branchId !== request.branchId) {
+        throw new ForbiddenException(MESSAGES.FORBIDDEN);
+      }
+    }
+    if (relations?.ticketId) {
+      const ticket = await this.prisma.ticket.findUnique({
+        where: { id: relations.ticketId },
+        select: { partnerId: true },
+      });
+      if (!ticket) throw new BadRequestException('Chamado não encontrado');
+      if (ticket.partnerId) assertPartnerAccess(user, ticket.partnerId);
+      else if (!isPlatformAdmin(user)) throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
     if (!relations?.saleId) return;
 
     const sale = await this.prisma.sale.findUnique({

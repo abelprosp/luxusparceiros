@@ -1,11 +1,12 @@
 import { PartialType } from '@nestjs/swagger';
-import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TicketCategory, TicketPriority, TicketStatus } from '@prisma/client';
 
 export class CreateTicketDto {
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   subject: string;
 
   @ApiProperty({ enum: TicketCategory })
@@ -21,6 +22,16 @@ export class CreateTicketDto {
   @IsOptional()
   @IsUUID()
   partnerId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  slaDeadline?: string;
 }
 
 export class UpdateTicketDto extends PartialType(CreateTicketDto) {
@@ -50,4 +61,21 @@ export class UpdateTicketStatusDto {
   @ApiProperty({ enum: TicketStatus })
   @IsEnum(TicketStatus)
   status: TicketStatus;
+}
+
+export class RespondTicketDto {
+  @ApiPropertyOptional({ enum: TicketStatus })
+  @IsOptional()
+  @IsEnum(TicketStatus)
+  status?: TicketStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  content?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isInternal?: boolean;
 }

@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import { TicketCategory, TicketPriority, TICKET_CATEGORY_LABELS, TICKET_PRIORITY_LABELS } from '@luxus/types';
-import { api } from '@/lib/api';
+import { api, uploadFile } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toaster';
@@ -20,19 +21,29 @@ export function CreateTicketDialog({ open, onOpenChange, onSuccess }: CreateTick
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [subject, setSubject] = useState('');
+  const [description, setDescription] = useState('');
+  const [attachment, setAttachment] = useState<File | null>(null);
   const [category, setCategory] = useState<TicketCategory>(TicketCategory.SUPPORT);
   const [priority, setPriority] = useState<TicketPriority>(TicketPriority.MEDIUM);
 
   const handleSubmit = async () => {
-    if (!subject.trim()) {
-      toast({ title: 'Informe o assunto', variant: 'destructive' });
+    if (!subject.trim() || !description.trim()) {
+      toast({ title: 'Informe o assunto e a descrição', variant: 'destructive' });
       return;
     }
     setLoading(true);
     try {
-      await api('/tickets', { method: 'POST', body: { subject, category, priority } });
+      const ticket = await api<{ id: string }>('/tickets', {
+        method: 'POST',
+        body: { subject, description, category, priority },
+      });
+      if (attachment) {
+        await uploadFile(attachment, 'OTHER', { ticketId: ticket.id });
+      }
       toast({ title: 'Chamado criado', variant: 'success' });
       setSubject('');
+      setDescription('');
+      setAttachment(null);
       onOpenChange(false);
       onSuccess();
     } catch (err) {
@@ -52,6 +63,23 @@ export function CreateTicketDialog({ open, onOpenChange, onSuccess }: CreateTick
           <div className="space-y-2">
             <Label>Assunto</Label>
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Descreva o problema" />
+          </div>
+          <div className="space-y-2">
+            <Label>Descrição detalhada</Label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Explique o que aconteceu, o resultado esperado e informações úteis"
+              rows={4}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Anexo (opcional)</Label>
+            <Input
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp,.pdf"
+              onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+            />
           </div>
           <div className="space-y-2">
             <Label>Categoria</Label>

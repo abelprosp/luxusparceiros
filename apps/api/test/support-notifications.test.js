@@ -3,6 +3,10 @@ const test = require('node:test');
 const {
   TicketsService,
 } = require('../dist/src/modules/tickets/tickets.service');
+const {
+  ForbiddenException,
+  BadRequestException,
+} = require('@nestjs/common');
 
 function createService(overrides = {}) {
   const timelines = [];
@@ -15,13 +19,22 @@ function createService(overrides = {}) {
       update: async () => null,
       ...overrides.ticket,
     },
+    ticketMessage: {
+      create: async (args) => args.data,
+      ...overrides.ticketMessage,
+    },
     ticketTimeline: {
       create: async (args) => {
         timelines.push(args);
         return args.data;
       },
     },
+    user: {
+      findFirst: async () => null,
+      ...overrides.user,
+    },
   };
+  prisma.$transaction = async (callback) => callback(prisma);
   const notifications = {
     createForPartnerUsers: async (...args) => partnerNotifications.push(args),
     createForAdminUsers: async (...args) => adminNotifications.push(args),
@@ -76,6 +89,116 @@ test('novo chamado de parceiro avisa os administradores', async () => {
 
   assert.equal(adminNotifications.length, 1);
   assert.equal(adminNotifications[0][0].data.ticketId, '22222222-2222-4222-8222-222222222222');
+});
+
+test('parceiro não consegue alterar status nem responsável por requisição manual', async () => {
+  const partnerId = '11111111-1111-4111-8111-111111111111';
+  const { service } = createService({
+    ticket: {
+      findUnique: async () => ({
+        id: 'ticket-protegido',
+        protocol: 'TKT-PROTEGIDO',
+        subject: 'Teste',
+        status: 'NEW',
+        partnerId,
+        messages: [],
+        timeline: [],
+        documents: [],
+      }),
+    },
+  });
+  const partner = {
+    id: 'user-partner',
+    name: 'Parceiro',
+    email: 'parceiro@example.com',
+    role: 'PARTNER',
+    partnerId,
+    permissions: [],
+  };
+
+  await assert.rejects(
+    service.update('ticket-protegido', { status: 'RESOLVED' }, partner),
+    ForbiddenException,
+  );
+  await assert.rejects(
+    service.update('ticket-protegido', { assignedToId: 'admin' }, partner),
+    ForbiddenException,
+  );
+});
+
+test('fluxo impede pular um chamado novo diretamente para resolvido', async () => {
+  const { service } = createService({
+    ticket: {
+      findUnique: async () => ({
+        id: 'ticket-fluxo',
+        protocol: 'TKT-FLUXO',
+        subject: 'Teste',
+        status: 'NEW',
+        partnerId: null,
+        messages: [],
+        timeline: [],
+        documents: [],
+      }),
+    },
+  });
+  const admin = {
+    id: 'admin',
+    name: 'Admin',
+    email: 'admin@example.com',
+    role: 'ADMIN',
+    permissions: [],
+  };
+
+  await assert.rejects(
+    service.update('ticket-fluxo', { status: 'RESOLVED' }, admin),
+    BadRequestException,
+  );
+});
+
+test('salvar e enviar grava status e mensagem na mesma transação', async () => {
+  let updatedStatus = 'IN_PROGRESS';
+  const messages = [];
+  const { service } = createService({
+    ticket: {
+      findUnique: async () => ({
+        id: 'ticket-atomico',
+        protocol: 'TKT-ATOMICO',
+        subject: 'Teste',
+        status: updatedStatus,
+        partnerId: null,
+        messages,
+        timeline: [],
+        documents: [],
+      }),
+      update: async ({ data }) => {
+        updatedStatus = data.status;
+        return { id: 'ticket-atomico', status: updatedStatus };
+      },
+    },
+    ticketMessage: {
+      create: async ({ data }) => {
+        messages.push(data);
+        return data;
+      },
+    },
+  });
+  const admin = {
+    id: 'admin',
+    name: 'Admin',
+    email: 'admin@example.com',
+    role: 'ADMIN',
+    permissions: [],
+  };
+
+  await service.respond(
+    'ticket-atomico',
+    { status: 'RESOLVED', content: 'Atendimento concluído' },
+    admin,
+  );
+
+  assert.equal(updatedStatus, 'RESOLVED');
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].content, 'Atendimento concluído');
 });
 
 test('primeira visualização move chamado e avisa o parceiro uma única vez', async () => {
