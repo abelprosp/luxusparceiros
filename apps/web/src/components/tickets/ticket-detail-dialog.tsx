@@ -93,15 +93,35 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
     }
   }, [open, ticketId, load]);
 
-  const handleMessage = async () => {
-    if (!ticketId || !message.trim()) return;
+  const statusChanged = Boolean(
+    isAdmin && ticket && status && status !== ticket.status,
+  );
+
+  const handleSubmit = async () => {
+    if (!ticketId || !ticket || (!message.trim() && !statusChanged)) return;
     setSending(true);
     try {
-      await api(`/tickets/${ticketId}/messages`, {
-        method: 'POST',
-        body: { content: message.trim(), isInternal: isAdmin && internalNote },
-      });
+      if (statusChanged && status) {
+        await api(`/tickets/${ticketId}/status`, {
+          method: 'PATCH',
+          body: { status },
+        });
+      }
+      if (message.trim()) {
+        await api(`/tickets/${ticketId}/messages`, {
+          method: 'POST',
+          body: { content: message.trim(), isInternal: isAdmin && internalNote },
+        });
+      }
       setMessage('');
+      toast({
+        title: message.trim() && statusChanged
+          ? 'Status e mensagem enviados'
+          : message.trim()
+            ? 'Mensagem enviada'
+            : 'Status atualizado',
+        variant: 'success',
+      });
       await load();
       onUpdated();
     } catch (err) {
@@ -162,7 +182,7 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
             </div>
             )}
             <ActivityLog entries={ticket.timeline} />
-            <div className="min-h-0 flex-1">
+            <div className="shrink-0">
               <Label className="mb-2 block">Mensagens</Label>
               <ScrollArea className="h-48 rounded-lg border p-3">
                 <div className="space-y-3">
@@ -191,18 +211,29 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
                 </div>
               </ScrollArea>
             </div>
-            <div className="space-y-2">
+            <div className="relative z-10 shrink-0 space-y-2 rounded-lg border border-primary/30 bg-background p-3 shadow-sm">
+              <Label htmlFor="ticket-message">
+                {isPartnerUser(user) ? 'Mensagem para o administrador' : 'Mensagem para o parceiro'}
+              </Label>
               <Textarea
+                id="ticket-message"
                 placeholder="Sua mensagem..."
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                rows={2}
+                rows={3}
+                disabled={sending}
+                className="pointer-events-auto bg-background"
               />
               {isAdmin && (
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
                   <input type="checkbox" checked={internalNote} onChange={(e) => setInternalNote(e.target.checked)} />
                   Nota interna (não visível ao parceiro)
                 </label>
+              )}
+              {isAdmin && (
+                <p className="text-xs text-muted-foreground">
+                  Ao enviar, a alteração de status também será salva.
+                </p>
               )}
             </div>
           </div>
@@ -220,7 +251,12 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>
-            <Button onClick={handleMessage} disabled={sending || !message.trim()}>Enviar</Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={sending || (!message.trim() && !statusChanged)}
+            >
+              {isAdmin ? 'Salvar e enviar' : 'Enviar mensagem'}
+            </Button>
           </div>
         </DialogFooter>
       </DialogContent>
