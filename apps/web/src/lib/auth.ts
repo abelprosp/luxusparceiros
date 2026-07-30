@@ -16,26 +16,33 @@ export interface StoredUser {
   permissions: string[];
 }
 
-function getStorage(remember: boolean): Storage {
-  return remember ? localStorage : sessionStorage;
+function migrateLegacySession(): void {
+  if (typeof window === 'undefined') return;
+  [ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, USER_KEY].forEach((key) => {
+    const legacyValue = sessionStorage.getItem(key);
+    if (!localStorage.getItem(key) && legacyValue) {
+      localStorage.setItem(key, legacyValue);
+    }
+    sessionStorage.removeItem(key);
+  });
+  localStorage.setItem(REMEMBER_KEY, 'true');
 }
 
 function getActiveStorage(): Storage | null {
   if (typeof window === 'undefined') return null;
-  const remember = localStorage.getItem(REMEMBER_KEY) === 'true';
-  return getStorage(remember);
+  migrateLegacySession();
+  return localStorage;
 }
 
 export function setTokens(
   accessToken: string,
   refreshToken: string,
-  remember = false,
+  _remember = true,
 ): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(REMEMBER_KEY, String(remember));
-  const storage = getStorage(remember);
-  storage.setItem(ACCESS_TOKEN_KEY, accessToken);
-  storage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+  migrateLegacySession();
+  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
 }
 
 export function getAccessToken(): string | null {
@@ -52,8 +59,8 @@ export function getRefreshToken(): string | null {
 
 export function setUser(user: StoredUser): void {
   if (typeof window === 'undefined') return;
-  const remember = localStorage.getItem(REMEMBER_KEY) === 'true';
-  getStorage(remember).setItem(USER_KEY, JSON.stringify(user));
+  migrateLegacySession();
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
 export function getUser(): StoredUser | null {

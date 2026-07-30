@@ -37,17 +37,32 @@ export function LuxusLogo({ variant = 'full', className, forceDark = false }: Lu
     );
   }
 
+  if (variant === 'icon') {
+    return (
+      <span
+        className={cn(
+          'relative block h-12 w-12 shrink-0 overflow-hidden',
+          className,
+        )}
+      >
+        <Image
+          src={logo}
+          alt="Luxus Parceiros"
+          width={logo.width}
+          height={logo.height}
+          className="absolute left-0 top-1/2 h-full w-auto max-w-none -translate-y-1/2 object-contain"
+        />
+      </span>
+    );
+  }
+
   return (
     <Image
       src={logo}
       alt="Luxus Parceiros"
       width={logo.width}
       height={logo.height}
-      className={cn(
-        'object-contain',
-        variant === 'icon' ? 'h-10 w-10' : 'h-10 w-auto max-w-[200px]',
-        className,
-      )}
+      className={cn('h-10 w-auto max-w-[220px] object-contain', className)}
     />
   );
 }
