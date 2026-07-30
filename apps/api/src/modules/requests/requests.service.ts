@@ -22,6 +22,14 @@ import {
   UpdateRequestStatusDto,
 } from './dto/request.dto';
 
+const REQUEST_STATUS_MESSAGES: Record<RequestStatus, string> = {
+  OPEN: 'Aberta',
+  IN_ANALYSIS: 'Em análise',
+  IN_PROGRESS: 'Em andamento',
+  COMPLETED: 'Concluída',
+  REJECTED: 'Rejeitada',
+};
+
 interface TaskSyncSource {
   id: string;
   protocol: string;
@@ -325,6 +333,14 @@ export class RequestsService {
           data: { completedAt: new Date(), resolution: dto.resolution },
         });
       }
+      if (isAdminRole(user.role)) {
+        await this.notificationsService.createForPartnerUsers(existing.partnerId, {
+          type: 'REQUEST',
+          title: 'Andamento da solicitação',
+          message: `A solicitação ${existing.protocol} agora está ${REQUEST_STATUS_MESSAGES[dto.status].toLowerCase()}.`,
+          data: { requestId: id },
+        }, [user.id]);
+      }
     }
 
     await this.auditService.log({
@@ -363,12 +379,21 @@ export class RequestsService {
     await this.addTimeline(id, 'Comentário adicionado', null, null, user.id, dto.content);
 
     if (!comment.isInternal) {
-      await this.notificationsService.createForPartnerUsers(request.partnerId, {
-        type: 'REQUEST',
-        title: 'Novo comentário na solicitação',
-        message: `Solicitação ${request.protocol} recebeu um novo comentário.`,
-        data: { requestId: id },
-      });
+      if (isAdminRole(user.role)) {
+        await this.notificationsService.createForPartnerUsers(request.partnerId, {
+          type: 'REQUEST',
+          title: 'Novo comentário na solicitação',
+          message: `A solicitação ${request.protocol} recebeu um novo comentário.`,
+          data: { requestId: id },
+        }, [user.id]);
+      } else {
+        await this.notificationsService.createForAdminUsers({
+          type: 'REQUEST',
+          title: 'Novo comentário de parceiro',
+          message: `${user.name} comentou na solicitação ${request.protocol}.`,
+          data: { requestId: id },
+        }, [user.id]);
+      }
       this.eventsGateway.emitToPartner(request.partnerId, 'request:comment', comment);
     }
 

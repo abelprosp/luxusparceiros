@@ -277,10 +277,10 @@ export default function SolicitacoesPage() {
           )}
         </div>
         <div className="flex gap-2">
-          <Button asChild variant="ghost">
-            <Link href="/chamados">
+          <Button asChild variant={isPartner ? 'default' : 'secondary'} className="shadow-sm">
+            <Link href={isPartner ? '/chamados#abrir-chamado' : '/chamados'}>
               <MessageSquare className="mr-2 h-4 w-4" />
-              Chamados anteriores
+              {isPartner ? 'Abrir chamado' : 'Ver solicitações de parceiros'}
             </Link>
           </Button>
           <div className="flex rounded-lg border p-1">

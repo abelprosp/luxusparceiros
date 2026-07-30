@@ -86,6 +86,13 @@ export default function ChamadosPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (isPartner && window.location.hash === '#abrir-chamado') {
+      setCreateOpen(true);
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, [isPartner]);
+
   const moveTicket = async (id: string, status: TicketStatus) => {
     const ticket = tickets.find((t) => t.id === id);
     if (!ticket || ticket.status === status) return;
@@ -152,9 +159,9 @@ export default function ChamadosPage() {
   return (
     <DashboardLayout title="Chamados" description={isPartner ? 'Seus chamados de suporte' : 'Quadro Kanban de atendimento'}>
       <div className="mb-6 flex justify-end">
-        <Button onClick={() => setCreateOpen(true)}>
+        <Button className="shadow-sm" onClick={() => setCreateOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
-          Novo Chamado
+          Abrir chamado
         </Button>
       </div>
 

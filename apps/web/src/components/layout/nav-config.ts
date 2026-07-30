@@ -13,6 +13,7 @@ import {
   FileText,
   User,
   Store,
+  BookOpen,
 } from 'lucide-react';
 import type { AuthUser } from '@luxus/types';
 import { canAccessRoute, isAttendantUser, isPartnerUser } from '@/lib/rbac';
@@ -36,6 +37,7 @@ export const adminNavItems: NavItem[] = [
   { href: '/financeiro', label: 'Financeiro', icon: Wallet },
   { href: '/campanhas', label: 'Campanhas', icon: Megaphone },
   { href: '/auditoria', label: 'Auditoria', icon: ClipboardList },
+  { href: '/guia-de-uso', label: 'Guia de uso', icon: BookOpen },
 ];
 
 export const partnerNavItems: NavItem[] = [
@@ -46,6 +48,7 @@ export const partnerNavItems: NavItem[] = [
   { href: '/estoque', label: 'Estoque', icon: Warehouse },
   { href: '/solicitacoes', label: 'Demandas', icon: FileText },
   { href: '/comissoes', label: 'Comissões', icon: DollarSign },
+  { href: '/guia-de-uso', label: 'Guia de uso', icon: BookOpen },
 ];
 
 export const attendantNavItems: NavItem[] = [
@@ -53,6 +56,7 @@ export const attendantNavItems: NavItem[] = [
   { href: '/clientes', label: 'Clientes', icon: User },
   { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
   { href: '/solicitacoes', label: 'Demandas', icon: FileText },
+  { href: '/guia-de-uso', label: 'Guia de uso', icon: BookOpen },
 ];
 
 export function getNavItems(user: AuthUser | null): NavItem[] {

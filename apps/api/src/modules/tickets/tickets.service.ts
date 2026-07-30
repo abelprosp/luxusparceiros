@@ -15,6 +15,14 @@ import {
   UpdateTicketStatusDto,
 } from './dto/ticket.dto';
 
+const TICKET_STATUS_MESSAGES: Record<TicketStatus, string> = {
+  NEW: 'Novo',
+  IN_PROGRESS: 'Em andamento',
+  PENDING: 'Pendente',
+  RESOLVED: 'Resolvido',
+  CANCELLED: 'Cancelado',
+};
+
 @Injectable()
 export class TicketsService {
   constructor(
@@ -145,6 +153,14 @@ export class TicketsService {
     if (partnerId) {
       this.eventsGateway.emitToPartner(partnerId, 'ticket:created', ticket);
     }
+    if (!isAdminRole(user.role)) {
+      await this.notificationsService.createForAdminUsers({
+        type: 'SYSTEM',
+        title: 'Novo chamado de parceiro',
+        message: `${ticket.partner?.name ?? user.name} abriu o chamado ${ticket.protocol}: ${ticket.subject}.`,
+        data: { ticketId: ticket.id },
+      });
+    }
     return ticket;
   }
 
@@ -167,6 +183,14 @@ export class TicketsService {
           data: { resolvedAt: new Date() },
         });
       }
+      if (existing.partnerId && isAdminRole(user.role)) {
+        await this.notificationsService.createForPartnerUsers(existing.partnerId, {
+          type: 'TICKET_REPLY',
+          title: 'Andamento do chamado',
+          message: `O chamado ${existing.protocol} agora está ${TICKET_STATUS_MESSAGES[dto.status].toLowerCase()}.`,
+          data: { ticketId: id },
+        }, [user.id]);
+      }
     }
 
     if (existing.partnerId) {
@@ -177,6 +201,40 @@ export class TicketsService {
 
   async updateStatus(id: string, dto: UpdateTicketStatusDto, user: AuthUser) {
     return this.update(id, dto, user);
+  }
+
+  async acknowledge(id: string, user: AuthUser) {
+    if (!isAdminRole(user.role)) {
+      throw new NotFoundException(MESSAGES.NOT_FOUND);
+    }
+    const ticket = await this.findOne(id, user);
+    if (ticket.status !== TicketStatus.NEW) return ticket;
+
+    const updated = await this.prisma.ticket.update({
+      where: { id },
+      data: { status: TicketStatus.IN_PROGRESS },
+      include: {
+        assignedTo: { select: { id: true, name: true } },
+        partner: { select: { id: true, name: true } },
+      },
+    });
+    await this.addTimeline(
+      id,
+      'Chamado visualizado pelo atendimento',
+      TicketStatus.NEW,
+      TicketStatus.IN_PROGRESS,
+      user.id,
+    );
+    if (ticket.partnerId) {
+      await this.notificationsService.createForPartnerUsers(ticket.partnerId, {
+        type: 'TICKET_REPLY',
+        title: 'Chamado recebido',
+        message: `O atendimento visualizou o chamado ${ticket.protocol}. Ele está em andamento.`,
+        data: { ticketId: id },
+      }, [user.id]);
+      this.eventsGateway.emitToPartner(ticket.partnerId, 'ticket:updated', updated);
+    }
+    return updated;
   }
 
   async addMessage(id: string, dto: CreateTicketMessageDto, user: AuthUser) {
@@ -198,14 +256,23 @@ export class TicketsService {
 
     await this.addTimeline(id, 'Mensagem adicionada', null, null, user.id);
 
-    if (ticket.partnerId) {
-      if (!message.isInternal) {
+    if (!message.isInternal) {
+      if (isAdminRole(user.role) && ticket.partnerId) {
         await this.notificationsService.createForPartnerUsers(ticket.partnerId, {
           type: 'TICKET_REPLY',
           title: 'Nova resposta no ticket',
           message: `Ticket ${ticket.protocol}: nova mensagem recebida.`,
           data: { ticketId: id },
-        });
+        }, [user.id]);
+      } else if (!isAdminRole(user.role)) {
+        await this.notificationsService.createForAdminUsers({
+          type: 'TICKET_REPLY',
+          title: 'Nova mensagem de parceiro',
+          message: `${user.name} respondeu ao chamado ${ticket.protocol}.`,
+          data: { ticketId: id },
+        }, [user.id]);
+      }
+      if (ticket.partnerId) {
         this.eventsGateway.emitToPartner(ticket.partnerId, 'ticket:message', message);
       }
     }

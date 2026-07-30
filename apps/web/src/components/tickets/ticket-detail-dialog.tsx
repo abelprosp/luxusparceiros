@@ -71,6 +71,9 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
     if (!ticketId) return;
     setLoading(true);
     try {
+      if (isAdmin) {
+        await api(`/tickets/${ticketId}/acknowledge`, { method: 'PATCH' });
+      }
       const data = await api<TicketDetail>(`/tickets/${ticketId}`);
       setTicket(data);
       setStatus(data.status);
@@ -79,7 +82,7 @@ export function TicketDetailDialog({ ticketId, open, onOpenChange, onUpdated, on
     } finally {
       setLoading(false);
     }
-  }, [ticketId]);
+  }, [ticketId, isAdmin]);
 
   useEffect(() => {
     if (open && ticketId) load();
