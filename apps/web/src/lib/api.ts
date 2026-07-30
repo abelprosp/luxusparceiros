@@ -47,8 +47,15 @@ async function refreshAccessToken(): Promise<string | null> {
     });
 
     if (!res.ok) {
-      clearAuth();
-      return null;
+      if (res.status === 401 || res.status === 403) {
+        clearAuth();
+      }
+      throw new ApiError(
+        res.status === 401 || res.status === 403
+          ? 'Sessão revogada'
+          : 'Não foi possível renovar a sessão',
+        res.status,
+      );
     }
 
     const json = (await res.json()) as ApiResponse<AuthTokens>;
@@ -58,22 +65,42 @@ async function refreshAccessToken(): Promise<string | null> {
       return json.data.accessToken;
     }
     return null;
-  } catch {
-    clearAuth();
-    return null;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(
+      'Falha de conexão ao renovar a sessão. Tente novamente.',
+      0,
+      error,
+    );
   }
 }
 
-async function getValidToken(): Promise<string | null> {
-  const token = getAccessToken();
-  if (token) return token;
-
+async function refreshAccessTokenOnce(): Promise<string | null> {
   if (!refreshPromise) {
     refreshPromise = refreshAccessToken().finally(() => {
       refreshPromise = null;
     });
   }
   return refreshPromise;
+}
+
+function isTokenValidForAtLeast(token: string, seconds: number): boolean {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return false;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const decoded = JSON.parse(atob(padded)) as { exp?: number };
+    return typeof decoded.exp === 'number' && decoded.exp > Date.now() / 1000 + seconds;
+  } catch {
+    return false;
+  }
+}
+
+async function getValidToken(): Promise<string | null> {
+  const token = getAccessToken();
+  if (token && isTokenValidForAtLeast(token, 60)) return token;
+  return refreshAccessTokenOnce();
 }
 
 interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -125,15 +152,21 @@ export async function api<T>(
   });
 
   if (res.status === 401 && auth) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      headers['Authorization'] = `Bearer ${newToken}`;
-      const retry = await fetch(buildUrl(path, params), {
-        ...rest,
-        headers,
-        body: requestBody,
-      });
-      return handleResponse<T>(retry);
+    try {
+      const newToken = await refreshAccessTokenOnce();
+      if (newToken) {
+        headers['Authorization'] = `Bearer ${newToken}`;
+        const retry = await fetch(buildUrl(path, params), {
+          ...rest,
+          headers,
+          body: requestBody,
+        });
+        return handleResponse<T>(retry);
+      }
+    } catch (error) {
+      if (!(error instanceof ApiError) || ![401, 403].includes(error.status)) {
+        throw error;
+      }
     }
     clearAuth();
     if (typeof window !== 'undefined') {

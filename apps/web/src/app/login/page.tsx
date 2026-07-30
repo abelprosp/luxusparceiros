@@ -16,7 +16,6 @@ import { useToast } from '@/components/ui/toaster';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
 const STEPS = [
@@ -43,7 +42,6 @@ const STEPS = [
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
@@ -54,7 +52,7 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await login({ email, password, rememberMe });
+      await login({ email, password, rememberMe: true });
       toast({ title: 'Bem-vindo!', description: 'Login realizado com sucesso.', variant: 'success' });
       router.push('/dashboard');
     } catch (err) {
@@ -200,17 +198,9 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="remember"
-                checked={rememberMe}
-                onCheckedChange={(checked) => setRememberMe(checked === true)}
-                className="border-white/20 data-[state=checked]:border-primary data-[state=checked]:bg-primary"
-              />
-              <Label htmlFor="remember" className="text-sm font-normal text-white/60">
-                Lembrar de mim
-              </Label>
-            </div>
+            <p className="text-xs text-white/45">
+              Sua sessão permanecerá conectada neste dispositivo até você escolher sair.
+            </p>
 
             <Button
               type="submit"
