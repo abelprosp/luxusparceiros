@@ -6,6 +6,7 @@ import { Header } from '@/components/layout/header';
 import { Sidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
 import { MobileNavProvider } from '@/components/layout/mobile-nav-context';
+import { GlobalLoadingBar } from '@/components/ui/global-loading-bar';
 import { cn } from '@/lib/utils';
 
 const SIDEBAR_EXPANDED_KEY = 'luxus:sidebar-expanded';
@@ -32,6 +33,7 @@ export function DashboardLayout({ children, title, description }: DashboardLayou
     <ProtectedRoute>
       <MobileNavProvider>
         <div className="min-h-screen dashboard-surface">
+          <GlobalLoadingBar />
           <Sidebar expanded={sidebarExpanded} onExpandedChange={changeSidebar} />
           <MobileNav />
           <div
