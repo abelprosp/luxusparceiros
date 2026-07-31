@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { RequestType, REQUEST_TYPE_LABELS, UserRole } from '@luxus/types';
 import { api, getPaginated } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
@@ -38,6 +39,20 @@ interface TaskClient {
 
 type TaskClientMode = 'existing' | 'manual';
 
+function LoadingField({ label }: { label: string }) {
+  return (
+    <div className="space-y-1.5" role="status" aria-live="polite">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+        <span>{label}</span>
+      </div>
+      <div className="h-1 overflow-hidden rounded-full bg-primary/10">
+        <div className="global-loading-indicator h-full w-1/3 rounded-full bg-primary" />
+      </div>
+    </div>
+  );
+}
+
 interface CreateRequestDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -54,10 +69,14 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
   const [partnerId, setPartnerId] = useState('');
   const [clientId, setClientId] = useState('');
   const [partners, setPartners] = useState<Partner[]>([]);
+  const [partnersLoading, setPartnersLoading] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
   const [responsibles, setResponsibles] = useState<TaskResponsible[]>([]);
+  const [responsiblesLoading, setResponsiblesLoading] = useState(false);
   const [responsibleId, setResponsibleId] = useState('');
   const [taskClients, setTaskClients] = useState<TaskClient[]>([]);
+  const [taskClientsLoading, setTaskClientsLoading] = useState(false);
   const [taskClientSearch, setTaskClientSearch] = useState('');
   const [taskClientId, setTaskClientId] = useState('');
   const [taskClientName, setTaskClientName] = useState('');
@@ -73,6 +92,7 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     setType(RequestType.NEW_ACTIVATION);
     setDescription('');
     setPartnerId('');
@@ -92,30 +112,74 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
     setPriority(false);
     setIntegrationError('');
     if (isAdmin) {
-      getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' }).then((r) => setPartners(r.data));
+      setPartnersLoading(true);
+      getPaginated<Partner>('/partners', { limit: 100, status: 'ACTIVE' })
+        .then((result) => {
+          if (!cancelled) setPartners(result.data);
+        })
+        .catch(() => {
+          if (!cancelled) setPartners([]);
+        })
+        .finally(() => {
+          if (!cancelled) setPartnersLoading(false);
+        });
+    } else {
+      setPartnersLoading(false);
     }
-    getPaginated<Client>('/clients', { limit: 50 }).then((r) => setClients(r.data));
+    setClientsLoading(true);
+    getPaginated<Client>('/clients', { limit: 50 })
+      .then((result) => {
+        if (!cancelled) setClients(result.data);
+      })
+      .catch(() => {
+        if (!cancelled) setClients([]);
+      })
+      .finally(() => {
+        if (!cancelled) setClientsLoading(false);
+      });
+    setResponsiblesLoading(true);
     api<TaskResponsible[]>('/task-integration/responsibles')
-      .then(setResponsibles)
+      .then((items) => {
+        if (!cancelled) setResponsibles(items);
+      })
       .catch((error) => {
+        if (cancelled) return;
         setResponsibles([]);
         setIntegrationError(
           error instanceof Error ? error.message : 'Não foi possível carregar os responsáveis.',
         );
+      })
+      .finally(() => {
+        if (!cancelled) setResponsiblesLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [open, isAdmin]);
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
+    setTaskClientsLoading(true);
     const timer = setTimeout(() => {
       const query = taskClientSearch.trim();
       api<TaskClient[]>(
         `/task-integration/clients${query ? `?search=${encodeURIComponent(query)}` : ''}`,
       )
-        .then(setTaskClients)
-        .catch(() => setTaskClients([]));
+        .then((items) => {
+          if (!cancelled) setTaskClients(items);
+        })
+        .catch(() => {
+          if (!cancelled) setTaskClients([]);
+        })
+        .finally(() => {
+          if (!cancelled) setTaskClientsLoading(false);
+        });
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [open, taskClientSearch]);
 
   useEffect(() => {
@@ -243,20 +307,31 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
           {isAdmin && (
             <div className="space-y-2">
               <Label>Parceiro *</Label>
-              <Select value={partnerId} onValueChange={setPartnerId}>
-                <SelectTrigger><SelectValue placeholder="Selecione o parceiro" /></SelectTrigger>
+              <Select value={partnerId} onValueChange={setPartnerId} disabled={partnersLoading}>
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={partnersLoading ? 'Carregando parceiros...' : 'Selecione o parceiro'}
+                  />
+                </SelectTrigger>
                 <SelectContent>
                   {partners.map((p) => (
                     <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {partnersLoading && <LoadingField label="Carregando parceiros..." />}
             </div>
           )}
           <div className="space-y-2">
             <Label>Cliente (opcional)</Label>
-            <Select value={clientId || 'none'} onValueChange={(v) => setClientId(v === 'none' ? '' : v)}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+            <Select
+              value={clientId || 'none'}
+              onValueChange={(v) => setClientId(v === 'none' ? '' : v)}
+              disabled={clientsLoading}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={clientsLoading ? 'Carregando clientes...' : 'Selecione'} />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Nenhum</SelectItem>
                 {clients.map((c) => (
@@ -264,12 +339,23 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
                 ))}
               </SelectContent>
             </Select>
+            {clientsLoading && <LoadingField label="Carregando clientes do parceiro..." />}
           </div>
           <div className="space-y-2">
             <Label>Responsável no Luxus Task *</Label>
-            <Select value={responsibleId} onValueChange={setResponsibleId}>
+            <Select
+              value={responsibleId}
+              onValueChange={setResponsibleId}
+              disabled={responsiblesLoading}
+            >
               <SelectTrigger>
-                <SelectValue placeholder="Selecione quem receberá a demanda" />
+                <SelectValue
+                  placeholder={
+                    responsiblesLoading
+                      ? 'Carregando responsáveis...'
+                      : 'Selecione quem receberá a demanda'
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {responsibles.map((responsible) => (
@@ -279,7 +365,10 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
                 ))}
               </SelectContent>
             </Select>
-            {integrationError && (
+            {responsiblesLoading && (
+              <LoadingField label="Consultando responsáveis no Luxus Task..." />
+            )}
+            {!responsiblesLoading && integrationError && (
               <p className="text-xs text-destructive">{integrationError}</p>
             )}
           </div>
@@ -310,9 +399,14 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
                   value={taskClientSearch}
                   onChange={(event) => setTaskClientSearch(event.target.value)}
                   placeholder="Busque por nome, CPF ou CNPJ"
+                  disabled={taskClientsLoading && taskClients.length === 0}
                 />
                 <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border bg-popover p-1">
-                  {taskClients.length > 0 ? taskClients.map((client) => (
+                  {taskClientsLoading ? (
+                    <div className="px-3 py-4">
+                      <LoadingField label="Buscando clientes no Luxus Task..." />
+                    </div>
+                  ) : taskClients.length > 0 ? taskClients.map((client) => (
                     <button
                       key={client.id}
                       type="button"
@@ -387,7 +481,7 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
                   />
                 </div>
                 {checkingDocument && (
-                  <p className="text-xs text-muted-foreground">Verificando documento...</p>
+                  <LoadingField label="Verificando CPF/CNPJ no Luxus Task..." />
                 )}
                 {!checkingDocument && documentMatch && (
                   <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
@@ -429,9 +523,24 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={loading || responsibles.length === 0}>
-            {loading ? 'Enviando...' : 'Criar demanda'}
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={
+              loading
+              || responsiblesLoading
+              || partnersLoading
+              || responsibles.length === 0
+            }
+          >
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Criando demanda...
+              </span>
+            ) : 'Criar demanda'}
           </Button>
         </DialogFooter>
       </DialogContent>

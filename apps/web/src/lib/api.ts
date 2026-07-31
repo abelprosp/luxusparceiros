@@ -21,6 +21,27 @@ function normalizeApiBase(url: string): string {
 const API_BASE = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001');
 const API_URL = `${API_BASE}/api`;
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || `${API_BASE}/events`;
+export const API_ACTIVITY_EVENT = 'luxus:api-activity';
+
+let activeApiRequests = 0;
+
+function emitApiActivity() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(API_ACTIVITY_EVENT, { detail: { pending: activeApiRequests } }),
+    );
+  }
+}
+
+function beginApiActivity() {
+  activeApiRequests += 1;
+  emitApiActivity();
+}
+
+function endApiActivity() {
+  activeApiRequests = Math.max(0, activeApiRequests - 1);
+  emitApiActivity();
+}
 
 export class ApiError extends Error {
   constructor(
@@ -121,7 +142,7 @@ function buildUrl(path: string, params?: RequestOptions['params']): string {
   return url.toString();
 }
 
-export async function api<T>(
+async function executeApi<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
@@ -176,6 +197,18 @@ export async function api<T>(
   }
 
   return handleResponse<T>(res);
+}
+
+export async function api<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  beginApiActivity();
+  try {
+    return await executeApi<T>(path, options);
+  } finally {
+    endApiActivity();
+  }
 }
 
 async function handleResponse<T>(res: Response): Promise<T> {
