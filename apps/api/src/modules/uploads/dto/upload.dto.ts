@@ -1,11 +1,16 @@
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { DocumentType } from '@prisma/client';
+import { DocumentPurpose, DocumentType } from '@prisma/client';
 
 export class UploadFileDto {
   @ApiProperty({ enum: DocumentType })
   @IsEnum(DocumentType)
   type: DocumentType;
+
+  @ApiPropertyOptional({ enum: DocumentPurpose })
+  @IsOptional()
+  @IsEnum(DocumentPurpose)
+  purpose?: DocumentPurpose;
 
   @ApiPropertyOptional()
   @IsOptional()

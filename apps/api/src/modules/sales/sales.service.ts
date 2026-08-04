@@ -11,6 +11,8 @@ import {
   SaleReviewStatus,
   SaleStatus,
   SaleTaskSyncStatus,
+  SaleContractStage,
+  DocumentPurpose,
   Prisma,
   UserRole,
 } from '@prisma/client';
@@ -34,6 +36,7 @@ import {
   RejectSaleDto,
   RequestSaleDocumentsDto,
   RequestSaleCorrectionDto,
+  RequestContractCorrectionDto,
   UpdateSaleDto,
   UpdateSaleStatusDto,
 } from './dto/sale.dto';
@@ -654,6 +657,8 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         taskDeadline: new Date(dto.deadline),
         taskPriority: dto.priority ?? false,
         taskSyncStatus: SaleTaskSyncStatus.PENDING,
+        contractStage: SaleContractStage.TASK_PROCESSING,
+        contractStageUpdatedAt: new Date(),
         taskSyncError: null,
         taskNextRetryAt: new Date(),
         notes: dto.notes?.trim() ? [sale.notes, dto.notes.trim()].filter(Boolean).join('\n\n') : sale.notes,
@@ -707,6 +712,10 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         where: { taskSyncStatus: SaleTaskSyncStatus.PROCESSING, taskSyncLockedAt: { lt: new Date(Date.now() - 5 * 60_000) } },
         data: { taskSyncStatus: SaleTaskSyncStatus.RETRY, taskSyncLockedAt: null, taskNextRetryAt: new Date() },
       });
+      await this.prisma.sale.updateMany({
+        where: { signedContractSyncStatus: SaleTaskSyncStatus.PROCESSING },
+        data: { signedContractSyncStatus: SaleTaskSyncStatus.RETRY, signedContractNextRetryAt: new Date() },
+      });
       const candidates = await this.prisma.sale.findMany({
         where: {
           taskDemandId: null,
@@ -719,6 +728,18 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         orderBy: [{ taskNextRetryAt: 'asc' }, { createdAt: 'asc' }],
       });
       for (const candidate of candidates) await this.syncSaleToTask(candidate.id);
+      const signedCandidates = await this.prisma.sale.findMany({
+        where: {
+          taskDemandId: { not: null },
+          contractStage: SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
+          signedContractSyncStatus: { in: [SaleTaskSyncStatus.PENDING, SaleTaskSyncStatus.RETRY] },
+          OR: [{ signedContractNextRetryAt: null }, { signedContractNextRetryAt: { lte: new Date() } }],
+        },
+        select: { id: true },
+        take: 10,
+        orderBy: [{ signedContractNextRetryAt: 'asc' }, { updatedAt: 'asc' }],
+      });
+      for (const candidate of signedCandidates) await this.syncSignedContract(candidate.id);
     } finally {
       this.taskSyncRunning = false;
     }
@@ -745,6 +766,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       if (!task) {
         const contract = sale.contractFormat === 'ZAPSIGN' ? 'ZapSign' : 'Impressão';
         task = await this.taskIntegration.createDemand({
+          entityType: 'sale',
           requestId: sale.id,
           responsibleId: sale.taskResponsibleId,
           clientId: sale.taskClientId ?? undefined,
@@ -811,6 +833,166 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
       });
     }
+  }
+
+  private async syncSignedContract(id: string) {
+    const claimed = await this.prisma.sale.updateMany({
+      where: {
+        id,
+        contractStage: SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
+        signedContractSyncStatus: { in: [SaleTaskSyncStatus.PENDING, SaleTaskSyncStatus.RETRY] },
+      },
+      data: { signedContractSyncStatus: SaleTaskSyncStatus.PROCESSING },
+    });
+    if (!claimed.count) return;
+    const sale = await this.prisma.sale.findUnique({
+      where: { id },
+      include: {
+        documents: {
+          where: { purpose: DocumentPurpose.SIGNED_CONTRACT },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+    const document = sale?.documents[0];
+    if (!sale || !document) return;
+    try {
+      await this.taskIntegration.updateSaleStage(id, {
+        stage: SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
+        documentId: document.id,
+        documentName: document.name,
+        documentMimeType: document.mimeType,
+        note: 'Contrato assinado conferido pelo administrador e enviado para validação final.',
+      });
+      await this.prisma.sale.update({
+        where: { id },
+        data: {
+          signedContractSyncStatus: SaleTaskSyncStatus.SYNCED,
+          signedContractSyncError: null,
+          signedContractNextRetryAt: null,
+          timeline: { create: { action: 'Contrato assinado enviado à mesma demanda do Luxus Task' } },
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao enviar contrato assinado';
+      await this.prisma.sale.update({
+        where: { id },
+        data: {
+          signedContractSyncStatus: SaleTaskSyncStatus.RETRY,
+          signedContractSyncError: message,
+          signedContractSyncAttempts: { increment: 1 },
+          signedContractNextRetryAt: new Date(Date.now() + this.retryDelayMs(sale.signedContractSyncAttempts)),
+        },
+      });
+    }
+  }
+
+  async releaseBlankContract(id: string, user: AuthUser) {
+    this.assertAdmin(user);
+    const sale = await this.findOne(id, user);
+    if (sale.contractStage !== SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN) {
+      throw new BadRequestException('O contrato em branco ainda não está aguardando liberação');
+    }
+    if (!sale.documents.some((document) => document.purpose === DocumentPurpose.BLANK_CONTRACT)) {
+      throw new BadRequestException('O Luxus Task não enviou um arquivo de contrato em branco');
+    }
+    await this.taskIntegration.updateSaleStage(id, {
+      stage: SaleContractStage.AWAITING_PARTNER_SIGNATURE,
+      note: `Contrato em branco liberado por ${user.name}.`,
+    });
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        contractStage: SaleContractStage.AWAITING_PARTNER_SIGNATURE,
+        contractStageUpdatedAt: new Date(),
+        contractCorrectionReason: null,
+        timeline: { create: { actorId: user.id, actorName: user.name, action: 'Contrato em branco liberado para assinatura' } },
+      },
+    });
+    await this.notificationsService.createForPartnerUsers(sale.partnerId, {
+      type: 'DOCUMENTS_REQUESTED',
+      title: 'Contrato disponível para assinatura',
+      message: `${sale.protocol}: baixe o contrato, colete as assinaturas e anexe o documento assinado.`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    });
+    return updated;
+  }
+
+  async submitSignedContract(id: string, user: AuthUser) {
+    if (isAdminRole(user.role)) {
+      throw new ForbiddenException('O contrato assinado deve ser enviado pelo parceiro');
+    }
+    const sale = await this.findOne(id, user);
+    if (!([SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED] as SaleContractStage[]).includes(sale.contractStage)) {
+      throw new BadRequestException('Esta venda não está aguardando o contrato assinado');
+    }
+    const signed = sale.documents
+      .filter((document) => document.purpose === DocumentPurpose.SIGNED_CONTRACT)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+    if (!signed) throw new BadRequestException('Anexe o contrato assinado antes de enviar');
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        contractStage: SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
+        contractStageUpdatedAt: new Date(),
+        contractCorrectionReason: null,
+        timeline: { create: { actorId: user.id, actorName: user.name, action: 'Contrato assinado enviado para conferência do administrador' } },
+      },
+    });
+    await this.notificationsService.createForAdminUsers({
+      type: 'SYSTEM',
+      title: 'Contrato assinado para conferir',
+      message: `${sale.protocol}: o parceiro anexou o contrato assinado.`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    });
+    return updated;
+  }
+
+  async approveSignedContract(id: string, user: AuthUser) {
+    this.assertAdmin(user);
+    const sale = await this.findOne(id, user);
+    if (sale.contractStage !== SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN) {
+      throw new BadRequestException('O contrato assinado não está aguardando conferência');
+    }
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        contractStage: SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
+        contractStageUpdatedAt: new Date(),
+        signedContractSyncStatus: SaleTaskSyncStatus.PENDING,
+        signedContractSyncError: null,
+        signedContractNextRetryAt: new Date(),
+        timeline: { create: { actorId: user.id, actorName: user.name, action: 'Contrato assinado aprovado e enfileirado para o Luxus Task' } },
+      },
+    });
+    setImmediate(() => void this.processTaskSyncQueue());
+    return updated;
+  }
+
+  async requestContractCorrection(id: string, dto: RequestContractCorrectionDto, user: AuthUser) {
+    this.assertAdmin(user);
+    const sale = await this.findOne(id, user);
+    if (sale.contractStage !== SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN) {
+      throw new BadRequestException('O contrato assinado não está aguardando conferência');
+    }
+    const reason = dto.reason.trim();
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        contractStage: SaleContractStage.CHANGES_REQUESTED,
+        contractStageUpdatedAt: new Date(),
+        contractCorrectionReason: reason,
+        timeline: { create: { actorId: user.id, actorName: user.name, action: 'Correção do contrato assinado solicitada', details: reason } },
+      },
+    });
+    await this.notificationsService.createForPartnerUsers(sale.partnerId, {
+      type: 'DOCUMENTS_REQUESTED',
+      title: 'Corrija o contrato assinado',
+      message: `${sale.protocol}: ${reason}`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    });
+    return updated;
   }
 
   async updateStatus(id: string, dto: UpdateSaleStatusDto, user: AuthUser) {

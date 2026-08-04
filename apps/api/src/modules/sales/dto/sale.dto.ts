@@ -175,6 +175,13 @@ export class RequestSaleCorrectionDto {
   reason: string;
 }
 
+export class RequestContractCorrectionDto {
+  @ApiProperty({ description: 'Motivo da correção do contrato assinado' })
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+}
+
 export class ApproveSaleForTaskDto {
   @ApiProperty()
   @IsUUID()

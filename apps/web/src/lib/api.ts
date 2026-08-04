@@ -282,10 +282,12 @@ export async function uploadFile(
     requestId?: string;
     ticketId?: string;
   },
+  purpose?: string,
 ) {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('type', type);
+  if (purpose) formData.append('purpose', purpose);
   if (relations?.saleId) formData.append('saleId', relations.saleId);
   if (relations?.clientId) formData.append('clientId', relations.clientId);
   if (relations?.requestId) formData.append('requestId', relations.requestId);
@@ -356,6 +358,10 @@ export async function downloadAuthenticatedFile(path: string, filename: string):
 }
 
 export function getUploadFetchUrl(documentUrl: string): string {
+  if (documentUrl.startsWith('/') && !documentUrl.startsWith('/uploads/')) {
+    return `${API_URL}${documentUrl}`;
+  }
+  if (/^https?:\/\//i.test(documentUrl)) return documentUrl;
   const filename = documentUrl.replace(/^\/uploads\//, '').split('/').pop() ?? documentUrl;
   return `${API_URL}/uploads/${encodeURIComponent(filename)}`;
 }

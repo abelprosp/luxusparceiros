@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DocumentType, Prisma, SaleStatus } from '@prisma/client';
+import { DocumentPurpose, DocumentType, Prisma, SaleContractStage, SaleStatus } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
 import {
   createReadStream,
@@ -63,9 +63,10 @@ export class UploadsService {
       requestId?: string;
       ticketId?: string;
     },
+    purpose: DocumentPurpose = DocumentPurpose.GENERAL,
   ) {
     this.validateFile(file);
-    await this.validateRelations(type, user, relations);
+    await this.validateRelations(type, purpose, user, relations);
 
     const ext = extname(file.originalname).toLowerCase();
     const filename = `${uuidv4()}${ext}`;
@@ -77,6 +78,7 @@ export class UploadsService {
       data: {
         name: file.originalname,
         type,
+        purpose,
         url: `/uploads/${filename}`,
         mimeType: file.mimetype,
         size: file.size,
@@ -126,6 +128,7 @@ export class UploadsService {
 
   private async validateRelations(
     type: DocumentType,
+    purpose: DocumentPurpose,
     user: AuthUser,
     relations?: {
       clientId?: string;
@@ -173,6 +176,7 @@ export class UploadsService {
         clientId: true,
         status: true,
         requiredDocuments: true,
+        contractStage: true,
       },
     });
     if (!sale) throw new BadRequestException('Venda não encontrada');
@@ -180,6 +184,21 @@ export class UploadsService {
     assertPartnerAccess(user, sale.partnerId);
     if (user.branchId && user.branchId !== sale.branchId) {
       throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
+    if (purpose === DocumentPurpose.SIGNED_CONTRACT) {
+      if (type !== DocumentType.CONTRACT) {
+        throw new BadRequestException('Contrato assinado deve usar o tipo CONTRACT');
+      }
+      if (isAdminRole(user.role) || !([
+        SaleContractStage.AWAITING_PARTNER_SIGNATURE,
+        SaleContractStage.CHANGES_REQUESTED,
+      ] as SaleContractStage[]).includes(sale.contractStage)) {
+        throw new BadRequestException('O contrato assinado só pode ser enviado pelo parceiro quando a assinatura estiver pendente');
+      }
+      return;
+    }
+    if (purpose !== DocumentPurpose.GENERAL && purpose !== DocumentPurpose.ORIGINAL_SALE) {
+      throw new BadRequestException('Finalidade de documento inválida para este envio');
     }
     if (relations.clientId && relations.clientId !== sale.clientId) {
       throw new BadRequestException('Cliente não pertence à venda informada');

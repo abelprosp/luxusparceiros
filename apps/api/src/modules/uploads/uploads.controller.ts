@@ -51,7 +51,7 @@ export class UploadsController {
       saleId: dto.saleId,
       requestId: dto.requestId,
       ticketId: dto.ticketId,
-    });
+    }, dto.purpose);
   }
 
   @Post('avatar')

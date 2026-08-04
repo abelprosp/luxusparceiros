@@ -6,6 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createReadStream, existsSync } from 'fs';
 import { basename, join } from 'path';
+import { SaleContractStage } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { CommissionsService } from '@/modules/commissions/commissions.service';
@@ -90,6 +91,30 @@ export class TaskIntegrationService {
         body: JSON.stringify({ content, authorName }),
       },
     );
+  }
+
+  async updateSaleStage(
+    externalRequestId: string,
+    input: { stage: string; documentId?: string; documentName?: string; documentMimeType?: string; note?: string },
+  ) {
+    return this.request(
+      `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}/etapa-venda`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+
+  async downloadTaskAttachment(externalRequestId: string, attachmentId: string) {
+    if (!this.isConfigured()) throw new ServiceUnavailableException('Integração com o Luxus Task ainda não foi configurada');
+    const response = await fetch(
+      `${this.apiUrl}/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}/anexos/${encodeURIComponent(attachmentId)}`,
+      { headers: { 'x-integration-key': this.integrationKey! } },
+    );
+    if (!response.ok) throw new BadGatewayException(`Não foi possível baixar o contrato no Luxus Task (HTTP ${response.status})`);
+    return {
+      buffer: Buffer.from(await response.arrayBuffer()),
+      mimeType: response.headers.get('content-type') || 'application/octet-stream',
+      name: decodeURIComponent(response.headers.get('x-file-name') || 'contrato'),
+    };
   }
 
   async getSaleDocument(saleId: string, documentId: string) {
@@ -206,7 +231,7 @@ export class TaskIntegrationService {
       select: {
         id: true, protocol: true, partnerId: true, createdById: true,
         createdBy: { select: { partnerId: true } }, taskDemandId: true,
-        taskStatus: true,
+        taskStatus: true, contractStage: true, status: true,
       },
     });
     if (!sale) return { accepted: true };
@@ -216,7 +241,35 @@ export class TaskIntegrationService {
     const resolution = dto.resolution?.trim()
       || dto.observations?.filter(Boolean).at(-1)?.trim()
       || undefined;
-    const changed = sale.taskStatus !== dto.status || Boolean(resolution);
+    const callbackStage = this.resolveSaleContractStage(dto, sale.contractStage);
+    const changed = sale.taskStatus !== dto.status
+      || callbackStage !== sale.contractStage
+      || Boolean(resolution);
+    if (callbackStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN) {
+      for (const attachment of dto.attachments ?? []) {
+        if (!attachment.id || !attachment.name) continue;
+        const externalId = `task:${dto.demandId}:${attachment.id}`;
+        await this.prisma.document.upsert({
+          where: { externalId },
+          create: {
+            saleId: sale.id,
+            externalId,
+            name: attachment.name,
+            type: 'CONTRACT',
+            purpose: 'BLANK_CONTRACT',
+            url: `/task-integration/sales/${sale.id}/attachments/${attachment.id}`,
+            mimeType: attachment.mimeType || 'application/pdf',
+            size: attachment.size || 0,
+          },
+          update: {
+            name: attachment.name,
+            mimeType: attachment.mimeType || 'application/pdf',
+            size: attachment.size || 0,
+          },
+        });
+      }
+    }
+    const isCompleted = callbackStage === SaleContractStage.COMPLETED;
     await this.prisma.sale.update({
       where: { id: sale.id },
       data: {
@@ -228,33 +281,51 @@ export class TaskIntegrationService {
         taskSyncError: null,
         taskSyncStatus: 'SYNCED',
         taskLastSyncAt: dto.updatedAt ? new Date(dto.updatedAt) : new Date(),
-        ...(dto.status === 'concluido' ? { status: 'ACTIVATED', activatedAt: new Date() } : {}),
+        contractStage: callbackStage,
+        contractStageUpdatedAt: callbackStage !== sale.contractStage ? new Date() : undefined,
+        ...(isCompleted ? { status: 'ACTIVATED', activatedAt: new Date() } : {}),
         ...(changed ? { timeline: { create: {
           action: 'Atualização recebida do Luxus Task',
           details: [
-            `Status: ${dto.status}`,
+            `Status Task: ${dto.status}`,
+            `Etapa do contrato: ${callbackStage}`,
             resolution ? `Retorno: ${resolution}` : '',
           ].filter(Boolean).join('\n'),
         } } } : {}),
       },
     });
-    if (dto.status === 'concluido') {
+    if (isCompleted && sale.status !== 'ACTIVATED') {
       const activated = await this.prisma.sale.findUnique({ where: { id: sale.id } });
       if (activated) await this.commissions.createFromSale(activated, sale.createdById);
     }
     if (changed) {
       const notification = {
         type: 'SYSTEM' as const,
-        title: dto.status === 'concluido' ? 'Venda concluída no Luxus Task' : 'Venda atualizada no Luxus Task',
+        title: isCompleted
+          ? 'Venda concluída no Luxus Task'
+          : callbackStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
+            ? 'Contrato em branco recebido'
+            : 'Venda atualizada no Luxus Task',
         message: `${sale.protocol}: ${resolution || `status ${dto.status}`}`,
         data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
       };
-      await this.notifications.createForPartnerUsers(sale.partnerId, notification);
-      if (!sale.createdBy.partnerId) {
-        await this.notifications.create({ userId: sale.createdById, ...notification });
+      if (callbackStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN) {
+        await this.notifications.createForAdminUsers(notification);
+      } else {
+        await this.notifications.createForPartnerUsers(sale.partnerId, notification);
+        if (!sale.createdBy.partnerId) await this.notifications.create({ userId: sale.createdById, ...notification });
       }
     }
     return { accepted: true };
+  }
+
+  private resolveSaleContractStage(dto: TaskDemandCallbackDto, current: SaleContractStage): SaleContractStage {
+    const explicit = dto.workflowStage as SaleContractStage | undefined;
+    if (explicit && Object.values(SaleContractStage).includes(explicit)) return explicit;
+    if (dto.status !== 'concluido') return current;
+    return current === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
+      ? SaleContractStage.COMPLETED
+      : SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN;
   }
 
   private mapTaskStatus(status: string) {

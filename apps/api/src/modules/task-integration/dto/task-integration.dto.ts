@@ -41,9 +41,27 @@ export class TaskDemandCallbackDto {
   @IsOptional()
   @IsDateString()
   updatedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  workflowStage?: string;
+
+  @IsOptional()
+  @IsArray()
+  attachments?: Array<{
+    id: string;
+    name: string;
+    mimeType?: string;
+    size?: number;
+    createdAt?: string;
+  }>;
 }
 
 export class CreateTaskDemandInput {
+  @IsOptional()
+  @IsIn(['request', 'sale'])
+  entityType?: 'request' | 'sale';
+
   @IsUUID()
   requestId: string;
 
@@ -104,4 +122,25 @@ export class CreateTaskDemandInput {
     mimeType: string;
     size: number;
   }>;
+}
+
+export class UpdateTaskSaleStageInput {
+  @IsString()
+  stage: string;
+
+  @IsOptional()
+  @IsString()
+  documentId?: string;
+
+  @IsOptional()
+  @IsString()
+  documentName?: string;
+
+  @IsOptional()
+  @IsString()
+  documentMimeType?: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

@@ -95,3 +95,73 @@ test('callback concluído atualiza somente a solicitação vinculada', async () 
   assert.equal(userNotifications.length, 1);
   assert.equal(userNotifications[0].data.requestId, '11111111-1111-4111-8111-111111111111');
 });
+
+test('primeira conclusao da venda retorna contrato em branco sem ativar nem comissionar', async () => {
+  const updates = [];
+  const importedDocuments = [];
+  let commissions = 0;
+  const sale = {
+    id: '11111111-1111-4111-8111-111111111111', protocol: 'VND-TESTE',
+    partnerId: '33333333-3333-4333-8333-333333333333',
+    createdById: '44444444-4444-4444-8444-444444444444',
+    createdBy: { partnerId: '33333333-3333-4333-8333-333333333333' },
+    taskDemandId: '22222222-2222-4222-8222-222222222222',
+    taskStatus: 'em_andamento', contractStage: 'TASK_PROCESSING', status: 'APPROVED',
+  };
+  const prisma = {
+    request: { findUnique: async () => null },
+    sale: {
+      findUnique: async () => sale,
+      update: async (args) => { updates.push(args); return { ...sale, ...args.data }; },
+    },
+    document: { upsert: async (args) => importedDocuments.push(args) },
+  };
+  const service = new TaskIntegrationService(
+    { get: () => undefined }, prisma,
+    { createForAdminUsers: async () => {}, createForPartnerUsers: async () => {}, create: async () => {} },
+    { createFromSale: async () => { commissions += 1; } },
+  );
+  await service.applyCallback({
+    externalRequestId: sale.id, demandId: sale.taskDemandId,
+    protocol: 'LUX-2026-00002', status: 'concluido',
+    workflowStage: 'BLANK_CONTRACT_READY_FOR_ADMIN',
+    attachments: [{ id: 'anexo-1', name: 'contrato-em-branco.pdf', mimeType: 'application/pdf', size: 1200 }],
+  });
+  assert.equal(updates[0].data.contractStage, 'BLANK_CONTRACT_READY_FOR_ADMIN');
+  assert.equal(updates[0].data.status, undefined);
+  assert.equal(importedDocuments[0].create.purpose, 'BLANK_CONTRACT');
+  assert.equal(commissions, 0);
+});
+
+test('somente aprovacao final do contrato ativa e comissiona a venda', async () => {
+  const updates = [];
+  let commissions = 0;
+  const sale = {
+    id: '11111111-1111-4111-8111-111111111111', protocol: 'VND-TESTE',
+    partnerId: '33333333-3333-4333-8333-333333333333',
+    createdById: '44444444-4444-4444-8444-444444444444',
+    createdBy: { partnerId: '33333333-3333-4333-8333-333333333333' },
+    taskDemandId: '22222222-2222-4222-8222-222222222222',
+    taskStatus: 'em_andamento', contractStage: 'TASK_VALIDATING_SIGNED_CONTRACT', status: 'APPROVED',
+  };
+  const prisma = {
+    request: { findUnique: async () => null },
+    sale: {
+      findUnique: async () => sale,
+      update: async (args) => { updates.push(args); return { ...sale, ...args.data }; },
+    },
+    document: { upsert: async () => {} },
+  };
+  const service = new TaskIntegrationService(
+    { get: () => undefined }, prisma,
+    { createForAdminUsers: async () => {}, createForPartnerUsers: async () => {}, create: async () => {} },
+    { createFromSale: async () => { commissions += 1; } },
+  );
+  await service.applyCallback({
+    externalRequestId: sale.id, demandId: sale.taskDemandId,
+    protocol: 'LUX-2026-00002', status: 'concluido', workflowStage: 'COMPLETED',
+  });
+  assert.equal(updates[0].data.status, 'ACTIVATED');
+  assert.equal(updates[0].data.contractStage, 'COMPLETED');
+  assert.equal(commissions, 1);
+});

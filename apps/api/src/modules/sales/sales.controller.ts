@@ -11,6 +11,7 @@ import {
   RejectSaleDto,
   RequestSaleDocumentsDto,
   RequestSaleCorrectionDto,
+  RequestContractCorrectionDto,
   SalesQueryDto,
   UpdateSaleDto,
   UpdateSaleStatusDto,
@@ -120,6 +121,38 @@ export class SalesController {
   @ApiOperation({ summary: 'Tentar novamente o envio da venda ao Luxus Task' })
   retryTaskSync(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.salesService.retryTaskSync(id, user);
+  }
+
+  @Post(':id/release-blank-contract')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Administrador libera contrato em branco para assinatura' })
+  releaseBlankContract(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesService.releaseBlankContract(id, user);
+  }
+
+  @Post(':id/submit-signed-contract')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Parceiro envia o contrato assinado para conferência' })
+  submitSignedContract(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesService.submitSignedContract(id, user);
+  }
+
+  @Post(':id/approve-signed-contract')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Administrador aprova o contrato assinado e o devolve ao Luxus Task' })
+  approveSignedContract(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesService.approveSignedContract(id, user);
+  }
+
+  @Post(':id/request-contract-correction')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Administrador devolve o contrato assinado para correção' })
+  requestContractCorrection(
+    @Param('id') id: string,
+    @Body() dto: RequestContractCorrectionDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesService.requestContractCorrection(id, dto, user);
   }
 
   @Post(':id/reject')
