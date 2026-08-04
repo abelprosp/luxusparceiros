@@ -13,6 +13,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { EventsGateway } from '@/gateway/events.gateway';
+import { UploadsService } from '@/modules/uploads/uploads.service';
 import { MESSAGES } from '@/common/constants/messages';
 import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
 import {
@@ -48,6 +49,7 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
     private auditService: AuditService,
     private notificationsService: NotificationsService,
     private eventsGateway: EventsGateway,
+    private uploadsService: UploadsService,
   ) {}
 
   onModuleInit() {
@@ -352,7 +354,11 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
       throw new ForbiddenException('Somente administradores podem excluir chamados');
     }
     const ticket = await this.findOne(id, user);
-    await this.prisma.ticket.delete({ where: { id } });
+    await this.prisma.$transaction([
+      this.prisma.document.deleteMany({ where: { ticketId: id } }),
+      this.prisma.ticket.delete({ where: { id } }),
+    ]);
+    this.uploadsService.removeStoredFiles(ticket.documents);
     await this.auditService.log({
       userId: user.id,
       action: 'DELETE',
