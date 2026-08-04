@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal, Upload, Eye, Pencil } from 'lucide-react';
-import { SaleReviewStatus, SaleStatus, DocumentType, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS } from '@luxus/types';
+import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2 } from 'lucide-react';
+import { SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -23,9 +23,10 @@ import { ResubmitSaleDocumentsDialog } from '@/components/sales/resubmit-sale-do
 import { SaleDetailDialog } from '@/components/sales/sale-detail-dialog';
 import { EditSaleDialog } from '@/components/sales/edit-sale-dialog';
 import { ApproveSaleForTaskDialog } from '@/components/sales/approve-sale-for-task-dialog';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { useAuth } from '@/hooks/useAuth';
-import { isPartnerUser } from '@/lib/rbac';
+import { hasPermission, isPartnerUser } from '@/lib/rbac';
 
 interface Sale {
   id: string;
@@ -36,6 +37,7 @@ interface Sale {
   taskProtocol?: string;
   taskStatus?: string;
   taskSyncStatus?: string;
+  taskDemandId?: string;
   value: number;
   partner?: { name: string };
   client?: { name: string };
@@ -75,9 +77,17 @@ export default function VendasPage() {
   const [detailSaleId, setDetailSaleId] = useState<string | null>(null);
   const [editSaleId, setEditSaleId] = useState<string | null>(null);
   const [approveSaleId, setApproveSaleId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Sale | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const isPartner = isPartnerUser(user);
+  const canDeleteSales = hasPermission(user, PERMISSIONS.SALES_DELETE);
+  const canDelete = (sale: Sale) =>
+    canDeleteSales
+    && sale.status !== SaleStatus.ACTIVATED
+    && !sale.taskDemandId
+    && (sale.taskSyncStatus ?? 'NOT_READY') === 'NOT_READY';
   const canEdit = (sale: Sale) =>
     isPartner
       ? [SaleReviewStatus.DRAFT, SaleReviewStatus.CHANGES_REQUESTED].includes(sale.reviewStatus)
@@ -154,6 +164,19 @@ export default function VendasPage() {
     setReason('');
     setDocMessage('');
     setSelectedDocs({});
+  };
+
+  const deleteSale = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api(`/sales/${deleteTarget.id}`, { method: 'DELETE' });
+      toast({ title: 'Venda excluída', description: `${deleteTarget.protocol} foi removida.`, variant: 'success' });
+      setDeleteTarget(null);
+      await load();
+    } catch (error) {
+      toast({ title: 'Não foi possível excluir a venda', description: error instanceof Error ? error.message : 'Falha', variant: 'destructive' });
+    } finally { setDeleting(false); }
   };
 
   const statusBadge = (status: SaleStatus) => {
@@ -294,6 +317,11 @@ export default function VendasPage() {
                                   <FileText className="mr-2 h-4 w-4" /> Solicitar documentos
                                 </DropdownMenuItem>
                               )}
+                              {canDelete(s) && (
+                                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteTarget(s)}>
+                                  <Trash2 className="mr-2 h-4 w-4" /> Excluir venda
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         )}
@@ -364,6 +392,11 @@ export default function VendasPage() {
                         {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.CONTESTED].includes(s.status) && (
                           <DropdownMenuItem onClick={() => openAction(s, 'documents')}>
                             <FileText className="mr-2 h-4 w-4" /> Solicitar documentos
+                          </DropdownMenuItem>
+                        )}
+                        {canDelete(s) && (
+                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteTarget(s)}>
+                            <Trash2 className="mr-2 h-4 w-4" /> Excluir venda
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -457,6 +490,16 @@ export default function VendasPage() {
         open={!!approveSaleId}
         onOpenChange={(open) => { if (!open) setApproveSaleId(null); }}
         onSuccess={load}
+      />
+
+      <DeleteConfirmationDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        itemType="venda"
+        itemLabel={deleteTarget ? `${deleteTarget.protocol} — ${deleteTarget.client?.name ?? 'cliente'}` : ''}
+        description="A venda, seus documentos e seu histórico serão removidos. Vendas ativadas ou enviadas ao Luxus Task não podem ser excluídas."
+        deleting={deleting}
+        onConfirm={() => void deleteSale()}
       />
     </DashboardLayout>
   );

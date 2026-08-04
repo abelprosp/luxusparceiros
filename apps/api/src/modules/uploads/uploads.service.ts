@@ -15,7 +15,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'fs';
-import { extname, join } from 'path';
+import { basename, extname, join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MESSAGES } from '@/common/constants/messages';
@@ -109,6 +109,19 @@ export class UploadsService {
       data: { avatar: `/uploads/${filename}` },
       select: { avatar: true },
     });
+  }
+
+  removeStoredFiles(documents: Array<{ url: string }>) {
+    for (const document of documents) {
+      const filename = basename(document.url);
+      if (!filename) continue;
+      const filepath = join(this.uploadDir, filename);
+      try {
+        if (existsSync(filepath)) unlinkSync(filepath);
+      } catch {
+        // A exclusão do registro principal não deve falhar por um arquivo órfão no volume.
+      }
+    }
   }
 
   private async validateRelations(

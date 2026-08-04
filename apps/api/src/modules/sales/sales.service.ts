@@ -23,6 +23,7 @@ import { NotificationsService } from '@/modules/notifications/notifications.serv
 import { PlansService } from '@/modules/plans/plans.service';
 import { EventsGateway } from '@/gateway/events.gateway';
 import { TaskIntegrationService } from '@/modules/task-integration/task-integration.service';
+import { UploadsService } from '@/modules/uploads/uploads.service';
 import { MESSAGES } from '@/common/constants/messages';
 import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
 import { assertBranchBelongsToPartner, resolveBranchId } from '@/common/utils/branch-scope';
@@ -84,6 +85,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     private eventsGateway: EventsGateway,
     private plansService: PlansService,
     private taskIntegration: TaskIntegrationService,
+    private uploadsService: UploadsService,
   ) {}
 
   onModuleInit() {
@@ -1052,7 +1054,19 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (sale.status === SaleStatus.ACTIVATED) {
       throw new BadRequestException('Venda ativada não pode ser removida');
     }
-    await this.prisma.sale.delete({ where: { id } });
+    if (
+      sale.taskDemandId
+      || sale.taskSyncStatus !== SaleTaskSyncStatus.NOT_READY
+    ) {
+      throw new BadRequestException(
+        'Venda enviada ou preparada para o Luxus Task não pode ser excluída',
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.document.deleteMany({ where: { saleId: id } }),
+      this.prisma.sale.delete({ where: { id } }),
+    ]);
+    this.uploadsService.removeStoredFiles(sale.documents);
     await this.auditService.log({
       userId: user.id,
       action: 'DELETE',

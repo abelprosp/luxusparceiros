@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { ticketStatusBadge } from '@/lib/status-badge';
 import { useNotifications } from '@/components/notifications/notifications-provider';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 interface Ticket {
   id: string;
@@ -75,6 +76,8 @@ export default function ChamadosPage() {
   const { notifications } = useNotifications();
   const [dragOverColumn, setDragOverColumn] = useState<TicketStatus | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Pick<Ticket, 'id' | 'protocol' | 'subject'> | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const didDragRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -175,6 +178,21 @@ export default function ChamadosPage() {
   const openDetail = (id: string) => {
     setSelectedId(id);
     setDetailOpen(true);
+  };
+
+  const deleteTicket = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api(`/tickets/${deleteTarget.id}`, { method: 'DELETE' });
+      toast({ title: 'Chamado excluído', description: `${deleteTarget.protocol} foi removido.`, variant: 'success' });
+      setDeleteTarget(null);
+      setDetailOpen(false);
+      setSelectedId(null);
+      await load();
+    } catch (error) {
+      toast({ title: 'Não foi possível excluir o chamado', description: error instanceof Error ? error.message : 'Falha', variant: 'destructive' });
+    } finally { setDeleting(false); }
   };
 
   return (
@@ -409,6 +427,10 @@ export default function ChamadosPage() {
           setDetailOpen(false);
           openEdit(id);
         } : undefined}
+        onDelete={canManageTickets ? (ticket) => {
+          setDetailOpen(false);
+          setDeleteTarget(ticket);
+        } : undefined}
       />
       {canWriteTickets && (
         <EditTicketDialog
@@ -418,6 +440,15 @@ export default function ChamadosPage() {
           onSuccess={load}
         />
       )}
+      <DeleteConfirmationDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        itemType="chamado"
+        itemLabel={deleteTarget ? `${deleteTarget.protocol} — ${deleteTarget.subject}` : ''}
+        description="O chamado, as mensagens, os anexos e todo o histórico serão removidos permanentemente."
+        deleting={deleting}
+        onConfirm={() => void deleteTicket()}
+      />
     </DashboardLayout>
   );
 }
