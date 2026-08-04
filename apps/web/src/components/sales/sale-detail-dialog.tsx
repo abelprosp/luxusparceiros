@@ -19,6 +19,9 @@ import {
   DonorOperator,
   SaleStatus,
   SaleReviewStatus,
+  SaleContractStage,
+  DocumentPurpose,
+  SALE_CONTRACT_STAGE_LABELS,
   SALE_REVIEW_STATUS_LABELS,
 } from '@luxus/types';
 import { formatCurrency, formatDateTime, formatDocument, formatPhone } from '@luxus/utils';
@@ -29,6 +32,7 @@ import {
   fetchAuthenticatedFile,
   openAuthenticatedFile,
   replaceUploadedDocument,
+  uploadFile,
 } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerScopedUser } from '@/lib/rbac';
@@ -75,6 +79,7 @@ interface SaleDocument {
   mimeType: string;
   size: number;
   createdAt: string;
+  purpose?: DocumentPurpose;
 }
 
 interface RequiredDocument {
@@ -96,6 +101,10 @@ interface SaleDetail {
   taskDeadline?: string | null;
   taskSyncStatus?: string | null;
   taskSyncError?: string | null;
+  contractStage: SaleContractStage;
+  contractCorrectionReason?: string | null;
+  signedContractSyncStatus?: string | null;
+  signedContractSyncError?: string | null;
   value: number;
   commissionValue?: number;
   commissionRate?: number;
@@ -411,6 +420,8 @@ export function SaleDetailDialog({
   const [sale, setSale] = useState<SaleDetail | null>(null);
   const [tab, setTab] = useState('overview');
   const [lightbox, setLightbox] = useState<{ src: string; label: string } | null>(null);
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+  const signedContractInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     if (!saleId) return;
@@ -481,6 +492,36 @@ export function SaleDetailDialog({
         variant: 'destructive',
       });
       throw err;
+    }
+  };
+
+  const runWorkflowAction = async (path: string, body?: unknown) => {
+    if (!sale) return;
+    setWorkflowBusy(true);
+    try {
+      await api(`/sales/${sale.id}/${path}`, { method: 'POST', body });
+      toast({ title: 'Etapa atualizada', description: 'O fluxo da venda foi atualizado com sucesso.', variant: 'success' });
+      await load();
+    } catch (err) {
+      toast({ title: 'Não foi possível continuar', description: err instanceof Error ? err.message : 'Falha na requisição', variant: 'destructive' });
+    } finally {
+      setWorkflowBusy(false);
+    }
+  };
+
+  const uploadSignedContract = async (file?: File) => {
+    if (!sale || !file) return;
+    setWorkflowBusy(true);
+    try {
+      await uploadFile(file, DocumentType.CONTRACT, { saleId: sale.id, clientId: sale.client?.id }, DocumentPurpose.SIGNED_CONTRACT);
+      await api(`/sales/${sale.id}/submit-signed-contract`, { method: 'POST' });
+      toast({ title: 'Contrato enviado', description: 'O administrador foi avisado para conferir o documento.', variant: 'success' });
+      await load();
+    } catch (err) {
+      toast({ title: 'Erro ao enviar contrato', description: err instanceof Error ? err.message : 'Falha na requisição', variant: 'destructive' });
+    } finally {
+      setWorkflowBusy(false);
+      if (signedContractInput.current) signedContractInput.current.value = '';
     }
   };
 
@@ -562,7 +603,49 @@ export function SaleDetailDialog({
                       label="Formato"
                       value={sale.contractFormat ? CONTRACT_FORMAT_LABELS[sale.contractFormat] : 'Não informado'}
                     />
-                    <DetailRow label="Assinatura" value="Será obtida e tratada no Luxus Task" />
+                    <DetailRow label="Etapa atual" value={SALE_CONTRACT_STAGE_LABELS[sale.contractStage] ?? sale.contractStage} />
+                    <DetailRow label="Aguardando ação de" value={
+                      sale.contractStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN || sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
+                        ? 'Administrador'
+                        : [SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED].includes(sale.contractStage)
+                          ? 'Parceiro'
+                          : sale.contractStage === SaleContractStage.TASK_PROCESSING || sale.contractStage === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
+                            ? 'Luxus Task'
+                            : undefined
+                    } />
+                    {sale.contractCorrectionReason && (
+                      <div className="my-3 rounded-md bg-red-500/10 p-3 text-sm text-red-500">
+                        <p className="font-semibold">Correção solicitada no contrato</p>
+                        <p>{sale.contractCorrectionReason}</p>
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2 py-3">
+                      {!isPartnerScoped && sale.contractStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN && (
+                        <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('release-blank-contract')}>
+                          {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Liberar contrato ao parceiro
+                        </Button>
+                      )}
+                      {isPartnerScoped && [SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED].includes(sale.contractStage) && (
+                        <>
+                          <input ref={signedContractInput} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => void uploadSignedContract(event.target.files?.[0])} />
+                          <Button disabled={workflowBusy} onClick={() => signedContractInput.current?.click()}>
+                            {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                            Anexar e enviar contrato assinado
+                          </Button>
+                        </>
+                      )}
+                      {!isPartnerScoped && sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN && (
+                        <>
+                          <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('approve-signed-contract')}>
+                            {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Aprovar contrato assinado
+                          </Button>
+                          <Button variant="destructive" disabled={workflowBusy} onClick={() => {
+                            const reason = window.prompt('Explique o que o parceiro precisa corrigir no contrato:');
+                            if (reason?.trim()) void runWorkflowAction('request-contract-correction', { reason: reason.trim() });
+                          }}>Solicitar correção</Button>
+                        </>
+                      )}
+                    </div>
                     {sale.correctionReason && (
                       <div className="my-3 rounded-md bg-amber-500/10 p-3 text-sm text-amber-600">
                         <p className="font-semibold">Correção solicitada</p>

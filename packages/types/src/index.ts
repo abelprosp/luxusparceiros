@@ -56,6 +56,35 @@ export enum SaleTaskSyncStatus {
   FAILED = 'FAILED',
 }
 
+export enum SaleContractStage {
+  PRE_REVIEW = 'PRE_REVIEW',
+  TASK_PROCESSING = 'TASK_PROCESSING',
+  BLANK_CONTRACT_READY_FOR_ADMIN = 'BLANK_CONTRACT_READY_FOR_ADMIN',
+  AWAITING_PARTNER_SIGNATURE = 'AWAITING_PARTNER_SIGNATURE',
+  SIGNED_CONTRACT_READY_FOR_ADMIN = 'SIGNED_CONTRACT_READY_FOR_ADMIN',
+  TASK_VALIDATING_SIGNED_CONTRACT = 'TASK_VALIDATING_SIGNED_CONTRACT',
+  CHANGES_REQUESTED = 'CHANGES_REQUESTED',
+  COMPLETED = 'COMPLETED',
+}
+
+export enum DocumentPurpose {
+  GENERAL = 'GENERAL',
+  ORIGINAL_SALE = 'ORIGINAL_SALE',
+  BLANK_CONTRACT = 'BLANK_CONTRACT',
+  SIGNED_CONTRACT = 'SIGNED_CONTRACT',
+}
+
+export const SALE_CONTRACT_STAGE_LABELS: Record<SaleContractStage, string> = {
+  [SaleContractStage.PRE_REVIEW]: 'Aguardando envio ao Luxus Task',
+  [SaleContractStage.TASK_PROCESSING]: 'Em tramitação no Luxus Task',
+  [SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN]: 'Contrato em branco aguardando o administrador',
+  [SaleContractStage.AWAITING_PARTNER_SIGNATURE]: 'Aguardando assinatura do parceiro',
+  [SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN]: 'Contrato assinado aguardando conferência',
+  [SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT]: 'Contrato assinado em validação no Luxus Task',
+  [SaleContractStage.CHANGES_REQUESTED]: 'Correção solicitada',
+  [SaleContractStage.COMPLETED]: 'Venda concluída',
+};
+
 export enum CommissionType {
   PERCENTAGE = 'PERCENTAGE',
   FIXED = 'FIXED',

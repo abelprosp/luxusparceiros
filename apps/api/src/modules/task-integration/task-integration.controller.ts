@@ -39,6 +39,20 @@ export class TaskIntegrationController {
     return this.integration.applyCallback(dto);
   }
 
+  @Get('task-integration/sales/:saleId/attachments/:attachmentId')
+  @RequirePermissions(PERMISSIONS.SALES_READ)
+  async taskSaleAttachment(
+    @Param('saleId') saleId: string,
+    @Param('attachmentId') attachmentId: string,
+    @Res() response: Response,
+  ) {
+    const file = await this.integration.downloadTaskAttachment(saleId, attachmentId);
+    response.setHeader('Content-Type', file.mimeType);
+    response.setHeader('Content-Length', file.buffer.length);
+    response.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`);
+    response.end(file.buffer);
+  }
+
   @Public()
   @UseGuards(TaskIntegrationGuard)
   @Get('integrations/luxus-task/sales/:saleId/documents/:documentId')
