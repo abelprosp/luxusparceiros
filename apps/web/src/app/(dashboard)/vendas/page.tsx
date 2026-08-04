@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal, Upload, Eye, Pencil } from 'lucide-react';
-import { SaleStatus, DocumentType, SALE_STATUS_LABELS } from '@luxus/types';
+import { SaleReviewStatus, SaleStatus, DocumentType, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -22,6 +22,7 @@ import { CreateSaleButton } from '@/components/sales/create-sale-dialog';
 import { ResubmitSaleDocumentsDialog } from '@/components/sales/resubmit-sale-documents-dialog';
 import { SaleDetailDialog } from '@/components/sales/sale-detail-dialog';
 import { EditSaleDialog } from '@/components/sales/edit-sale-dialog';
+import { ApproveSaleForTaskDialog } from '@/components/sales/approve-sale-for-task-dialog';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerUser } from '@/lib/rbac';
@@ -30,6 +31,11 @@ interface Sale {
   id: string;
   protocol: string;
   status: SaleStatus;
+  reviewStatus: SaleReviewStatus;
+  correctionReason?: string;
+  taskProtocol?: string;
+  taskStatus?: string;
+  taskSyncStatus?: string;
   value: number;
   partner?: { name: string };
   client?: { name: string };
@@ -68,12 +74,16 @@ export default function VendasPage() {
   const [resubmitSaleId, setResubmitSaleId] = useState<string | null>(null);
   const [detailSaleId, setDetailSaleId] = useState<string | null>(null);
   const [editSaleId, setEditSaleId] = useState<string | null>(null);
+  const [approveSaleId, setApproveSaleId] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const isPartner = isPartnerUser(user);
   const canEdit = (sale: Sale) =>
-    [SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.CONTESTED].includes(sale.status) ||
-    (!isPartner && sale.status === SaleStatus.DOCUMENTS_PENDING);
+    isPartner
+      ? [SaleReviewStatus.DRAFT, SaleReviewStatus.CHANGES_REQUESTED].includes(sale.reviewStatus)
+      : ![SaleReviewStatus.APPROVED, SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus);
+  const canReview = (sale: Sale) =>
+    [SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW].includes(sale.reviewStatus);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,26 +108,21 @@ export default function VendasPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const saleId = new URLSearchParams(window.location.search).get('sale');
+    if (saleId) setDetailSaleId(saleId);
+  }, []);
+
   const handleApprove = async (sale: Sale) => {
-    try {
-      await api(`/sales/${sale.id}/approve`, { method: 'POST' });
-      toast({ title: 'Venda aprovada', variant: 'success' });
-      load();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Falha';
-      toast({ title: 'Não foi possível aprovar', description: message, variant: 'destructive' });
-      if (message.toLowerCase().includes('contrato assinado')) {
-        setEditSaleId(sale.id);
-      }
-    }
+    setApproveSaleId(sale.id);
   };
 
   const handleAction = async () => {
     if (!selected || !actionDialog) return;
     try {
       if (actionDialog === 'reject') {
-        await api(`/sales/${selected.id}/reject`, { method: 'POST', body: { reason } });
-        toast({ title: 'Venda rejeitada', variant: 'success' });
+        await api(`/sales/${selected.id}/request-correction`, { method: 'POST', body: { reason } });
+        toast({ title: 'Venda devolvida para correção', variant: 'success' });
       } else if (actionDialog === 'contest') {
         await api(`/sales/${selected.id}/contest`, { method: 'POST', body: { reason } });
         toast({ title: 'Venda contestada', variant: 'success' });
@@ -224,7 +229,12 @@ export default function VendasPage() {
                       <TableCell>{formatCurrency(Number(s.value))}</TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          <Badge variant={statusBadge(s.status)}>{SALE_STATUS_LABELS[s.status] ?? s.status}</Badge>
+                          <Badge variant={s.reviewStatus === SaleReviewStatus.APPROVED ? 'success' : s.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'destructive' : 'outline'}>
+                            {SALE_REVIEW_STATUS_LABELS[s.reviewStatus] ?? s.reviewStatus}
+                          </Badge>
+                          {s.reviewStatus === SaleReviewStatus.APPROVED && (
+                            <span className="text-xs text-muted-foreground">Task: {s.taskProtocol ?? (s.taskSyncStatus === 'SYNCED' ? s.taskStatus : 'enviando...')}</span>
+                          )}
                           {isPartner && s.status === SaleStatus.DOCUMENTS_PENDING && s.requiredDocuments?.length ? (
                             <span className="text-xs text-amber-600">
                               {s.requiredDocuments.filter((d) => !d.fulfilled).length} doc(s) pendente(s)
@@ -264,14 +274,14 @@ export default function VendasPage() {
                                   <Pencil className="mr-2 h-4 w-4" /> Editar venda
                                 </DropdownMenuItem>
                               )}
-                              {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                              {canReview(s) && (
                                 <DropdownMenuItem onClick={() => handleApprove(s)}>
                                   <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
                                 </DropdownMenuItem>
                               )}
-                              {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                              {canReview(s) && (
                                 <DropdownMenuItem onClick={() => openAction(s, 'reject')}>
-                                  <X className="mr-2 h-4 w-4 text-red-600" /> Rejeitar
+                                  <X className="mr-2 h-4 w-4 text-red-600" /> Solicitar correção
                                 </DropdownMenuItem>
                               )}
                               {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING].includes(s.status) && (
@@ -301,7 +311,7 @@ export default function VendasPage() {
                 meta={`${formatCurrency(Number(s.value))} · ${formatDate(s.createdAt)}`}
                 badges={
                   <>
-                    <Badge variant={statusBadge(s.status)}>{SALE_STATUS_LABELS[s.status] ?? s.status}</Badge>
+                    <Badge variant={s.reviewStatus === SaleReviewStatus.APPROVED ? 'success' : s.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'destructive' : 'outline'}>{SALE_REVIEW_STATUS_LABELS[s.reviewStatus] ?? s.reviewStatus}</Badge>
                     {!isPartner && s.partner?.name ? (
                       <Badge variant="outline">{s.partner.name}</Badge>
                     ) : null}
@@ -336,14 +346,14 @@ export default function VendasPage() {
                             <Pencil className="mr-2 h-4 w-4" /> Editar venda
                           </DropdownMenuItem>
                         )}
-                        {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                        {canReview(s) && (
                           <DropdownMenuItem onClick={() => handleApprove(s)}>
                             <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
                           </DropdownMenuItem>
                         )}
-                        {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING, SaleStatus.CONTESTED].includes(s.status) && (
+                        {canReview(s) && (
                           <DropdownMenuItem onClick={() => openAction(s, 'reject')}>
-                            <X className="mr-2 h-4 w-4 text-red-600" /> Rejeitar
+                            <X className="mr-2 h-4 w-4 text-red-600" /> Solicitar correção
                           </DropdownMenuItem>
                         )}
                         {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING].includes(s.status) && (
@@ -376,11 +386,11 @@ export default function VendasPage() {
       <Dialog open={actionDialog === 'reject' || actionDialog === 'contest'} onOpenChange={() => setActionDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{actionDialog === 'reject' ? 'Rejeitar venda' : 'Contestar venda'}</DialogTitle>
+            <DialogTitle>{actionDialog === 'reject' ? 'Solicitar correção da venda' : 'Contestar venda'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-4">
-            <Label>Motivo</Label>
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Descreva o motivo..." />
+            <Label>O que o parceiro precisa corrigir *</Label>
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Explique de forma objetiva..." />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setActionDialog(null)}>Cancelar</Button>
@@ -439,6 +449,13 @@ export default function VendasPage() {
         saleId={editSaleId}
         open={!!editSaleId}
         onOpenChange={(open) => { if (!open) setEditSaleId(null); }}
+        onSuccess={load}
+      />
+
+      <ApproveSaleForTaskDialog
+        saleId={approveSaleId}
+        open={!!approveSaleId}
+        onOpenChange={(open) => { if (!open) setApproveSaleId(null); }}
         onSuccess={load}
       />
     </DashboardLayout>

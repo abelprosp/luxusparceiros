@@ -3,8 +3,17 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
-import { CommissionType, SaleStatus, Prisma, UserRole } from '@prisma/client';
+import {
+  CommissionType,
+  SaleReviewStatus,
+  SaleStatus,
+  SaleTaskSyncStatus,
+  Prisma,
+  UserRole,
+} from '@prisma/client';
 import { AuthUser } from '@luxus/types';
 import { generateProtocol, calculatePlanCommission } from '@luxus/utils';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -13,18 +22,21 @@ import { CommissionsService } from '@/modules/commissions/commissions.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { PlansService } from '@/modules/plans/plans.service';
 import { EventsGateway } from '@/gateway/events.gateway';
+import { TaskIntegrationService } from '@/modules/task-integration/task-integration.service';
 import { MESSAGES } from '@/common/constants/messages';
 import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
 import { assertBranchBelongsToPartner, resolveBranchId } from '@/common/utils/branch-scope';
 import {
   ContestSaleDto,
+  ApproveSaleForTaskDto,
   CreateSaleDto,
   RejectSaleDto,
   RequestSaleDocumentsDto,
+  RequestSaleCorrectionDto,
   UpdateSaleDto,
   UpdateSaleStatusDto,
 } from './dto/sale.dto';
-import { getRequiredDocumentsForSale, hasSignedContract } from './sale-documents.constants';
+import { getRequiredDocumentsForSale } from './sale-documents.constants';
 
 const STATUS_TRANSITIONS: Record<SaleStatus, SaleStatus[]> = {
   [SaleStatus.IN_ANALYSIS]: [
@@ -60,7 +72,10 @@ const STATUS_TRANSITIONS: Record<SaleStatus, SaleStatus[]> = {
 };
 
 @Injectable()
-export class SalesService {
+export class SalesService implements OnModuleInit, OnModuleDestroy {
+  private taskSyncTimer?: NodeJS.Timeout;
+  private taskSyncRunning = false;
+
   constructor(
     private prisma: PrismaService,
     private auditService: AuditService,
@@ -68,7 +83,18 @@ export class SalesService {
     private notificationsService: NotificationsService,
     private eventsGateway: EventsGateway,
     private plansService: PlansService,
+    private taskIntegration: TaskIntegrationService,
   ) {}
+
+  onModuleInit() {
+    this.taskSyncTimer = setInterval(() => void this.processTaskSyncQueue(), 30_000);
+    this.taskSyncTimer.unref();
+    setImmediate(() => void this.processTaskSyncQueue());
+  }
+
+  onModuleDestroy() {
+    if (this.taskSyncTimer) clearInterval(this.taskSyncTimer);
+  }
 
   private async resolveCommission(partnerId: string, planId: string, saleValue: number) {
     const partnerPlan = await this.prisma.partnerPlan.findUnique({
@@ -155,6 +181,7 @@ export class SalesService {
         createdBy: { select: { id: true, name: true } },
         commission: true,
         documents: true,
+        timeline: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!sale) throw new NotFoundException(MESSAGES.NOT_FOUND);
@@ -301,6 +328,15 @@ export class SalesService {
         newNumber: dto.newNumber,
         notes: dto.notes,
         requiredDocuments: getRequiredDocumentsForSale() as Prisma.InputJsonValue,
+        reviewStatus: SaleReviewStatus.DRAFT,
+        timeline: {
+          create: {
+            actorId: user.id,
+            actorName: user.name,
+            action: 'Venda criada como rascunho',
+            toReviewStatus: SaleReviewStatus.DRAFT,
+          },
+        },
       },
       include: {
         client: { select: { id: true, name: true, phone: true, document: true, rg: true, email: true } },
@@ -333,6 +369,12 @@ export class SalesService {
     ];
     if (!editableStatuses.includes(existing.status)) {
       throw new BadRequestException('Venda não pode ser editada neste status');
+    }
+    if (
+      !isAdminRole(user.role)
+      && !([SaleReviewStatus.DRAFT, SaleReviewStatus.CHANGES_REQUESTED] as SaleReviewStatus[]).includes(existing.reviewStatus)
+    ) {
+      throw new BadRequestException('A venda só pode ser editada pelo parceiro quando está em rascunho ou aguardando correção');
     }
     if (
       existing.status === SaleStatus.DOCUMENTS_PENDING &&
@@ -456,6 +498,16 @@ export class SalesService {
       },
     });
 
+    await this.prisma.saleTimeline?.create({
+      data: {
+        saleId: id,
+        actorId: user.id,
+        actorName: user.name,
+        action: 'Dados da venda atualizados',
+        changes: Object.keys(dto) as Prisma.InputJsonValue,
+      },
+    });
+
     await this.auditService.log({
       userId: user.id,
       action: 'UPDATE',
@@ -467,19 +519,311 @@ export class SalesService {
     return sale;
   }
 
+  async submitForReview(id: string, user: AuthUser) {
+    const sale = await this.findOne(id, user);
+    if (!([SaleReviewStatus.DRAFT, SaleReviewStatus.CHANGES_REQUESTED] as SaleReviewStatus[]).includes(sale.reviewStatus)) {
+      throw new BadRequestException('Esta venda não está disponível para envio ou reenvio');
+    }
+    if (!sale.contractFormat) {
+      throw new BadRequestException('Informe o formato do contrato: impressão ou ZapSign');
+    }
+    const requiredTypes = ['CHIP_PHOTO', 'CPF', 'RG'];
+    const uploaded = new Set(sale.documents.map((document) => document.type));
+    const missing = requiredTypes.filter((type) => !uploaded.has(type as never));
+    if (missing.length) {
+      throw new BadRequestException('Anexe a foto do chip, do CPF e do RG antes de enviar');
+    }
+    const previous = sale.reviewStatus;
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        reviewStatus: SaleReviewStatus.AWAITING_REVIEW,
+        submittedAt: new Date(),
+        correctionReason: null,
+        reviewRevision: previous === SaleReviewStatus.CHANGES_REQUESTED
+          ? { increment: 1 }
+          : undefined,
+        timeline: {
+          create: {
+            actorId: user.id,
+            actorName: user.name,
+            action: previous === SaleReviewStatus.CHANGES_REQUESTED
+              ? 'Venda corrigida e reenviada para análise'
+              : 'Venda enviada para análise',
+            fromReviewStatus: previous,
+            toReviewStatus: SaleReviewStatus.AWAITING_REVIEW,
+          },
+        },
+      },
+      include: { partner: { select: { name: true } }, client: { select: { name: true } } },
+    });
+    await this.notificationsService.createForAdminUsers({
+      type: 'SYSTEM',
+      title: previous === SaleReviewStatus.CHANGES_REQUESTED ? 'Venda corrigida' : 'Nova venda para analisar',
+      message: `${updated.protocol} · ${updated.partner.name} · ${updated.client.name}`,
+      data: { saleId: updated.id, path: `/vendas?sale=${updated.id}` },
+    });
+    this.eventsGateway.emitToPartner(updated.partnerId, 'sale:updated', updated);
+    return updated;
+  }
+
+  async startReview(id: string, user: AuthUser) {
+    this.assertAdmin(user);
+    const sale = await this.findOne(id, user);
+    if (!([SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW] as SaleReviewStatus[]).includes(sale.reviewStatus)) {
+      throw new BadRequestException('Esta venda não está aguardando análise');
+    }
+    if (sale.reviewStatus === SaleReviewStatus.UNDER_REVIEW) return sale;
+    return this.prisma.sale.update({
+      where: { id },
+      data: {
+        reviewStatus: SaleReviewStatus.UNDER_REVIEW,
+        reviewStartedAt: new Date(),
+        timeline: { create: {
+          actorId: user.id,
+          actorName: user.name,
+          action: 'Análise iniciada pelo administrador',
+          fromReviewStatus: sale.reviewStatus,
+          toReviewStatus: SaleReviewStatus.UNDER_REVIEW,
+        } },
+      },
+    });
+  }
+
+  async requestCorrection(id: string, dto: RequestSaleCorrectionDto, user: AuthUser) {
+    this.assertAdmin(user);
+    const sale = await this.findOne(id, user);
+    if (!([SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW] as SaleReviewStatus[]).includes(sale.reviewStatus)) {
+      throw new BadRequestException('Esta venda não pode ser devolvida neste estado');
+    }
+    const reason = dto.reason.trim();
+    if (!reason) throw new BadRequestException('Explique ao parceiro o que precisa ser corrigido');
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        reviewStatus: SaleReviewStatus.CHANGES_REQUESTED,
+        correctionReason: reason,
+        reviewedAt: new Date(),
+        reviewedById: user.id,
+        timeline: { create: {
+          actorId: user.id,
+          actorName: user.name,
+          action: 'Correção solicitada ao parceiro',
+          fromReviewStatus: sale.reviewStatus,
+          toReviewStatus: SaleReviewStatus.CHANGES_REQUESTED,
+          details: reason,
+        } },
+      },
+    });
+    await this.notificationsService.createForPartnerUsers(sale.partnerId, {
+      type: 'SALE_CONTESTED',
+      title: 'Venda precisa de correção',
+      message: `${sale.protocol}: ${reason}`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    });
+    this.eventsGateway.emitToPartner(sale.partnerId, 'sale:updated', updated);
+    return updated;
+  }
+
+  async approveForTask(id: string, dto: ApproveSaleForTaskDto, user: AuthUser) {
+    this.assertAdmin(user);
+    if (!this.taskIntegration.isConfigured()) {
+      throw new BadRequestException('Configure a integração com o Luxus Task antes de aprovar a venda');
+    }
+    const sale = await this.findOne(id, user);
+    if (!([SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW] as SaleReviewStatus[]).includes(sale.reviewStatus)) {
+      throw new BadRequestException('Esta venda não está disponível para aprovação');
+    }
+    if (!sale.contractFormat) throw new BadRequestException('O formato do contrato não foi informado');
+    if (!dto.clientId && (!dto.clientName?.trim() || !dto.clientDocument?.trim())) {
+      throw new BadRequestException('Selecione um cliente do Luxus Task ou informe nome e CPF/CNPJ');
+    }
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        reviewStatus: SaleReviewStatus.APPROVED,
+        reviewedAt: new Date(),
+        reviewedById: user.id,
+        taskResponsibleId: dto.responsibleId,
+        taskClientId: dto.clientId,
+        taskClientName: dto.clientName?.trim(),
+        taskClientDocumentType: dto.clientDocumentType,
+        taskClientDocument: dto.clientDocument?.replace(/\D/g, ''),
+        taskDeadline: new Date(dto.deadline),
+        taskPriority: dto.priority ?? false,
+        taskSyncStatus: SaleTaskSyncStatus.PENDING,
+        taskSyncError: null,
+        taskNextRetryAt: new Date(),
+        notes: dto.notes?.trim() ? [sale.notes, dto.notes.trim()].filter(Boolean).join('\n\n') : sale.notes,
+        timeline: { create: {
+          actorId: user.id,
+          actorName: user.name,
+          action: 'Venda aprovada para envio ao Luxus Task',
+          fromReviewStatus: sale.reviewStatus,
+          toReviewStatus: SaleReviewStatus.APPROVED,
+          details: `Formato do contrato: ${sale.contractFormat === 'ZAPSIGN' ? 'ZapSign' : 'Impressão'}`,
+        } },
+      },
+    });
+    setImmediate(() => void this.processTaskSyncQueue());
+    await this.notificationsService.createForPartnerUsers(sale.partnerId, {
+      type: 'SALE_APPROVED',
+      title: 'Venda aprovada pelo administrador',
+      message: `${sale.protocol} foi aprovada e será encaminhada ao Luxus Task.`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    });
+    return updated;
+  }
+
+  async retryTaskSync(id: string, user: AuthUser) {
+    this.assertAdmin(user);
+    const sale = await this.findOne(id, user);
+    if (sale.reviewStatus !== SaleReviewStatus.APPROVED) {
+      throw new BadRequestException('A venda ainda não foi aprovada para o Luxus Task');
+    }
+    await this.prisma.sale.update({
+      where: { id },
+      data: { taskSyncStatus: SaleTaskSyncStatus.PENDING, taskSyncError: null, taskNextRetryAt: new Date() },
+    });
+    setImmediate(() => void this.processTaskSyncQueue());
+    return { queued: true };
+  }
+
+  private assertAdmin(user: AuthUser) {
+    if (!isAdminRole(user.role)) throw new ForbiddenException('Apenas administradores podem revisar vendas');
+  }
+
+  private retryDelayMs(attempts: number) {
+    return Math.min(15 * 60_000, 30_000 * 2 ** Math.min(attempts, 5));
+  }
+
+  private async processTaskSyncQueue() {
+    if (this.taskSyncRunning || !this.taskIntegration.isConfigured()) return;
+    this.taskSyncRunning = true;
+    try {
+      await this.prisma.sale.updateMany({
+        where: { taskSyncStatus: SaleTaskSyncStatus.PROCESSING, taskSyncLockedAt: { lt: new Date(Date.now() - 5 * 60_000) } },
+        data: { taskSyncStatus: SaleTaskSyncStatus.RETRY, taskSyncLockedAt: null, taskNextRetryAt: new Date() },
+      });
+      const candidates = await this.prisma.sale.findMany({
+        where: {
+          taskDemandId: null,
+          taskResponsibleId: { not: null },
+          taskSyncStatus: { in: [SaleTaskSyncStatus.PENDING, SaleTaskSyncStatus.RETRY] },
+          OR: [{ taskNextRetryAt: null }, { taskNextRetryAt: { lte: new Date() } }],
+        },
+        select: { id: true },
+        take: 10,
+        orderBy: [{ taskNextRetryAt: 'asc' }, { createdAt: 'asc' }],
+      });
+      for (const candidate of candidates) await this.syncSaleToTask(candidate.id);
+    } finally {
+      this.taskSyncRunning = false;
+    }
+  }
+
+  private async syncSaleToTask(id: string) {
+    const claimed = await this.prisma.sale.updateMany({
+      where: { id, taskDemandId: null, taskSyncStatus: { in: [SaleTaskSyncStatus.PENDING, SaleTaskSyncStatus.RETRY] } },
+      data: { taskSyncStatus: SaleTaskSyncStatus.PROCESSING, taskSyncLockedAt: new Date() },
+    });
+    if (!claimed.count) return;
+    const sale = await this.prisma.sale.findUnique({
+      where: { id },
+      include: {
+        partner: { select: { name: true } }, branch: { select: { name: true } },
+        client: true, operator: { select: { name: true } }, plan: { select: { name: true } },
+        createdBy: { select: { name: true, email: true } }, documents: true,
+      },
+    });
+    if (!sale?.taskResponsibleId || !sale.taskDeadline) return;
+    try {
+      let task;
+      try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
+      if (!task) {
+        const contract = sale.contractFormat === 'ZAPSIGN' ? 'ZapSign' : 'Impressão';
+        task = await this.taskIntegration.createDemand({
+          requestId: sale.id,
+          responsibleId: sale.taskResponsibleId,
+          clientId: sale.taskClientId ?? undefined,
+          clientName: sale.taskClientName ?? sale.client.name,
+          clientDocumentType: (sale.taskClientDocumentType as 'pf' | 'pj' | null) ?? undefined,
+          clientDocument: sale.taskClientDocument ?? undefined,
+          deadline: sale.taskDeadline.toISOString().slice(0, 10),
+          subject: `Venda ${sale.protocol} — ${sale.partner.name}`,
+          description: [
+            'ORIGEM: LUXUS PARCEIROS — VENDA',
+            `Formato do contrato: ${contract} (assinatura será obtida no Luxus Task)`,
+            `Parceiro: ${sale.partner.name}`,
+            sale.branch?.name ? `Loja: ${sale.branch.name}` : 'Loja: Matriz',
+            `Cliente da venda: ${sale.client.name} — ${sale.client.document}`,
+            `Operadora / Plano: ${sale.operator.name} / ${sale.plan.name}`,
+            `Linha: ${sale.newNumber ?? '-'}`,
+            `ICCID: ${sale.chipIccid ?? '-'}`,
+            sale.isPortability ? `Portabilidade: ${sale.portabilityNumber ?? '-'} (${sale.donorOperator ?? '-'})` : '',
+            sale.notes ? `Observações: ${sale.notes}` : '',
+            `Documentos recebidos no Parceiros: ${sale.documents.map((document) => `${document.type}: ${document.name}`).join('; ')}`,
+          ].filter(Boolean).join('\n'),
+          localProtocol: sale.protocol,
+          partnerName: sale.partner.name,
+          branchName: sale.branch?.name,
+          requesterName: sale.createdBy.name,
+          requesterEmail: sale.createdBy.email,
+          priority: sale.taskPriority,
+          documents: sale.documents.map((document) => ({
+            id: document.id,
+            name: document.name,
+            type: document.type,
+            mimeType: document.mimeType,
+            size: document.size,
+          })),
+        });
+      }
+      await this.prisma.sale.update({
+        where: { id },
+        data: {
+          taskDemandId: task.id, taskProtocol: task.protocol, taskStatus: task.status,
+          taskResponsibleId: task.responsible?.id ?? sale.taskResponsibleId,
+          taskResponsibleName: task.responsible?.name,
+          taskClientId: task.client?.id ?? sale.taskClientId,
+          taskClientName: task.client?.name ?? sale.taskClientName,
+          taskSyncStatus: SaleTaskSyncStatus.SYNCED, taskSyncError: null,
+          taskSyncLockedAt: null, taskNextRetryAt: null, taskLastSyncAt: new Date(),
+          timeline: { create: { action: `Venda vinculada ao Luxus Task (${task.protocol})` } },
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao sincronizar';
+      await this.prisma.sale.update({
+        where: { id },
+        data: {
+          taskSyncStatus: SaleTaskSyncStatus.RETRY, taskSyncError: message,
+          taskSyncAttempts: { increment: 1 }, taskSyncLockedAt: null,
+          taskNextRetryAt: new Date(Date.now() + this.retryDelayMs(sale.taskSyncAttempts)),
+          taskLastSyncAt: new Date(),
+        },
+      });
+      if (!sale.taskSyncAttempts) await this.notificationsService.createForAdminUsers({
+        type: 'SYSTEM', title: 'Venda aguardando sincronização com o Luxus Task',
+        message: `${sale.protocol} continuará tentando automaticamente. ${message}`,
+        data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+      });
+    }
+  }
+
   async updateStatus(id: string, dto: UpdateSaleStatusDto, user: AuthUser) {
     if (!isAdminRole(user.role)) {
       throw new ForbiddenException('Apenas administradores podem alterar o status da venda');
     }
     const sale = await this.findOne(id, user);
+    if (dto.status === SaleStatus.APPROVED) {
+      throw new BadRequestException('Use a aprovação para o Luxus Task e complete responsável, cliente e prazo');
+    }
     const allowed = STATUS_TRANSITIONS[sale.status] ?? [];
     if (!allowed.includes(dto.status)) {
       throw new BadRequestException(MESSAGES.SALE_STATUS_INVALID);
     }
-    if (dto.status === SaleStatus.APPROVED || dto.status === SaleStatus.ACTIVATED) {
-      if (!hasSignedContract(sale.documents)) {
-        throw new BadRequestException('Anexe o contrato assinado antes de aprovar a venda');
-      }
+    if (dto.status === SaleStatus.ACTIVATED) {
       const requiredDocuments = (sale.requiredDocuments ?? []) as Array<{
         label: string;
         fulfilled: boolean;
@@ -493,7 +837,6 @@ export class SalesService {
     }
 
     const data: Prisma.SaleUpdateInput = { status: dto.status };
-    if (dto.status === SaleStatus.APPROVED) data.approvedAt = new Date();
     if (dto.status === SaleStatus.ACTIVATED) data.activatedAt = new Date();
     if (dto.status === SaleStatus.CANCELLED) data.cancelledAt = new Date();
     if (dto.status === SaleStatus.REJECTED) data.rejectionReason = dto.rejectionReason;
@@ -507,16 +850,14 @@ export class SalesService {
 
     await this.notifyStatusChange(updated, dto.status, dto.rejectionReason ?? dto.contestReason);
 
-    if (dto.status === SaleStatus.APPROVED) {
+    if (dto.status === SaleStatus.ACTIVATED && !updated.commission) {
       await this.commissionsService.createFromSale(updated, user.id);
     }
 
     await this.auditService.log({
       userId: user.id,
       action:
-        dto.status === SaleStatus.APPROVED
-          ? 'APPROVE'
-          : dto.status === SaleStatus.REJECTED
+        dto.status === SaleStatus.REJECTED
             ? 'REJECT'
             : 'UPDATE',
       module: 'sales',
@@ -533,7 +874,7 @@ export class SalesService {
     if (!isAdminRole(user.role)) {
       throw new ForbiddenException('Apenas administradores podem aprovar vendas');
     }
-    return this.updateStatus(id, { status: SaleStatus.APPROVED }, user);
+    throw new BadRequestException('A aprovação direta foi substituída por Aprovar e enviar ao Luxus Task');
   }
 
   async reject(id: string, dto: RejectSaleDto, user: AuthUser) {

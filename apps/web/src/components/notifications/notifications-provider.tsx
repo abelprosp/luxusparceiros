@@ -168,7 +168,7 @@ export function useNotifications() {
 
 export function getNotificationPath(data?: Record<string, unknown> | null): string | null {
   if (!data) return null;
-  if (data.saleId) return '/vendas';
+  if (data.saleId) return `/vendas?sale=${encodeURIComponent(String(data.saleId))}`;
   if (data.ticketId) return `/chamados?ticket=${encodeURIComponent(String(data.ticketId))}`;
   if (data.commissionId) return '/comissoes';
   if (data.requestId) return `/solicitacoes?request=${encodeURIComponent(String(data.requestId))}`;

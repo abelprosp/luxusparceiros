@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AlertCircle, Plus } from 'lucide-react';
 import { ContractFormat, DocumentType, DonorOperator } from '@luxus/types';
 import { api, getPaginated, uploadFile } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,7 +9,6 @@ import { isPartnerScopedUser } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toaster';
@@ -87,9 +86,9 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
   const [chipPhoto, setChipPhoto] = useState<File | null>(null);
   const [cpfPhoto, setCpfPhoto] = useState<File | null>(null);
   const [rgPhoto, setRgPhoto] = useState<File | null>(null);
-  const [contractFile, setContractFile] = useState<File | null>(null);
-  const [contractSigned, setContractSigned] = useState(false);
   const [contractFormat, setContractFormat] = useState<ContractFormat | ''>('');
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const validationRef = useRef<HTMLDivElement>(null);
   const [client, setClient] = useState(emptyClient);
   const [isPortability, setIsPortability] = useState(false);
   const [portabilityNumber, setPortabilityNumber] = useState('');
@@ -171,9 +170,8 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     setChipPhoto(null);
     setCpfPhoto(null);
     setRgPhoto(null);
-    setContractFile(null);
-    setContractSigned(false);
     setContractFormat('');
+    setValidationErrors([]);
     setClient(emptyClient);
     setIsPortability(false);
     setPortabilityNumber('');
@@ -181,6 +179,28 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
   };
 
   const handleSave = async () => {
+    const errors: string[] = [];
+    if (!partnerId) errors.push('Parceiro');
+    if (!operatorId) errors.push('Operadora');
+    if (!planId) errors.push('Plano');
+    if (!newNumber.trim()) errors.push('Número da linha');
+    if (!contractFormat) errors.push('Formato do contrato');
+    if (!client.name.trim()) errors.push('Nome do cliente');
+    if (!client.document.trim()) errors.push('CPF do cliente');
+    if (!client.phone.trim()) errors.push('Telefone de contato');
+    if (!chipPhoto) errors.push('Foto do chip');
+    if (!cpfPhoto) errors.push('Foto do CPF');
+    if (!rgPhoto) errors.push('Foto do RG');
+    if (isVirginChip && !chipIccid) errors.push('ICCID do chip');
+    if (isPortability && !donorOperator) errors.push('Operadora doadora');
+    if (isPortability && !portabilityNumber.trim()) errors.push('Número a ser portado');
+    if (errors.length) {
+      setValidationErrors(errors);
+      requestAnimationFrame(() => validationRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      toast({ title: `${errors.length} campo(s) precisam de atenção`, description: errors.join(', '), variant: 'destructive' });
+      return;
+    }
+    setValidationErrors([]);
     if (isPartnerScoped && !user?.partnerId) {
       toast({
         title: 'Conta sem parceiro vinculado',
@@ -237,15 +257,6 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       return;
     }
 
-    if (contractSigned && !contractFile) {
-      toast({
-        title: 'Anexe o contrato assinado',
-        description: 'Ao marcar que o contrato está assinado, o arquivo precisa ser anexado.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setSaving(true);
     try {
       const sale = await api<{ id: string; client?: { id: string } }>('/sales', {
@@ -275,10 +286,12 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       await uploadFile(chipPhoto, DocumentType.CHIP_PHOTO, { saleId: sale.id, clientId });
       await uploadFile(cpfPhoto, DocumentType.CPF, { saleId: sale.id, clientId });
       await uploadFile(rgPhoto, DocumentType.RG, { saleId: sale.id, clientId });
-      if (contractFile) {
-        await uploadFile(contractFile, DocumentType.CONTRACT, { saleId: sale.id, clientId });
-      }
-      toast({ title: 'Venda registrada', variant: 'success' });
+      await api(`/sales/${sale.id}/submit`, { method: 'POST' });
+      toast({
+        title: 'Venda enviada para análise',
+        description: 'O administrador foi avisado e poderá revisar os dados.',
+        variant: 'success',
+      });
       reset();
       onOpenChange(false);
       onSuccess();
@@ -291,12 +304,23 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent
+        className="max-h-[90vh] max-w-2xl overflow-y-auto"
+        onInteractOutside={(event) => event.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>Nova Venda</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6 py-2">
+          {validationErrors.length > 0 && (
+            <div ref={validationRef} className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm" role="alert">
+              <div className="flex items-center gap-2 font-semibold text-destructive">
+                <AlertCircle className="h-4 w-4" /> Revise os campos destacados abaixo
+              </div>
+              <p className="mt-2 text-muted-foreground">{validationErrors.join(' · ')}</p>
+            </div>
+          )}
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-muted-foreground">Dados da linha vendida</h3>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -427,42 +451,13 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
             </div>
           </section>
 
-          <section className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+          <section className="space-y-3 rounded-lg border border-primary/30 bg-primary/10 p-4">
             <div>
-              <h3 className="text-sm font-semibold">Contrato da venda</h3>
+              <h3 className="text-sm font-semibold">Assinatura do contrato</h3>
               <p className="text-xs text-muted-foreground">
-                O contrato pode ser anexado agora ou depois, pela opção Editar venda.
+                Não é necessário anexar contrato assinado nesta etapa. O Luxus Task cuidará da assinatura conforme o formato escolhido acima.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="contract-signed"
-                checked={contractSigned}
-                onCheckedChange={(checked) => {
-                  setContractSigned(checked === true);
-                  if (checked !== true) setContractFile(null);
-                }}
-              />
-              <Label htmlFor="contract-signed">O contrato já foi assinado</Label>
-            </div>
-            {contractSigned ? (
-              <div className="space-y-2">
-                <Label htmlFor="signed-contract-file">Anexar contrato assinado *</Label>
-                <Input
-                  id="signed-contract-file"
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => setContractFile(e.target.files?.[0] ?? null)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Aceita foto do contrato impresso ou PDF do ZapSign.
-                </p>
-              </div>
-            ) : (
-              <p className="rounded-md bg-background/70 p-3 text-xs text-muted-foreground">
-                A venda ficará em análise. Antes da aprovação, abra Editar venda, anexe o contrato e marque-o como assinado.
-              </p>
-            )}
           </section>
 
           <section className="space-y-3">
@@ -577,7 +572,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'Salvando...' : 'Registrar venda'}
+            {saving ? 'Enviando...' : 'Enviar para análise'}
           </Button>
         </DialogFooter>
       </DialogContent>

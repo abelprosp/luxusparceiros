@@ -8,7 +8,7 @@ test('dashboard considera somente vendas realizadas em seus filtros', () => {
   const where = service.buildSaleWhere({ partnerId: 'partner-1' });
 
   assert.deepEqual(where.status, {
-    in: [SaleStatus.APPROVED, SaleStatus.ACTIVATED],
+    in: [SaleStatus.ACTIVATED],
   });
   assert.equal(where.partnerId, 'partner-1');
 });
@@ -25,7 +25,7 @@ test('comissões do dashboard respeitam venda realizada, campanha, operadora e f
   assert.equal(where.partnerId, 'partner-1');
   assert.equal(where.createdAt.gte, since);
   assert.deepEqual(where.sale, {
-    status: { in: [SaleStatus.APPROVED, SaleStatus.ACTIVATED] },
+    status: { in: [SaleStatus.ACTIVATED] },
     branchId: 'branch-1',
     campaignId: 'campaign-1',
     operatorId: 'operator-1',

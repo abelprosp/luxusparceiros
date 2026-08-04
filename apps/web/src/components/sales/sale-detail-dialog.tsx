@@ -18,7 +18,8 @@ import {
   DocumentType,
   DonorOperator,
   SaleStatus,
-  SALE_STATUS_LABELS,
+  SaleReviewStatus,
+  SALE_REVIEW_STATUS_LABELS,
 } from '@luxus/types';
 import { formatCurrency, formatDateTime, formatDocument, formatPhone } from '@luxus/utils';
 import {
@@ -86,6 +87,15 @@ interface SaleDetail {
   id: string;
   protocol: string;
   status: SaleStatus;
+  reviewStatus: SaleReviewStatus;
+  correctionReason?: string | null;
+  taskProtocol?: string | null;
+  taskStatus?: string | null;
+  taskResponsibleName?: string | null;
+  taskClientName?: string | null;
+  taskDeadline?: string | null;
+  taskSyncStatus?: string | null;
+  taskSyncError?: string | null;
   value: number;
   commissionValue?: number;
   commissionRate?: number;
@@ -128,6 +138,7 @@ interface SaleDetail {
   createdBy?: { id: string; name: string };
   commission?: { id: string; amount: number; status: string } | null;
   documents?: SaleDocument[];
+  timeline?: Array<{ id: string; action: string; actorName?: string | null; details?: string | null; createdAt: string }>;
 }
 
 interface SaleDetailDialogProps {
@@ -510,8 +521,9 @@ export function SaleDetailDialog({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-sm font-semibold text-primary">{sale.protocol}</span>
                     <Badge variant={statusBadgeVariant(sale.status)}>
-                      {SALE_STATUS_LABELS[sale.status] ?? sale.status}
+                      {SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus}
                     </Badge>
+                    {sale.taskStatus && <Badge variant="outline">Task: {sale.taskStatus}</Badge>}
                   </div>
                 )}
               </div>
@@ -545,6 +557,31 @@ export function SaleDetailDialog({
 
               <TabsContent value="overview" className={TAB_PANEL_CLASS}>
                 <div className="space-y-4 pb-4">
+                  <Section title="Contrato e continuidade da venda" className="border-primary/40 bg-primary/5">
+                    <DetailRow
+                      label="Formato"
+                      value={sale.contractFormat ? CONTRACT_FORMAT_LABELS[sale.contractFormat] : 'Não informado'}
+                    />
+                    <DetailRow label="Assinatura" value="Será obtida e tratada no Luxus Task" />
+                    {sale.correctionReason && (
+                      <div className="my-3 rounded-md bg-amber-500/10 p-3 text-sm text-amber-600">
+                        <p className="font-semibold">Correção solicitada</p>
+                        <p>{sale.correctionReason}</p>
+                      </div>
+                    )}
+                  </Section>
+
+                  {(sale.taskProtocol || sale.taskSyncStatus === 'PENDING' || sale.taskSyncError) && (
+                    <Section title="Integração com o Luxus Task">
+                      <DetailRow label="Envio" value={sale.taskSyncStatus === 'SYNCED' ? 'Sincronizado' : sale.taskSyncStatus === 'PENDING' || sale.taskSyncStatus === 'PROCESSING' ? 'Processando em segundo plano' : sale.taskSyncStatus} />
+                      <DetailRow label="Protocolo" value={sale.taskProtocol} mono />
+                      <DetailRow label="Status Task" value={sale.taskStatus} />
+                      <DetailRow label="Responsável" value={sale.taskResponsibleName} />
+                      <DetailRow label="Cliente Task" value={sale.taskClientName} />
+                      <DetailRow label="Prazo" value={sale.taskDeadline ? formatDateTime(sale.taskDeadline) : undefined} />
+                      {sale.taskSyncError && <div className="my-3 rounded-md bg-red-500/10 p-3 text-sm text-red-500">{sale.taskSyncError}</div>}
+                    </Section>
+                  )}
                   {sale.status === SaleStatus.DOCUMENTS_PENDING &&
                     sale.requiredDocuments &&
                     sale.requiredDocuments.length > 0 && (
@@ -638,6 +675,23 @@ export function SaleDetailDialog({
                           <p className="whitespace-pre-wrap">{sale.notes}</p>
                         </div>
                       )}
+                    </Section>
+                  )}
+
+                  {sale.timeline && sale.timeline.length > 0 && (
+                    <Section title="Histórico da venda">
+                      <div className="divide-y">
+                        {sale.timeline.map((entry) => (
+                          <div key={entry.id} className="py-3 text-sm">
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="font-medium">{entry.action}</p>
+                              <time className="shrink-0 text-xs text-muted-foreground">{formatDateTime(entry.createdAt)}</time>
+                            </div>
+                            {entry.actorName && <p className="text-xs text-muted-foreground">Por {entry.actorName}</p>}
+                            {entry.details && <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{entry.details}</p>}
+                          </div>
+                        ))}
+                      </div>
                     </Section>
                   )}
                 </div>

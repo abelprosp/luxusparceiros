@@ -6,16 +6,17 @@ const {
   realizedSaleStatusFilter,
 } = require('../dist/src/common/constants/realized-sale-statuses');
 
-test('somente vendas aprovadas ou ativadas são consideradas realizadas', () => {
-  assert.deepEqual(REALIZED_SALE_STATUSES, [SaleStatus.APPROVED, SaleStatus.ACTIVATED]);
+test('somente vendas ativadas são consideradas realizadas', () => {
+  assert.deepEqual(REALIZED_SALE_STATUSES, [SaleStatus.ACTIVATED]);
 
   const filter = realizedSaleStatusFilter();
   assert.deepEqual(filter, {
-    in: [SaleStatus.APPROVED, SaleStatus.ACTIVATED],
+    in: [SaleStatus.ACTIVATED],
   });
 
   for (const status of [
     SaleStatus.IN_ANALYSIS,
+    SaleStatus.APPROVED,
     SaleStatus.PENDING,
     SaleStatus.REJECTED,
     SaleStatus.CANCELLED,
@@ -31,6 +32,6 @@ test('cada filtro recebe uma lista independente', () => {
   first.in.push(SaleStatus.REJECTED);
 
   assert.deepEqual(realizedSaleStatusFilter(), {
-    in: [SaleStatus.APPROVED, SaleStatus.ACTIVATED],
+    in: [SaleStatus.ACTIVATED],
   });
 });

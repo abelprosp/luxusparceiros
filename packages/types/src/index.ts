@@ -37,6 +37,25 @@ export enum SaleStatus {
   DOCUMENTS_PENDING = 'DOCUMENTS_PENDING',
 }
 
+export enum SaleReviewStatus {
+  DRAFT = 'DRAFT',
+  AWAITING_REVIEW = 'AWAITING_REVIEW',
+  UNDER_REVIEW = 'UNDER_REVIEW',
+  CHANGES_REQUESTED = 'CHANGES_REQUESTED',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum SaleTaskSyncStatus {
+  NOT_READY = 'NOT_READY',
+  PENDING = 'PENDING',
+  PROCESSING = 'PROCESSING',
+  SYNCED = 'SYNCED',
+  RETRY = 'RETRY',
+  FAILED = 'FAILED',
+}
+
 export enum CommissionType {
   PERCENTAGE = 'PERCENTAGE',
   FIXED = 'FIXED',
@@ -451,6 +470,16 @@ export const SALE_STATUS_LABELS: Record<SaleStatus, string> = {
   [SaleStatus.CANCELLED]: 'Cancelada',
   [SaleStatus.CONTESTED]: 'Contestada',
   [SaleStatus.DOCUMENTS_PENDING]: 'Docs pendentes',
+};
+
+export const SALE_REVIEW_STATUS_LABELS: Record<SaleReviewStatus, string> = {
+  [SaleReviewStatus.DRAFT]: 'Rascunho',
+  [SaleReviewStatus.AWAITING_REVIEW]: 'Aguardando análise',
+  [SaleReviewStatus.UNDER_REVIEW]: 'Em análise pelo administrador',
+  [SaleReviewStatus.CHANGES_REQUESTED]: 'Correção solicitada',
+  [SaleReviewStatus.APPROVED]: 'Aprovada para o Luxus Task',
+  [SaleReviewStatus.REJECTED]: 'Rejeitada definitivamente',
+  [SaleReviewStatus.CANCELLED]: 'Cancelada',
 };
 
 export const LINE_STATUS_LABELS: Record<LineStatus, string> = {

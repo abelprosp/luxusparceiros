@@ -6,9 +6,11 @@ import { RequirePermissions } from '@/common/decorators/permissions.decorator';
 import { SalesService } from './sales.service';
 import {
   ContestSaleDto,
+  ApproveSaleForTaskDto,
   CreateSaleDto,
   RejectSaleDto,
   RequestSaleDocumentsDto,
+  RequestSaleCorrectionDto,
   SalesQueryDto,
   UpdateSaleDto,
   UpdateSaleStatusDto,
@@ -75,6 +77,49 @@ export class SalesController {
   @ApiOperation({ summary: 'Aprovar venda' })
   approve(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.salesService.approve(id, user);
+  }
+
+  @Post(':id/submit')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Enviar ou reenviar venda para análise do administrador' })
+  submit(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesService.submitForReview(id, user);
+  }
+
+  @Post(':id/start-review')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Registrar início da análise da venda' })
+  startReview(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesService.startReview(id, user);
+  }
+
+  @Post(':id/request-correction')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Devolver venda ao parceiro para correção' })
+  requestCorrection(
+    @Param('id') id: string,
+    @Body() dto: RequestSaleCorrectionDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesService.requestCorrection(id, dto, user);
+  }
+
+  @Post(':id/approve-for-task')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Aprovar revisão e enfileirar venda para o Luxus Task' })
+  approveForTask(
+    @Param('id') id: string,
+    @Body() dto: ApproveSaleForTaskDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesService.approveForTask(id, dto, user);
+  }
+
+  @Post(':id/retry-task-sync')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Tentar novamente o envio da venda ao Luxus Task' })
+  retryTaskSync(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesService.retryTaskSync(id, user);
   }
 
   @Post(':id/reject')

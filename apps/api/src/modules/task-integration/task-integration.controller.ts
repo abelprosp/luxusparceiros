@@ -2,11 +2,14 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { PERMISSIONS } from '@luxus/types';
+import { Response } from 'express';
 import { Public } from '@/common/decorators/public.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
 import { TaskDemandCallbackDto } from './dto/task-integration.dto';
@@ -34,5 +37,20 @@ export class TaskIntegrationController {
   @Post('integrations/luxus-task/callback')
   callback(@Body() dto: TaskDemandCallbackDto) {
     return this.integration.applyCallback(dto);
+  }
+
+  @Public()
+  @UseGuards(TaskIntegrationGuard)
+  @Get('integrations/luxus-task/sales/:saleId/documents/:documentId')
+  async saleDocument(
+    @Param('saleId') saleId: string,
+    @Param('documentId') documentId: string,
+    @Res() response: Response,
+  ) {
+    const file = await this.integration.getSaleDocument(saleId, documentId);
+    response.setHeader('Content-Type', file.mimeType);
+    response.setHeader('Content-Length', file.size);
+    response.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`);
+    file.stream.pipe(response);
   }
 }
