@@ -1,10 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ContractFormat, DocumentType, SaleStatus } from '@luxus/types';
-import { api, uploadFile } from '@/lib/api';
+import { ContractFormat, SaleReviewStatus, SaleStatus } from '@luxus/types';
+import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +16,8 @@ interface SaleDetail {
   id: string;
   protocol: string;
   status: SaleStatus;
+  reviewStatus: SaleReviewStatus;
+  correctionReason?: string | null;
   value: number;
   newNumber?: string | null;
   chipIccid?: string | null;
@@ -37,7 +38,6 @@ interface SaleDetail {
     state?: string | null;
     zipCode?: string | null;
   };
-  documents?: Array<{ id: string; type: DocumentType }>;
 }
 
 const emptyClient = {
@@ -73,16 +73,11 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
   const [chipIccid, setChipIccid] = useState('');
   const [contractFormat, setContractFormat] = useState<ContractFormat | ''>('');
   const [notes, setNotes] = useState('');
-  const [contractSigned, setContractSigned] = useState(false);
-  const [contractFile, setContractFile] = useState<File | null>(null);
-
-  const hasContract = sale?.documents?.some((document) => document.type === DocumentType.CONTRACT) ?? false;
 
   useEffect(() => {
     if (!open || !saleId) return;
     setLoading(true);
     setSale(null);
-    setContractFile(null);
     api<SaleDetail>(`/sales/${saleId}`)
       .then((data) => {
         setSale(data);
@@ -105,7 +100,6 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
         setChipIccid(data.chipIccid ?? '');
         setContractFormat(data.contractFormat ?? '');
         setNotes(data.notes ?? '');
-        setContractSigned(data.documents?.some((document) => document.type === DocumentType.CONTRACT) ?? false);
       })
       .catch((error) => {
         toast({
@@ -124,12 +118,8 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
       toast({ title: 'Preencha os campos obrigatórios', variant: 'destructive' });
       return;
     }
-    if (contractSigned && !hasContract && !contractFile) {
-      toast({
-        title: 'Anexe o contrato assinado',
-        description: 'Não é possível marcar como assinado sem enviar o arquivo.',
-        variant: 'destructive',
-      });
+    if (!contractFormat) {
+      toast({ title: 'Informe o formato do contrato', variant: 'destructive' });
       return;
     }
 
@@ -150,14 +140,11 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
           },
         },
       });
-      if (contractFile) {
-        await uploadFile(contractFile, DocumentType.CONTRACT, {
-          saleId: sale.id,
-          clientId: sale.client.id,
-        });
-      }
+      const shouldResubmit = sale.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED;
+      if (shouldResubmit) await api(`/sales/${sale.id}/submit`, { method: 'POST' });
       toast({
-        title: contractFile ? 'Venda e contrato atualizados' : 'Venda atualizada',
+        title: shouldResubmit ? 'Venda corrigida e reenviada' : 'Venda atualizada',
+        description: shouldResubmit ? 'O administrador foi avisado para analisar novamente.' : undefined,
         variant: 'success',
       });
       onOpenChange(false);
@@ -175,7 +162,7 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !saving && onOpenChange(nextOpen)}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto" onInteractOutside={(event) => event.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Editar venda {sale?.protocol ? `— ${sale.protocol}` : ''}</DialogTitle>
         </DialogHeader>
@@ -188,6 +175,12 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
           </div>
         ) : (
           <div className="space-y-6 py-2">
+            {sale.correctionReason && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
+                <p className="font-semibold">Correção solicitada pelo administrador</p>
+                <p className="mt-1">{sale.correctionReason}</p>
+              </div>
+            )}
             <section className="space-y-3">
               <h3 className="text-sm font-semibold text-muted-foreground">Dados da venda</h3>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -222,40 +215,9 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
 
             <section className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
               <div>
-                <h3 className="text-sm font-semibold">Contrato assinado</h3>
-                <p className="text-xs text-muted-foreground">Obrigatório para aprovar a venda.</p>
+                <h3 className="text-sm font-semibold">Assinatura do contrato</h3>
+                <p className="text-xs text-muted-foreground">Não anexe contrato assinado aqui. A assinatura será obtida no Luxus Task conforme o formato escolhido.</p>
               </div>
-              {hasContract ? (
-                <div className="flex items-center gap-2 rounded-md bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-300">
-                  <Checkbox checked disabled />
-                  Contrato assinado anexado
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="edit-contract-signed"
-                      checked={contractSigned}
-                      onCheckedChange={(checked) => {
-                        setContractSigned(checked === true);
-                        if (checked !== true) setContractFile(null);
-                      }}
-                    />
-                    <Label htmlFor="edit-contract-signed">O contrato foi assinado</Label>
-                  </div>
-                  {contractSigned && (
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-contract-file">Anexar contrato assinado *</Label>
-                      <Input
-                        id="edit-contract-file"
-                        type="file"
-                        accept="image/*,application/pdf"
-                        onChange={(event) => setContractFile(event.target.files?.[0] ?? null)}
-                      />
-                    </div>
-                  )}
-                </>
-              )}
             </section>
 
             <section className="space-y-3">
@@ -281,7 +243,7 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button>
           <Button onClick={save} disabled={loading || saving || !sale}>
-            {saving ? 'Salvando...' : 'Salvar alterações'}
+            {saving ? 'Salvando...' : sale?.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'Salvar e reenviar' : 'Salvar alterações'}
           </Button>
         </DialogFooter>
       </DialogContent>

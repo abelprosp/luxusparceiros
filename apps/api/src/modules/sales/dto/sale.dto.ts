@@ -3,8 +3,10 @@ import {
   IsArray,
   ArrayMinSize,
   IsBoolean,
+  IsDateString,
   IsEmail,
   IsEnum,
+  IsIn,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -112,10 +114,9 @@ export class CreateSaleDto {
   @IsString()
   chipIccid?: string;
 
-  @ApiPropertyOptional({ enum: ContractFormat })
-  @IsOptional()
+  @ApiProperty({ enum: ContractFormat, description: 'Formato que o Luxus Task usará para obter a assinatura' })
   @IsEnum(ContractFormat)
-  contractFormat?: ContractFormat;
+  contractFormat: ContractFormat;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -165,6 +166,53 @@ export class RejectSaleDto {
   @ApiProperty()
   @IsString()
   reason: string;
+}
+
+export class RequestSaleCorrectionDto {
+  @ApiProperty({ description: 'Orientação visível ao parceiro sobre o que deve ser corrigido' })
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+}
+
+export class ApproveSaleForTaskDto {
+  @ApiProperty()
+  @IsUUID()
+  responsibleId: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  clientId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  clientName?: string;
+
+  @ApiPropertyOptional({ enum: ['pf', 'pj'] })
+  @IsOptional()
+  @IsIn(['pf', 'pj'])
+  clientDocumentType?: 'pf' | 'pj';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  clientDocument?: string;
+
+  @ApiProperty()
+  @IsDateString()
+  deadline: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  priority?: boolean;
+
+  @ApiPropertyOptional({ description: 'Complemento interno enviado ao Luxus Task' })
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export class SalesQueryDto extends PaginationDto {

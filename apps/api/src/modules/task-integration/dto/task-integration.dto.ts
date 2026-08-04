@@ -94,4 +94,14 @@ export class CreateTaskDemandInput {
   @IsOptional()
   @IsBoolean()
   priority?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  documents?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    mimeType: string;
+    size: number;
+  }>;
 }

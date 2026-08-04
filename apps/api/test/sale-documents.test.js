@@ -10,15 +10,11 @@ const {
 } = require('../dist/src/modules/sales/sale-documents.constants');
 
 describe('documentos obrigatorios da venda', () => {
-  it('mantem o contrato pendente sem bloquear o cadastro inicial', () => {
+  it('deixa a assinatura para o Luxus Task e exige somente os documentos cadastrais', () => {
     const documents = getRequiredDocumentsForSale();
 
-    assert.equal(documents.length, 4);
-    assert.ok(documents.some((document) => document.type === DocumentType.CONTRACT));
-    assert.equal(
-      documents.find((document) => document.type === DocumentType.CONTRACT).fulfilled,
-      false,
-    );
+    assert.equal(documents.length, 3);
+    assert.equal(documents.some((document) => document.type === DocumentType.CONTRACT), false);
   });
 
   it('reconhece o arquivo de contrato exigido na aprovacao', () => {
@@ -27,7 +23,7 @@ describe('documentos obrigatorios da venda', () => {
     assert.equal(hasSignedContract([{ type: DocumentType.CONTRACT }]), true);
   });
 
-  it('bloqueia a aprovacao quando o arquivo de contrato nao existe', async () => {
+  it('bloqueia a aprovacao direta e obriga completar o envio ao Luxus Task', async () => {
     const service = new SalesService({}, {}, {}, {}, {}, {});
     service.findOne = async () => ({
       id: 'sale-1',
@@ -44,7 +40,7 @@ describe('documentos obrigatorios da venda', () => {
         { status: SaleStatus.APPROVED },
         { id: 'admin-1', role: UserRole.ADMIN },
       ),
-      /Anexe o contrato assinado antes de aprovar a venda/,
+      /Use a aprovação para o Luxus Task/,
     );
   });
 

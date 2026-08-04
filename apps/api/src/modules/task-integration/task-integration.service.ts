@@ -4,6 +4,8 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createReadStream, existsSync } from 'fs';
+import { basename, join } from 'path';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TaskDemandCallbackDto, CreateTaskDemandInput } from './dto/task-integration.dto';
@@ -88,6 +90,20 @@ export class TaskIntegrationService {
     );
   }
 
+  async getSaleDocument(saleId: string, documentId: string) {
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, saleId },
+      select: { name: true, url: true, mimeType: true, size: true },
+    });
+    if (!document) throw new BadGatewayException('Documento da venda não encontrado');
+    const uploadDir = this.config.get<string>('UPLOAD_DIR')
+      || this.config.get<string>('RAILWAY_VOLUME_MOUNT_PATH')
+      || './uploads';
+    const path = join(uploadDir, basename(document.url));
+    if (!existsSync(path)) throw new BadGatewayException('Arquivo físico da venda não encontrado');
+    return { ...document, stream: createReadStream(path) };
+  }
+
   async applyCallback(dto: TaskDemandCallbackDto) {
     const existing = await this.prisma.request.findUnique({
       where: { id: dto.externalRequestId },
@@ -102,7 +118,7 @@ export class TaskIntegrationService {
         resolution: true,
       },
     });
-    if (!existing) return { accepted: true };
+    if (!existing) return this.applySaleCallback(dto);
     if (existing.taskDemandId && existing.taskDemandId !== dto.demandId) {
       throw new BadGatewayException('A demanda não corresponde à solicitação informada');
     }
@@ -177,6 +193,58 @@ export class TaskIntegrationService {
           userId: existing.createdById,
           ...notification,
         });
+      }
+    }
+    return { accepted: true };
+  }
+
+  private async applySaleCallback(dto: TaskDemandCallbackDto) {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: dto.externalRequestId },
+      select: {
+        id: true, protocol: true, partnerId: true, createdById: true,
+        createdBy: { select: { partnerId: true } }, taskDemandId: true,
+        taskStatus: true,
+      },
+    });
+    if (!sale) return { accepted: true };
+    if (sale.taskDemandId && sale.taskDemandId !== dto.demandId) {
+      throw new BadGatewayException('A demanda não corresponde à venda informada');
+    }
+    const resolution = dto.resolution?.trim()
+      || dto.observations?.filter(Boolean).at(-1)?.trim()
+      || undefined;
+    const changed = sale.taskStatus !== dto.status || Boolean(resolution);
+    await this.prisma.sale.update({
+      where: { id: sale.id },
+      data: {
+        taskDemandId: dto.demandId,
+        taskProtocol: dto.protocol,
+        taskStatus: dto.status,
+        taskResponsibleId: dto.responsibleId,
+        taskResponsibleName: dto.responsibleName,
+        taskSyncError: null,
+        taskSyncStatus: 'SYNCED',
+        taskLastSyncAt: dto.updatedAt ? new Date(dto.updatedAt) : new Date(),
+        ...(changed ? { timeline: { create: {
+          action: 'Atualização recebida do Luxus Task',
+          details: [
+            `Status: ${dto.status}`,
+            resolution ? `Retorno: ${resolution}` : '',
+          ].filter(Boolean).join('\n'),
+        } } } : {}),
+      },
+    });
+    if (changed) {
+      const notification = {
+        type: 'SYSTEM' as const,
+        title: dto.status === 'concluido' ? 'Venda concluída no Luxus Task' : 'Venda atualizada no Luxus Task',
+        message: `${sale.protocol}: ${resolution || `status ${dto.status}`}`,
+        data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+      };
+      await this.notifications.createForPartnerUsers(sale.partnerId, notification);
+      if (!sale.createdBy.partnerId) {
+        await this.notifications.create({ userId: sale.createdById, ...notification });
       }
     }
     return { accepted: true };
