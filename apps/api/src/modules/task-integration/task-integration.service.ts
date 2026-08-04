@@ -8,6 +8,7 @@ import { createReadStream, existsSync } from 'fs';
 import { basename, join } from 'path';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { CommissionsService } from '@/modules/commissions/commissions.service';
 import { TaskDemandCallbackDto, CreateTaskDemandInput } from './dto/task-integration.dto';
 
 export interface TaskResponsible {
@@ -39,6 +40,7 @@ export class TaskIntegrationService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly commissions: CommissionsService,
   ) {}
 
   isConfigured(): boolean {
@@ -226,6 +228,7 @@ export class TaskIntegrationService {
         taskSyncError: null,
         taskSyncStatus: 'SYNCED',
         taskLastSyncAt: dto.updatedAt ? new Date(dto.updatedAt) : new Date(),
+        ...(dto.status === 'concluido' ? { status: 'ACTIVATED', activatedAt: new Date() } : {}),
         ...(changed ? { timeline: { create: {
           action: 'Atualização recebida do Luxus Task',
           details: [
@@ -235,6 +238,10 @@ export class TaskIntegrationService {
         } } } : {}),
       },
     });
+    if (dto.status === 'concluido') {
+      const activated = await this.prisma.sale.findUnique({ where: { id: sale.id } });
+      if (activated) await this.commissions.createFromSale(activated, sale.createdById);
+    }
     if (changed) {
       const notification = {
         type: 'SYSTEM' as const,
