@@ -1,8 +1,16 @@
 import { OmitType, PartialType } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RequestStatus, RequestType } from '@prisma/client';
 import { PaginationDto } from '@/common/dto/pagination.dto';
+
+export class BulkDeleteRequestsDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsUUID('4', { each: true })
+  ids: string[];
+}
 
 export class RequestFiltersDto {
   @ApiPropertyOptional()

@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { ContractFormat, SaleReviewStatus, SaleTaskSyncStatus } = require('@prisma/client');
+const { ContractFormat, SaleContractStage, SaleReviewStatus, SaleStatus, SaleTaskSyncStatus } = require('@prisma/client');
 const { UserRole } = require('@luxus/types');
 const { SalesService } = require('../dist/src/modules/sales/sales.service');
 
@@ -53,4 +53,23 @@ test('parceiro não pode aprovar e escolher responsável do Luxus Task', async (
     service.approveForTask('sale-1', {}, { id: 'partner-1', name: 'Parceiro', role: UserRole.PARTNER }),
     /Apenas administradores/,
   );
+});
+
+test('administrador finaliza e comissiona somente depois da aprovação do Task', async () => {
+  const { service, calls } = buildService();
+  service.findOne = async () => ({
+    id: 'sale-1', protocol: 'VND-1', partnerId: 'partner-1',
+    status: SaleStatus.APPROVED,
+    contractStage: SaleContractStage.TASK_APPROVED_REVIEW_PENDING,
+  });
+
+  await service.finalizeAfterTaskApproval(
+    'sale-1',
+    { id: 'admin-1', name: 'Admin', role: UserRole.ADMIN },
+  );
+
+  assert.equal(calls.update.data.contractStage, SaleContractStage.COMPLETED);
+  assert.equal(calls.update.data.status, SaleStatus.ACTIVATED);
+  assert.equal(calls.commission, 1);
+  assert.equal(calls.partnerNotifications, 1);
 });

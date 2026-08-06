@@ -43,6 +43,22 @@ export class TaskDemandCallbackDto {
   updatedAt?: string;
 
   @IsOptional()
+  @IsBoolean()
+  isBeingEdited?: boolean;
+
+  @IsOptional()
+  @IsString()
+  editorName?: string;
+
+  @IsOptional()
+  @IsString()
+  editorActivity?: string;
+
+  @IsOptional()
+  @IsDateString()
+  editorLastSeenAt?: string;
+
+  @IsOptional()
   @IsString()
   workflowStage?: string;
 

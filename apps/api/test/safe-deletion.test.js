@@ -4,6 +4,7 @@ const { SaleReviewStatus, SaleStatus, SaleTaskSyncStatus, TicketStatus } = requi
 const { UserRole } = require('@luxus/types');
 const { SalesService } = require('../dist/src/modules/sales/sales.service');
 const { TicketsService } = require('../dist/src/modules/tickets/tickets.service');
+const { RequestsService } = require('../dist/src/modules/requests/requests.service');
 
 function admin() {
   return { id: 'admin-1', name: 'Admin', role: UserRole.ADMIN };
@@ -77,4 +78,45 @@ test('parceiro não pode excluir chamado', async () => {
     service.remove('ticket-1', { id: 'partner-1', role: UserRole.PARTNER }),
     /Somente administradores/,
   );
+});
+
+test('administrador exclui vendas de teste em lote e preserva comissão paga', async () => {
+  const deleted = [];
+  const prisma = {
+    sale: {
+      findMany: async () => [
+        { id: 'sale-1', protocol: 'VND-1', taskDemandId: 'task-1', documents: [], commission: null },
+        { id: 'sale-2', protocol: 'VND-2', taskDemandId: null, documents: [], commission: { status: 'PAID' } },
+      ],
+      delete: async ({ where }) => deleted.push(where.id),
+    },
+    commission: { deleteMany: async () => {} },
+    document: { deleteMany: async () => {} },
+    $transaction: async (operations) => Promise.all(operations),
+  };
+  const service = new SalesService(
+    prisma, { log: async () => {} }, {}, {}, {}, {}, {}, { removeStoredFiles: () => {} },
+  );
+  const result = await service.bulkRemove(['sale-1', 'sale-2'], admin());
+  assert.deepEqual(deleted, ['sale-1']);
+  assert.deepEqual(result.deleted, ['sale-1']);
+  assert.match(result.failed[0].reason, /comissão.*paga/i);
+  assert.match(result.warning, /Luxus Task/);
+});
+
+test('administrador exclui demandas do Parceiros em lote', async () => {
+  const deleted = [];
+  const prisma = {
+    request: {
+      findMany: async () => [{ id: 'request-1', protocol: 'REQ-1', taskDemandId: 'task-1' }],
+      delete: async ({ where }) => deleted.push(where.id),
+    },
+    document: { deleteMany: async () => {} },
+    $transaction: async (operations) => Promise.all(operations),
+  };
+  const service = new RequestsService(prisma, { log: async () => {} }, {}, {}, {});
+  const result = await service.bulkRemove(['request-1'], admin());
+  assert.deepEqual(deleted, ['request-1']);
+  assert.deepEqual(result.deleted, ['request-1']);
+  assert.match(result.warning, /Luxus Task/);
 });

@@ -133,7 +133,7 @@ test('primeira conclusao da venda retorna contrato em branco sem ativar nem comi
   assert.equal(commissions, 0);
 });
 
-test('somente aprovacao final do contrato ativa e comissiona a venda', async () => {
+test('aprovacao do Task aguarda confirmacao final do administrador sem ativar venda', async () => {
   const updates = [];
   let commissions = 0;
   const sale = {
@@ -159,9 +159,9 @@ test('somente aprovacao final do contrato ativa e comissiona a venda', async () 
   );
   await service.applyCallback({
     externalRequestId: sale.id, demandId: sale.taskDemandId,
-    protocol: 'LUX-2026-00002', status: 'concluido', workflowStage: 'COMPLETED',
+    protocol: 'LUX-2026-00002', status: 'concluido', workflowStage: 'TASK_APPROVED_REVIEW_PENDING',
   });
-  assert.equal(updates[0].data.status, 'ACTIVATED');
-  assert.equal(updates[0].data.contractStage, 'COMPLETED');
-  assert.equal(commissions, 1);
+  assert.equal(updates[0].data.status, undefined);
+  assert.equal(updates[0].data.contractStage, 'TASK_APPROVED_REVIEW_PENDING');
+  assert.equal(commissions, 0);
 });

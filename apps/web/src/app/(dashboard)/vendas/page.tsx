@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2 } from 'lucide-react';
-import { SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS } from '@luxus/types';
+import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_CONTRACT_STAGE_LABELS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -38,6 +38,9 @@ interface Sale {
   taskStatus?: string;
   taskSyncStatus?: string;
   taskDemandId?: string;
+  contractStage: SaleContractStage;
+  taskIsBeingEdited?: boolean;
+  taskEditorName?: string;
   value: number;
   partner?: { name: string };
   client?: { name: string };
@@ -79,6 +82,8 @@ export default function VendasPage() {
   const [approveSaleId, setApproveSaleId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Sale | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const isPartner = isPartnerUser(user);
@@ -179,6 +184,32 @@ export default function VendasPage() {
     } finally { setDeleting(false); }
   };
 
+  const bulkDeleteSales = async () => {
+    setDeleting(true);
+    try {
+      const result = await api<{ deleted: string[]; failed: Array<{ id: string; reason: string }>; warning?: string }>('/sales/bulk-delete', {
+        method: 'POST',
+        body: { ids: selectedIds },
+      });
+      toast({
+        title: `${result.deleted.length} venda(s) excluída(s)`,
+        description: result.failed.length
+          ? `${result.failed.length} não puderam ser excluídas. ${result.warning ?? ''}`.trim()
+          : result.warning,
+        variant: result.failed.length ? 'default' : 'success',
+      });
+      setSelectedIds(result.failed.map((item) => item.id));
+      setBulkDeleteOpen(false);
+      await load();
+    } catch (error) {
+      toast({ title: 'Não foi possível excluir as vendas', description: error instanceof Error ? error.message : 'Falha', variant: 'destructive' });
+    } finally { setDeleting(false); }
+  };
+
+  const workflowLabel = (sale: Sale) => sale.reviewStatus === SaleReviewStatus.APPROVED
+    ? SALE_CONTRACT_STAGE_LABELS[sale.contractStage] ?? sale.contractStage
+    : SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus;
+
   const statusBadge = (status: SaleStatus) => {
     if ([SaleStatus.APPROVED, SaleStatus.ACTIVATED].includes(status)) return 'success';
     if ([SaleStatus.REJECTED, SaleStatus.CANCELLED].includes(status)) return 'destructive';
@@ -204,6 +235,11 @@ export default function VendasPage() {
           </Select>
         </div>
         <div className="flex flex-wrap gap-2">
+          {!isPartner && canDeleteSales && selectedIds.length > 0 && (
+            <Button variant="destructive" onClick={() => setBulkDeleteOpen(true)}>
+              <Trash2 className="mr-2 h-4 w-4" /> Excluir selecionadas ({selectedIds.length})
+            </Button>
+          )}
           <CreateSaleButton onSuccess={load} />
           {!isPartner && (
             <Button variant="outline"><Download className="mr-2 h-4 w-4" /> Exportar</Button>
@@ -226,6 +262,15 @@ export default function VendasPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {!isPartner && canDeleteSales && <TableHead className="w-10">
+                      <Checkbox
+                        aria-label="Selecionar vendas desta página"
+                        checked={items.length > 0 && items.every((item) => selectedIds.includes(item.id))}
+                        onCheckedChange={(checked) => setSelectedIds(checked
+                          ? Array.from(new Set([...selectedIds, ...items.map((item) => item.id)]))
+                          : selectedIds.filter((id) => !items.some((item) => item.id === id)))}
+                      />
+                    </TableHead>}
                     <TableHead>Protocolo</TableHead>
                     {!isPartner && <TableHead>Parceiro</TableHead>}
                     <TableHead>Cliente</TableHead>
@@ -244,6 +289,15 @@ export default function VendasPage() {
                       className="cursor-pointer"
                       onClick={() => setDetailSaleId(s.id)}
                     >
+                      {!isPartner && canDeleteSales && <TableCell onClick={(event) => event.stopPropagation()}>
+                        <Checkbox
+                          aria-label={`Selecionar ${s.protocol}`}
+                          checked={selectedIds.includes(s.id)}
+                          onCheckedChange={(checked) => setSelectedIds(checked
+                            ? [...selectedIds, s.id]
+                            : selectedIds.filter((id) => id !== s.id))}
+                        />
+                      </TableCell>}
                       <TableCell className="font-mono text-sm">{s.protocol}</TableCell>
                       {!isPartner && <TableCell>{s.partner?.name || '-'}</TableCell>}
                       <TableCell>{s.client?.name || '-'}</TableCell>
@@ -253,11 +307,10 @@ export default function VendasPage() {
                       <TableCell>
                         <div className="flex flex-col gap-1">
                           <Badge variant={s.reviewStatus === SaleReviewStatus.APPROVED ? 'success' : s.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'destructive' : 'outline'}>
-                            {SALE_REVIEW_STATUS_LABELS[s.reviewStatus] ?? s.reviewStatus}
+                            {workflowLabel(s)}
                           </Badge>
-                          {s.reviewStatus === SaleReviewStatus.APPROVED && (
-                            <span className="text-xs text-muted-foreground">Task: {s.taskProtocol ?? (s.taskSyncStatus === 'SYNCED' ? s.taskStatus : 'enviando...')}</span>
-                          )}
+                          {s.taskIsBeingEdited && <span className="text-xs font-medium text-green-600">Em atendimento por {s.taskEditorName || 'responsável do Task'}</span>}
+                          {s.reviewStatus === SaleReviewStatus.APPROVED && s.taskProtocol && <span className="text-xs text-muted-foreground">{s.taskProtocol}</span>}
                           {isPartner && s.status === SaleStatus.DOCUMENTS_PENDING && s.requiredDocuments?.length ? (
                             <span className="text-xs text-amber-600">
                               {s.requiredDocuments.filter((d) => !d.fulfilled).length} doc(s) pendente(s)
@@ -339,7 +392,7 @@ export default function VendasPage() {
                 meta={`${formatCurrency(Number(s.value))} · ${formatDate(s.createdAt)}`}
                 badges={
                   <>
-                    <Badge variant={s.reviewStatus === SaleReviewStatus.APPROVED ? 'success' : s.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'destructive' : 'outline'}>{SALE_REVIEW_STATUS_LABELS[s.reviewStatus] ?? s.reviewStatus}</Badge>
+                    <Badge variant={s.reviewStatus === SaleReviewStatus.APPROVED ? 'success' : s.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'destructive' : 'outline'}>{workflowLabel(s)}</Badge>
                     {!isPartner && s.partner?.name ? (
                       <Badge variant="outline">{s.partner.name}</Badge>
                     ) : null}
@@ -500,6 +553,15 @@ export default function VendasPage() {
         description="A venda, seus documentos e seu histórico serão removidos. Vendas ativadas ou enviadas ao Luxus Task não podem ser excluídas."
         deleting={deleting}
         onConfirm={() => void deleteSale()}
+      />
+      <DeleteConfirmationDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        itemType="vendas selecionadas"
+        itemLabel={`${selectedIds.length} registro(s)`}
+        description="As vendas selecionadas, seus documentos e históricos serão removidos. Demandas já criadas no Luxus Task serão preservadas para auditoria. Comissões pagas não serão apagadas."
+        deleting={deleting}
+        onConfirm={() => void bulkDeleteSales()}
       />
     </DashboardLayout>
   );
