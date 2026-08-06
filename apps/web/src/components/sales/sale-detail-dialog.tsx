@@ -626,7 +626,7 @@ export function SaleDetailDialog({
                 <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="overview">Resumo</TabsTrigger>
                   <TabsTrigger value="photos">
-                    Fotos {docCount > 0 ? `(${docCount})` : ''}
+                    Documentos {docCount > 0 ? `(${docCount})` : ''}
                   </TabsTrigger>
                   <TabsTrigger value="details">Dados</TabsTrigger>
                 </TabsList>
@@ -759,7 +759,7 @@ export function SaleDetailDialog({
                   )}
 
                   {imageDocs.length > 0 && (
-                    <Section title="Prévia das fotos">
+                    <Section title="Prévia dos documentos">
                       <div className="grid grid-cols-2 gap-2 py-3 sm:grid-cols-4">
                         {imageDocs.slice(0, 4).map((doc) => (
                           <DocumentPreview
@@ -780,7 +780,7 @@ export function SaleDetailDialog({
                       </div>
                       {docCount > 4 && (
                         <Button variant="link" className="px-0" onClick={() => setTab('photos')}>
-                          Ver todas as {docCount} fotos/documentos
+                          Ver todos os {docCount} documentos
                         </Button>
                       )}
                     </Section>
@@ -847,7 +847,7 @@ export function SaleDetailDialog({
                     <>
                       {imageDocs.length > 0 && (
                         <div className="space-y-3">
-                          <h4 className="text-sm font-medium text-muted-foreground">Fotos ({imageDocs.length})</h4>
+                          <h4 className="text-sm font-medium text-muted-foreground">Imagens ({imageDocs.length})</h4>
                           <div className="grid gap-4 sm:grid-cols-2">
                             {imageDocs.map((doc) => (
                               <DocumentPreview
@@ -869,7 +869,7 @@ export function SaleDetailDialog({
                       )}
                       {otherDocs.length > 0 && (
                         <div className="space-y-3">
-                          <h4 className="text-sm font-medium text-muted-foreground">Outros arquivos ({otherDocs.length})</h4>
+                          <h4 className="text-sm font-medium text-muted-foreground">Contratos e outros arquivos ({otherDocs.length})</h4>
                           <div className="grid gap-4 sm:grid-cols-2">
                             {otherDocs.map((doc) => (
                               <DocumentPreview
@@ -984,7 +984,7 @@ export function SaleDetailDialog({
               <>
                 <Button variant="secondary" onClick={() => setTab('photos')}>
                   <ImageIcon className="mr-2 h-4 w-4" />
-                  Ver fotos
+                  Ver documentos
                 </Button>
                 <Button
                   variant="secondary"

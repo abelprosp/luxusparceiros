@@ -33,6 +33,7 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
   const [responsibles, setResponsibles] = useState<Responsible[]>([]);
   const [clients, setClients] = useState<TaskClient[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingClients, setLoadingClients] = useState(false);
   const [saving, setSaving] = useState(false);
   const [responsibleId, setResponsibleId] = useState('');
   const [clientMode, setClientMode] = useState<'task' | 'manual'>('task');
@@ -58,6 +59,23 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
       setClients(clientData);
       setClientName(saleData.client?.name ?? '');
       setDocument(saleData.client?.document ?? '');
+      setResponsibleId((current) => current || responsibleData[0]?.id || '');
+      const saleDocument = saleData.client?.document?.replace(/\D/g, '') ?? '';
+      const matchingClient = saleDocument
+        ? clientData.find((client) => client.document?.replace(/\D/g, '') === saleDocument)
+        : undefined;
+      if (matchingClient) {
+        setClientMode('task');
+        setClientId(matchingClient.id);
+        setClientSearch(matchingClient.name);
+      } else {
+        setClientMode('manual');
+        setClientId('');
+        setDocumentType(saleDocument.length > 11 ? 'pj' : 'pf');
+      }
+      const suggestedDeadline = new Date();
+      suggestedDeadline.setDate(suggestedDeadline.getDate() + 7);
+      setDeadline((current) => current || suggestedDeadline.toISOString().slice(0, 10));
     }).catch((error) => toast({
       title: 'Não foi possível carregar os dados do Luxus Task',
       description: error instanceof Error ? error.message : 'Tente novamente.',
@@ -67,12 +85,24 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
 
   useEffect(() => {
     if (!open || clientMode !== 'task') return;
+    let active = true;
     const timer = setTimeout(() => {
+      setLoadingClients(true);
       api<TaskClient[]>(`/task-integration/clients${clientSearch.trim() ? `?search=${encodeURIComponent(clientSearch.trim())}` : ''}`)
-        .then(setClients)
-        .catch(() => setClients([]));
+        .then((items) => {
+          if (active) setClients(items);
+        })
+        .catch(() => {
+          if (active) setClients([]);
+        })
+        .finally(() => {
+          if (active) setLoadingClients(false);
+        });
     }, 350);
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [clientSearch, clientMode, open]);
 
   const selectedClient = useMemo(() => clients.find((client) => client.id === clientId), [clients, clientId]);
@@ -137,7 +167,7 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
               <p className="mt-1 text-xs text-muted-foreground">A assinatura será solicitada e tratada dentro do Luxus Task.</p>
             </div>
             <div className="space-y-2">
-              <Label>Responsável no Luxus Task *</Label>
+              <Label>Responsável no Luxus Task * (sugerido automaticamente)</Label>
               <Select value={responsibleId} onValueChange={setResponsibleId}>
                 <SelectTrigger><SelectValue placeholder="Selecione quem continuará a venda" /></SelectTrigger>
                 <SelectContent>{responsibles.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.email}</SelectItem>)}</SelectContent>
@@ -150,11 +180,52 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
             {clientMode === 'task' ? (
               <div className="space-y-2">
                 <Label>Cliente no Luxus Task *</Label>
-                <Input value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Buscar por nome, CPF ou CNPJ" />
-                <Select value={clientId} onValueChange={setClientId}>
-                  <SelectTrigger><SelectValue placeholder="Selecione o cliente" /></SelectTrigger>
-                  <SelectContent className="z-[100] max-h-64">{clients.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}{item.document ? ` · ${item.document}` : ''}</SelectItem>)}</SelectContent>
-                </Select>
+                <Input
+                  value={clientSearch}
+                  onChange={(event) => {
+                    setClientSearch(event.target.value);
+                    setClientId('');
+                  }}
+                  placeholder="Buscar por nome, CPF ou CNPJ"
+                  autoComplete="off"
+                />
+                <div
+                  className="max-h-56 overflow-y-auto rounded-md border bg-popover p-1 shadow-sm"
+                  role="listbox"
+                  aria-label="Sugestões de clientes do Luxus Task"
+                >
+                  {loadingClients ? (
+                    <p className="flex items-center justify-center gap-2 px-3 py-5 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Atualizando sugestões...
+                    </p>
+                  ) : clients.length === 0 ? (
+                    <p className="px-3 py-5 text-center text-sm text-muted-foreground">
+                      Nenhum cliente encontrado. Use “Informar manualmente”.
+                    </p>
+                  ) : (
+                    clients.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        role="option"
+                        aria-selected={clientId === item.id}
+                        className={`flex w-full items-center justify-between gap-3 rounded-sm px-3 py-2 text-left text-sm transition-colors hover:bg-accent ${clientId === item.id ? 'bg-primary/10 text-primary' : ''}`}
+                        onClick={() => {
+                          setClientId(item.id);
+                          setClientSearch(item.name);
+                        }}
+                      >
+                        <span className="font-medium">{item.name}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{item.document || 'Sem CPF/CNPJ'}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+                {selectedClient && (
+                  <p className="flex items-center gap-2 text-sm text-emerald-600">
+                    <CheckCircle2 className="h-4 w-4" /> Selecionado: {selectedClient.name}
+                  </p>
+                )}
               </div>
             ) : (
               <div className="space-y-3 rounded-lg border p-3">
@@ -166,7 +237,7 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
                 {duplicateDocument && <p className="flex items-center gap-2 text-sm text-amber-600"><AlertCircle className="h-4 w-4" /> Este documento já pertence a {duplicateDocument.name}. Use o cliente existente.</p>}
               </div>
             )}
-            <div className="space-y-2"><Label>Prazo no Luxus Task *</Label><Input type="date" value={deadline} min={new Date().toISOString().slice(0, 10)} onChange={(event) => setDeadline(event.target.value)} /></div>
+            <div className="space-y-2"><Label>Prazo no Luxus Task * (sugerido automaticamente)</Label><Input type="date" value={deadline} min={new Date().toISOString().slice(0, 10)} onChange={(event) => setDeadline(event.target.value)} /></div>
             <label className="flex items-center gap-2"><Checkbox checked={priority} onCheckedChange={(checked) => setPriority(checked === true)} /> Marcar como prioridade</label>
             <div className="space-y-2"><Label>Complemento interno (opcional)</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Informações que ajudarão o responsável no Luxus Task" /></div>
             <div className="flex items-start gap-2 rounded-lg bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> Após confirmar, o processamento continua automaticamente. Não é necessário manter a janela aberta.</div>
