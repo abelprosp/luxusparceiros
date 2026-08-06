@@ -63,6 +63,8 @@ export enum SaleContractStage {
   AWAITING_PARTNER_SIGNATURE = 'AWAITING_PARTNER_SIGNATURE',
   SIGNED_CONTRACT_READY_FOR_ADMIN = 'SIGNED_CONTRACT_READY_FOR_ADMIN',
   TASK_VALIDATING_SIGNED_CONTRACT = 'TASK_VALIDATING_SIGNED_CONTRACT',
+  TASK_APPROVED_REVIEW_PENDING = 'TASK_APPROVED_REVIEW_PENDING',
+  TASK_REJECTED_REVIEW_PENDING = 'TASK_REJECTED_REVIEW_PENDING',
   CHANGES_REQUESTED = 'CHANGES_REQUESTED',
   COMPLETED = 'COMPLETED',
 }
@@ -81,6 +83,8 @@ export const SALE_CONTRACT_STAGE_LABELS: Record<SaleContractStage, string> = {
   [SaleContractStage.AWAITING_PARTNER_SIGNATURE]: 'Aguardando assinatura do parceiro',
   [SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN]: 'Contrato assinado aguardando conferência',
   [SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT]: 'Contrato assinado em validação no Luxus Task',
+  [SaleContractStage.TASK_APPROVED_REVIEW_PENDING]: 'Contrato aprovado no Task — aguardando finalização do administrador',
+  [SaleContractStage.TASK_REJECTED_REVIEW_PENDING]: 'Contrato recusado no Task — aguardando ação do administrador',
   [SaleContractStage.CHANGES_REQUESTED]: 'Correção solicitada',
   [SaleContractStage.COMPLETED]: 'Venda concluída',
 };

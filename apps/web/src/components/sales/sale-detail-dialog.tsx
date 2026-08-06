@@ -69,6 +69,14 @@ const DONOR_OPERATOR_LABELS: Record<DonorOperator, string> = {
   [DonorOperator.OTHER]: 'Outras',
 };
 
+const TASK_STATUS_LABELS: Record<string, string> = {
+  em_aberto: 'Aguardando início no Luxus Task',
+  standby: 'Em espera no Luxus Task',
+  em_andamento: 'Em andamento no Luxus Task',
+  concluido: 'Concluída no Luxus Task',
+  cancelado: 'Recusada/cancelada no Luxus Task',
+};
+
 const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|bmp|heic)$/i;
 
 interface SaleDocument {
@@ -101,6 +109,11 @@ interface SaleDetail {
   taskDeadline?: string | null;
   taskSyncStatus?: string | null;
   taskSyncError?: string | null;
+  taskIsBeingEdited?: boolean;
+  taskEditorName?: string | null;
+  taskEditorActivity?: string | null;
+  taskEditorLastSeenAt?: string | null;
+  taskLastMessage?: string | null;
   contractStage: SaleContractStage;
   contractCorrectionReason?: string | null;
   signedContractSyncStatus?: string | null;
@@ -452,6 +465,27 @@ export function SaleDetailDialog({
     }
   }, [open, saleId, load]);
 
+  useEffect(() => {
+    if (!open || !saleId || !sale?.taskProtocol) return;
+    let stopped = false;
+    let running = false;
+    const refresh = async () => {
+      if (running || stopped) return;
+      running = true;
+      try {
+        const updated = await api<SaleDetail>(`/sales/${saleId}/refresh-task-status`, { method: 'POST' });
+        if (!stopped) setSale(updated);
+      } catch {
+        // O polling é auxiliar; erros transitórios já aparecem no estado de sincronização.
+      } finally {
+        running = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [open, saleId, sale?.taskProtocol]);
+
   const handleOpenDocument = async (doc: SaleDocument) => {
     try {
       await openAuthenticatedFile(doc.url, doc.name);
@@ -562,9 +596,11 @@ export function SaleDetailDialog({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-sm font-semibold text-primary">{sale.protocol}</span>
                     <Badge variant={statusBadgeVariant(sale.status)}>
-                      {SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus}
+                      {sale.reviewStatus === SaleReviewStatus.APPROVED
+                        ? SALE_CONTRACT_STAGE_LABELS[sale.contractStage]
+                        : SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus}
                     </Badge>
-                    {sale.taskStatus && <Badge variant="outline">Task: {sale.taskStatus}</Badge>}
+                    {sale.taskIsBeingEdited && <Badge variant="success">Em atendimento agora</Badge>}
                   </div>
                 )}
               </div>
@@ -605,7 +641,10 @@ export function SaleDetailDialog({
                     />
                     <DetailRow label="Etapa atual" value={SALE_CONTRACT_STAGE_LABELS[sale.contractStage] ?? sale.contractStage} />
                     <DetailRow label="Aguardando ação de" value={
-                      sale.contractStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN || sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
+                      sale.contractStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
+                        || sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
+                        || sale.contractStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING
+                        || sale.contractStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING
                         ? 'Administrador'
                         : [SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED].includes(sale.contractStage)
                           ? 'Parceiro'
@@ -645,6 +684,17 @@ export function SaleDetailDialog({
                           }}>Solicitar correção</Button>
                         </>
                       )}
+                      {!isPartnerScoped && sale.contractStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING && (
+                        <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('finalize-after-task-approval')}>
+                          {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Finalizar venda
+                        </Button>
+                      )}
+                      {!isPartnerScoped && sale.contractStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING && (
+                        <Button variant="destructive" disabled={workflowBusy} onClick={() => {
+                          const reason = window.prompt('Informe ao parceiro o que deve ser corrigido:');
+                          if (reason?.trim()) void runWorkflowAction('request-contract-correction', { reason: reason.trim() });
+                        }}>Devolver para correção</Button>
+                      )}
                     </div>
                     {sale.correctionReason && (
                       <div className="my-3 rounded-md bg-amber-500/10 p-3 text-sm text-amber-600">
@@ -658,8 +708,14 @@ export function SaleDetailDialog({
                     <Section title="Integração com o Luxus Task">
                       <DetailRow label="Envio" value={sale.taskSyncStatus === 'SYNCED' ? 'Sincronizado' : sale.taskSyncStatus === 'PENDING' || sale.taskSyncStatus === 'PROCESSING' ? 'Processando em segundo plano' : sale.taskSyncStatus} />
                       <DetailRow label="Protocolo" value={sale.taskProtocol} mono />
-                      <DetailRow label="Status Task" value={sale.taskStatus} />
+                      <DetailRow label="Status Task" value={sale.taskStatus ? TASK_STATUS_LABELS[sale.taskStatus] ?? sale.taskStatus : undefined} />
                       <DetailRow label="Responsável" value={sale.taskResponsibleName} />
+                      <DetailRow label="Último retorno" value={sale.taskLastMessage} />
+                      <DetailRow label="Atendimento agora" value={sale.taskIsBeingEdited
+                        ? `${sale.taskEditorName || sale.taskResponsibleName || 'Responsável'} está editando esta demanda`
+                        : 'Nenhum responsável está editando esta demanda neste momento'} />
+                      {sale.taskIsBeingEdited && <DetailRow label="Atividade" value={sale.taskEditorActivity} />}
+                      {!sale.taskIsBeingEdited && sale.taskEditorLastSeenAt && <DetailRow label="Última presença" value={formatDateTime(sale.taskEditorLastSeenAt)} />}
                       <DetailRow label="Cliente Task" value={sale.taskClientName} />
                       <DetailRow label="Prazo" value={sale.taskDeadline ? formatDateTime(sale.taskDeadline) : undefined} />
                       {sale.taskSyncError && <div className="my-3 rounded-md bg-red-500/10 p-3 text-sm text-red-500">{sale.taskSyncError}</div>}

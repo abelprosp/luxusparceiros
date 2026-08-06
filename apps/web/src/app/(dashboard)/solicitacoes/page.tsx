@@ -12,6 +12,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Trash2,
 } from 'lucide-react';
 import {
   RequestStatus,
@@ -41,6 +42,8 @@ import { isPartnerScopedUser } from '@/lib/rbac';
 import { cn } from '@/lib/utils';
 import { requestStatusBadge } from '@/lib/status-badge';
 import { useNotifications } from '@/components/notifications/notifications-provider';
+import { Checkbox } from '@/components/ui/checkbox';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 interface Request {
   id: string;
@@ -86,6 +89,9 @@ export default function SolicitacoesPage() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<RequestStatus | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { notifications } = useNotifications();
   const didDragRef = useRef(false);
 
@@ -239,6 +245,27 @@ export default function SolicitacoesPage() {
     setDetailOpen(true);
   };
 
+  const bulkDeleteRequests = async () => {
+    setDeleting(true);
+    try {
+      const result = await api<{ deleted: string[]; failed: Array<{ id: string; reason: string }>; warning?: string }>('/requests/bulk-delete', {
+        method: 'POST', body: { ids: selectedIds },
+      });
+      toast({
+        title: `${result.deleted.length} demanda(s) excluída(s)`,
+        description: result.failed.length
+          ? `${result.failed.length} não puderam ser excluídas. ${result.warning ?? ''}`.trim()
+          : result.warning,
+        variant: result.failed.length ? 'default' : 'success',
+      });
+      setSelectedIds(result.failed.map((item) => item.id));
+      setBulkDeleteOpen(false);
+      await load();
+    } catch (error) {
+      toast({ title: 'Não foi possível excluir as demandas', description: error instanceof Error ? error.message : 'Falha', variant: 'destructive' });
+    } finally { setDeleting(false); }
+  };
+
   return (
     <DashboardLayout title="Demandas" description={isPartner ? 'Suas demandas e retornos' : 'Demandas enviadas pelos parceiros'}>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -301,6 +328,11 @@ export default function SolicitacoesPage() {
           )}
         </div>
         <div className="flex gap-2">
+          {canManageDemand && selectedIds.length > 0 && (
+            <Button variant="destructive" onClick={() => setBulkDeleteOpen(true)}>
+              <Trash2 className="mr-2 h-4 w-4" /> Excluir selecionadas ({selectedIds.length})
+            </Button>
+          )}
           <Button asChild variant={isPartner ? 'default' : 'secondary'} className="shadow-sm">
             <Link href={isPartner ? '/chamados#abrir-chamado' : '/chamados'}>
               <MessageSquare className="mr-2 h-4 w-4" />
@@ -438,6 +470,14 @@ export default function SolicitacoesPage() {
                           >
                             <CardContent className="space-y-2 p-3">
                               <div className="flex items-start gap-2">
+                                {canManageDemand && <Checkbox
+                                  aria-label={`Selecionar ${request.protocol}`}
+                                  checked={selectedIds.includes(request.id)}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onCheckedChange={(checked) => setSelectedIds(checked
+                                    ? [...selectedIds, request.id]
+                                    : selectedIds.filter((id) => id !== request.id))}
+                                />}
                                 <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" />
                                 <div className="min-w-0 flex-1 space-y-2">
                                   <span className="block truncate font-mono text-xs text-muted-foreground">
@@ -481,6 +521,15 @@ export default function SolicitacoesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {canManageDemand && <TableHead className="w-10">
+                    <Checkbox
+                      aria-label="Selecionar demandas desta página"
+                      checked={items.length > 0 && items.every((item) => selectedIds.includes(item.id))}
+                      onCheckedChange={(checked) => setSelectedIds(checked
+                        ? Array.from(new Set([...selectedIds, ...items.map((item) => item.id)]))
+                        : selectedIds.filter((id) => !items.some((item) => item.id === id)))}
+                    />
+                  </TableHead>}
                   <TableHead>Protocolo</TableHead>
                   <TableHead>Tipo</TableHead>
                   {!isPartner && <TableHead>Parceiro</TableHead>}
@@ -496,6 +545,15 @@ export default function SolicitacoesPage() {
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => openDetail(r.id)}
                   >
+                    {canManageDemand && <TableCell onClick={(event) => event.stopPropagation()}>
+                      <Checkbox
+                        aria-label={`Selecionar ${r.protocol}`}
+                        checked={selectedIds.includes(r.id)}
+                        onCheckedChange={(checked) => setSelectedIds(checked
+                          ? [...selectedIds, r.id]
+                          : selectedIds.filter((id) => id !== r.id))}
+                      />
+                    </TableCell>}
                     <TableCell className="font-mono text-sm">{r.protocol}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{REQUEST_TYPE_LABELS[r.type]}</Badge>
@@ -545,6 +603,15 @@ export default function SolicitacoesPage() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         onUpdated={load}
+      />
+      <DeleteConfirmationDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        itemType="demandas selecionadas"
+        itemLabel={`${selectedIds.length} registro(s)`}
+        description="As demandas selecionadas, comentários, documentos e históricos no Luxus Parceiros serão removidos. Demandas já criadas no Luxus Task serão preservadas para auditoria."
+        deleting={deleting}
+        onConfirm={() => void bulkDeleteRequests()}
       />
     </DashboardLayout>
   );

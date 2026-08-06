@@ -1,6 +1,7 @@
 import { PartialType } from '@nestjs/swagger';
 import {
   IsArray,
+  ArrayMaxSize,
   ArrayMinSize,
   IsBoolean,
   IsDateString,
@@ -21,6 +22,14 @@ import { ContractFormat, DocumentType, DonorOperator, SaleStatus } from '@prisma
 import { Type } from 'class-transformer';
 import { PaginationDto } from '@/common/dto/pagination.dto';
 import { CreateClientInlineDto } from './create-client-inline.dto';
+
+export class BulkDeleteSalesDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsUUID('4', { each: true })
+  ids: string[];
+}
 
 export class SaleRequiredDocumentDto {
   @ApiProperty({ enum: DocumentType })

@@ -6,6 +6,7 @@ import { RequirePermissions } from '@/common/decorators/permissions.decorator';
 import { SalesService } from './sales.service';
 import {
   ContestSaleDto,
+  BulkDeleteSalesDto,
   ApproveSaleForTaskDto,
   CreateSaleDto,
   RejectSaleDto,
@@ -22,6 +23,13 @@ import {
 @Controller('sales')
 export class SalesController {
   constructor(private salesService: SalesService) {}
+
+  @Post('bulk-delete')
+  @RequirePermissions(PERMISSIONS.SALES_DELETE)
+  @ApiOperation({ summary: 'Excluir vendas selecionadas em lote' })
+  bulkDelete(@Body() dto: BulkDeleteSalesDto, @CurrentUser() user: AuthUser) {
+    return this.salesService.bulkRemove(dto.ids, user);
+  }
 
   @Get()
   @RequirePermissions(PERMISSIONS.SALES_READ)
@@ -121,6 +129,20 @@ export class SalesController {
   @ApiOperation({ summary: 'Tentar novamente o envio da venda ao Luxus Task' })
   retryTaskSync(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.salesService.retryTaskSync(id, user);
+  }
+
+  @Post(':id/refresh-task-status')
+  @RequirePermissions(PERMISSIONS.SALES_READ)
+  @ApiOperation({ summary: 'Atualizar etapa e presença do responsável no Luxus Task' })
+  refreshTaskStatus(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesService.refreshTaskStatus(id, user);
+  }
+
+  @Post(':id/finalize-after-task-approval')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Finalizar venda após aprovação do contrato no Luxus Task' })
+  finalizeAfterTaskApproval(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesService.finalizeAfterTaskApproval(id, user);
   }
 
   @Post(':id/release-blank-contract')

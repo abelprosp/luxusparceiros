@@ -973,7 +973,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
   async requestContractCorrection(id: string, dto: RequestContractCorrectionDto, user: AuthUser) {
     this.assertAdmin(user);
     const sale = await this.findOne(id, user);
-    if (sale.contractStage !== SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN) {
+    if (!([SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN, SaleContractStage.TASK_REJECTED_REVIEW_PENDING] as SaleContractStage[]).includes(sale.contractStage)) {
       throw new BadRequestException('O contrato assinado não está aguardando conferência');
     }
     const reason = dto.reason.trim();
@@ -990,6 +990,61 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       type: 'DOCUMENTS_REQUESTED',
       title: 'Corrija o contrato assinado',
       message: `${sale.protocol}: ${reason}`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    });
+    return updated;
+  }
+
+  async refreshTaskStatus(id: string, user: AuthUser) {
+    const sale = await this.findOne(id, user);
+    if (!sale.taskDemandId) return sale;
+    const task = await this.taskIntegration.getDemand(id);
+    await this.taskIntegration.applyCallback({
+      externalRequestId: id,
+      demandId: task.id,
+      protocol: task.protocol,
+      status: task.status,
+      resolution: task.resolution,
+      observations: task.observations,
+      responsibleId: task.responsible?.id,
+      responsibleName: task.responsible?.name,
+      updatedAt: task.updatedAt,
+      workflowStage: task.workflowStage,
+      attachments: task.attachments,
+      isBeingEdited: task.isBeingEdited,
+      editorName: task.editorName,
+      editorActivity: task.editorActivity,
+      editorLastSeenAt: task.editorLastSeenAt,
+    });
+    return this.findOne(id, user);
+  }
+
+  async finalizeAfterTaskApproval(id: string, user: AuthUser) {
+    this.assertAdmin(user);
+    const sale = await this.findOne(id, user);
+    if (sale.contractStage !== SaleContractStage.TASK_APPROVED_REVIEW_PENDING) {
+      throw new BadRequestException('O Luxus Task ainda não aprovou o contrato assinado');
+    }
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        contractStage: SaleContractStage.COMPLETED,
+        contractStageUpdatedAt: new Date(),
+        status: SaleStatus.ACTIVATED,
+        approvedAt: new Date(),
+        activatedAt: new Date(),
+        timeline: { create: {
+          actorId: user.id,
+          actorName: user.name,
+          action: 'Venda finalizada após aprovação do contrato pelo Luxus Task',
+        } },
+      },
+    });
+    await this.commissionsService.createFromSale(updated, user.id);
+    await this.notificationsService.createForPartnerUsers(sale.partnerId, {
+      type: 'SALE_APPROVED',
+      title: 'Venda concluída',
+      message: `${sale.protocol}: contrato aprovado e venda concluída.`,
       data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
     });
     return updated;
@@ -1257,5 +1312,50 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       entityType: 'Sale',
     });
     return { message: 'Venda removida com sucesso' };
+  }
+
+  async bulkRemove(ids: string[], user: AuthUser) {
+    this.assertAdmin(user);
+    const sales = await this.prisma.sale.findMany({
+      where: { id: { in: [...new Set(ids)] } },
+      include: { documents: true, commission: true },
+    });
+    const deleted: string[] = [];
+    const failed: Array<{ id: string; reason: string }> = [];
+    for (const sale of sales) {
+      if (sale.commission?.status === 'PAID') {
+        failed.push({ id: sale.id, reason: 'A comissão desta venda já foi paga' });
+        continue;
+      }
+      try {
+        await this.prisma.$transaction([
+          this.prisma.commission.deleteMany({ where: { saleId: sale.id } }),
+          this.prisma.document.deleteMany({ where: { saleId: sale.id } }),
+          this.prisma.sale.delete({ where: { id: sale.id } }),
+        ]);
+        this.uploadsService.removeStoredFiles(sale.documents);
+        deleted.push(sale.id);
+        await this.auditService.log({
+          userId: user.id,
+          action: 'DELETE',
+          module: 'sales',
+          entityId: sale.id,
+          entityType: 'Sale',
+          oldData: { bulk: true, protocol: sale.protocol, taskDemandId: sale.taskDemandId },
+        });
+      } catch (error) {
+        failed.push({ id: sale.id, reason: error instanceof Error ? error.message : 'Falha ao excluir' });
+      }
+    }
+    for (const id of ids) {
+      if (!sales.some((sale) => sale.id === id)) failed.push({ id, reason: 'Venda não encontrada' });
+    }
+    return {
+      deleted,
+      failed,
+      warning: sales.some((sale) => sale.taskDemandId)
+        ? 'As demandas já criadas no Luxus Task foram preservadas para manter a auditoria.'
+        : undefined,
+    };
   }
 }

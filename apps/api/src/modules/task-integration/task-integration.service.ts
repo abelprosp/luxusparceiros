@@ -9,7 +9,6 @@ import { basename, join } from 'path';
 import { SaleContractStage } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
-import { CommissionsService } from '@/modules/commissions/commissions.service';
 import { TaskDemandCallbackDto, CreateTaskDemandInput } from './dto/task-integration.dto';
 
 export interface TaskResponsible {
@@ -33,6 +32,14 @@ export interface CreatedTaskDemand {
   responsible?: TaskResponsible;
   client?: TaskClient;
   updatedAt?: string;
+  workflowStage?: string;
+  resolution?: string;
+  observations?: string[];
+  attachments?: Array<{ id: string; name: string; mimeType?: string; size?: number; createdAt?: string }>;
+  isBeingEdited?: boolean;
+  editorName?: string;
+  editorActivity?: string;
+  editorLastSeenAt?: string;
 }
 
 @Injectable()
@@ -41,7 +48,6 @@ export class TaskIntegrationService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly commissions: CommissionsService,
   ) {}
 
   isConfigured(): boolean {
@@ -68,10 +74,7 @@ export class TaskIntegrationService {
     });
   }
 
-  async getDemand(externalRequestId: string): Promise<CreatedTaskDemand & {
-    resolution?: string;
-    observations?: string[];
-  }> {
+  async getDemand(externalRequestId: string): Promise<CreatedTaskDemand> {
     return this.request(
       `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}`,
       undefined,
@@ -232,6 +235,8 @@ export class TaskIntegrationService {
         id: true, protocol: true, partnerId: true, createdById: true,
         createdBy: { select: { partnerId: true } }, taskDemandId: true,
         taskStatus: true, contractStage: true, status: true,
+        taskIsBeingEdited: true, taskEditorName: true,
+        taskEditorActivity: true, taskEditorLastSeenAt: true, taskLastMessage: true,
       },
     });
     if (!sale) return { accepted: true };
@@ -242,9 +247,9 @@ export class TaskIntegrationService {
       || dto.observations?.filter(Boolean).at(-1)?.trim()
       || undefined;
     const callbackStage = this.resolveSaleContractStage(dto, sale.contractStage);
-    const changed = sale.taskStatus !== dto.status
+    const workflowChanged = sale.taskStatus !== dto.status
       || callbackStage !== sale.contractStage
-      || Boolean(resolution);
+      || sale.taskLastMessage !== (resolution ?? null);
     if (callbackStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN) {
       for (const attachment of dto.attachments ?? []) {
         if (!attachment.id || !attachment.name) continue;
@@ -269,7 +274,8 @@ export class TaskIntegrationService {
         });
       }
     }
-    const isCompleted = callbackStage === SaleContractStage.COMPLETED;
+    const isAwaitingFinalAdmin = callbackStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING;
+    const isRejectedByTask = callbackStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING;
     await this.prisma.sale.update({
       where: { id: sale.id },
       data: {
@@ -281,10 +287,14 @@ export class TaskIntegrationService {
         taskSyncError: null,
         taskSyncStatus: 'SYNCED',
         taskLastSyncAt: dto.updatedAt ? new Date(dto.updatedAt) : new Date(),
+        taskIsBeingEdited: Boolean(dto.isBeingEdited),
+        taskEditorName: dto.editorName || null,
+        taskEditorActivity: dto.editorActivity || null,
+        taskEditorLastSeenAt: dto.editorLastSeenAt ? new Date(dto.editorLastSeenAt) : null,
+        taskLastMessage: resolution || null,
         contractStage: callbackStage,
         contractStageUpdatedAt: callbackStage !== sale.contractStage ? new Date() : undefined,
-        ...(isCompleted ? { status: 'ACTIVATED', activatedAt: new Date() } : {}),
-        ...(changed ? { timeline: { create: {
+        ...(workflowChanged ? { timeline: { create: {
           action: 'Atualização recebida do Luxus Task',
           details: [
             `Status Task: ${dto.status}`,
@@ -294,27 +304,20 @@ export class TaskIntegrationService {
         } } } : {}),
       },
     });
-    if (isCompleted && sale.status !== 'ACTIVATED') {
-      const activated = await this.prisma.sale.findUnique({ where: { id: sale.id } });
-      if (activated) await this.commissions.createFromSale(activated, sale.createdById);
-    }
-    if (changed) {
+    if (workflowChanged) {
       const notification = {
         type: 'SYSTEM' as const,
-        title: isCompleted
-          ? 'Venda concluída no Luxus Task'
+        title: isAwaitingFinalAdmin
+          ? 'Contrato aprovado no Luxus Task'
+          : isRejectedByTask
+            ? 'Contrato recusado no Luxus Task'
           : callbackStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
             ? 'Contrato em branco recebido'
             : 'Venda atualizada no Luxus Task',
         message: `${sale.protocol}: ${resolution || `status ${dto.status}`}`,
         data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
       };
-      if (callbackStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN) {
-        await this.notifications.createForAdminUsers(notification);
-      } else {
-        await this.notifications.createForPartnerUsers(sale.partnerId, notification);
-        if (!sale.createdBy.partnerId) await this.notifications.create({ userId: sale.createdById, ...notification });
-      }
+      await this.notifications.createForAdminUsers(notification);
     }
     return { accepted: true };
   }
@@ -322,9 +325,10 @@ export class TaskIntegrationService {
   private resolveSaleContractStage(dto: TaskDemandCallbackDto, current: SaleContractStage): SaleContractStage {
     const explicit = dto.workflowStage as SaleContractStage | undefined;
     if (explicit && Object.values(SaleContractStage).includes(explicit)) return explicit;
-    if (dto.status !== 'concluido') return current;
+    if (dto.status !== 'concluido' && dto.status !== 'cancelado') return current;
+    if (dto.status === 'cancelado') return SaleContractStage.TASK_REJECTED_REVIEW_PENDING;
     return current === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
-      ? SaleContractStage.COMPLETED
+      ? SaleContractStage.TASK_APPROVED_REVIEW_PENDING
       : SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN;
   }
 

@@ -474,6 +474,45 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     return { message: 'Solicitação removida com sucesso' };
   }
 
+  async bulkRemove(ids: string[], user: AuthUser) {
+    if (!isAdminRole(user.role)) throw new ForbiddenException('Apenas administradores podem excluir em lote');
+    const requests = await this.prisma.request.findMany({
+      where: { id: { in: [...new Set(ids)] } },
+      select: { id: true, protocol: true, taskDemandId: true },
+    });
+    const deleted: string[] = [];
+    const failed: Array<{ id: string; reason: string }> = [];
+    for (const request of requests) {
+      try {
+        await this.prisma.$transaction([
+          this.prisma.document.deleteMany({ where: { requestId: request.id } }),
+          this.prisma.request.delete({ where: { id: request.id } }),
+        ]);
+        deleted.push(request.id);
+        await this.auditService.log({
+          userId: user.id,
+          action: 'DELETE',
+          module: 'requests',
+          entityId: request.id,
+          entityType: 'Request',
+          oldData: { bulk: true, protocol: request.protocol, taskDemandId: request.taskDemandId },
+        });
+      } catch (error) {
+        failed.push({ id: request.id, reason: error instanceof Error ? error.message : 'Falha ao excluir' });
+      }
+    }
+    for (const id of ids) {
+      if (!requests.some((request) => request.id === id)) failed.push({ id, reason: 'Solicitação não encontrada' });
+    }
+    return {
+      deleted,
+      failed,
+      warning: requests.some((request) => request.taskDemandId)
+        ? 'As demandas já criadas no Luxus Task foram preservadas para manter a auditoria.'
+        : undefined,
+    };
+  }
+
   async exportCsv(
     user: AuthUser,
     params: {

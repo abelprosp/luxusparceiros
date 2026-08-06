@@ -67,6 +67,8 @@ enum SaleContractStage {
   AWAITING_PARTNER_SIGNATURE
   SIGNED_CONTRACT_READY_FOR_ADMIN
   TASK_VALIDATING_SIGNED_CONTRACT
+  TASK_APPROVED_REVIEW_PENDING
+  TASK_REJECTED_REVIEW_PENDING
   CHANGES_REQUESTED
   COMPLETED
 }
@@ -591,6 +593,11 @@ model Sale {
   taskNextRetryAt   DateTime?
   taskSyncLockedAt  DateTime?
   taskLastSyncAt    DateTime?
+  taskIsBeingEdited Boolean @default(false)
+  taskEditorName    String?
+  taskEditorActivity String?
+  taskEditorLastSeenAt DateTime?
+  taskLastMessage     String?
   contractStage     SaleContractStage @default(PRE_REVIEW)
   contractStageUpdatedAt DateTime @default(now())
   contractCorrectionReason String?

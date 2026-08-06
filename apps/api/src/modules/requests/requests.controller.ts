@@ -8,6 +8,7 @@ import { Roles } from '@/common/decorators/roles.decorator';
 import { RequestsService } from './requests.service';
 import {
   CreateRequestCommentDto,
+  BulkDeleteRequestsDto,
   CreateRequestDto,
   RequestFiltersDto,
   RequestListQueryDto,
@@ -21,6 +22,14 @@ import {
 @Controller('requests')
 export class RequestsController {
   constructor(private requestsService: RequestsService) {}
+
+  @Post('bulk-delete')
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
+  @RequirePermissions(PERMISSIONS.REQUESTS_WRITE)
+  @ApiOperation({ summary: 'Excluir solicitações selecionadas em lote' })
+  bulkDelete(@Body() dto: BulkDeleteRequestsDto, @CurrentUser() user: AuthUser) {
+    return this.requestsService.bulkRemove(dto.ids, user);
+  }
 
   @Get()
   @RequirePermissions(PERMISSIONS.REQUESTS_READ)
