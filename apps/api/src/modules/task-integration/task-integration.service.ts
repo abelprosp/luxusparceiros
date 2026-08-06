@@ -126,6 +126,9 @@ export class TaskIntegrationService {
       select: { name: true, url: true, mimeType: true, size: true },
     });
     if (!document) throw new BadGatewayException('Documento da venda não encontrado');
+    if (!document.url.startsWith('/uploads/')) {
+      throw new BadGatewayException('Documento sem arquivo local disponível para o Luxus Task');
+    }
     const uploadDir = this.config.get<string>('UPLOAD_DIR')
       || this.config.get<string>('RAILWAY_VOLUME_MOUNT_PATH')
       || './uploads';
@@ -250,29 +253,30 @@ export class TaskIntegrationService {
     const workflowChanged = sale.taskStatus !== dto.status
       || callbackStage !== sale.contractStage
       || sale.taskLastMessage !== (resolution ?? null);
-    if (callbackStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN) {
-      for (const attachment of dto.attachments ?? []) {
-        if (!attachment.id || !attachment.name) continue;
-        const externalId = `task:${dto.demandId}:${attachment.id}`;
-        await this.prisma.document.upsert({
-          where: { externalId },
-          create: {
-            saleId: sale.id,
-            externalId,
-            name: attachment.name,
-            type: 'CONTRACT',
-            purpose: 'BLANK_CONTRACT',
-            url: `/task-integration/sales/${sale.id}/attachments/${attachment.id}`,
-            mimeType: attachment.mimeType || 'application/pdf',
-            size: attachment.size || 0,
-          },
-          update: {
-            name: attachment.name,
-            mimeType: attachment.mimeType || 'application/pdf',
-            size: attachment.size || 0,
-          },
-        });
-      }
+    for (const attachment of dto.attachments ?? []) {
+      if (!attachment.id || !attachment.name) continue;
+      const externalId = `task:${dto.demandId}:${attachment.id}`;
+      const meta = this.resolveIncomingAttachmentMeta(attachment.name, callbackStage);
+      await this.prisma.document.upsert({
+        where: { externalId },
+        create: {
+          saleId: sale.id,
+          externalId,
+          name: attachment.name,
+          type: meta.type,
+          purpose: meta.purpose,
+          url: `/task-integration/sales/${sale.id}/attachments/${attachment.id}`,
+          mimeType: attachment.mimeType || 'application/octet-stream',
+          size: attachment.size || 0,
+        },
+        update: {
+          name: attachment.name,
+          type: meta.type,
+          purpose: meta.purpose,
+          mimeType: attachment.mimeType || 'application/octet-stream',
+          size: attachment.size || 0,
+        },
+      });
     }
     const isAwaitingFinalAdmin = callbackStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING;
     const isRejectedByTask = callbackStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING;
@@ -330,6 +334,68 @@ export class TaskIntegrationService {
     return current === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
       ? SaleContractStage.TASK_APPROVED_REVIEW_PENDING
       : SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN;
+  }
+
+  private resolveIncomingAttachmentMeta(
+    name: string,
+    stage: SaleContractStage,
+  ): { type: 'CONTRACT' | 'OTHER'; purpose: 'BLANK_CONTRACT' | 'SIGNED_CONTRACT' | 'GENERAL' } {
+    const normalized = name.toLowerCase();
+    if (normalized.includes('contrato assinado') || normalized.includes('assinado')) {
+      return { type: 'CONTRACT', purpose: 'SIGNED_CONTRACT' };
+    }
+    if (
+      stage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
+      || (normalized.includes('contrato') && !normalized.includes('assinado'))
+    ) {
+      if (stage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN) {
+        return { type: 'CONTRACT', purpose: 'BLANK_CONTRACT' };
+      }
+    }
+    return { type: 'OTHER', purpose: 'GENERAL' };
+  }
+
+  async importSaleDocumentsToTask(
+    externalRequestId: string,
+    documents: Array<{ id: string; name: string; type: string; mimeType: string; size: number }>,
+  ) {
+    if (!documents.length) return { imported: 0 };
+    return this.request<{ imported: number }>(
+      `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}/anexos`,
+      { method: 'POST', body: JSON.stringify({ documents }) },
+      60_000,
+    );
+  }
+
+  async pushSaleDocumentIfSynced(saleId: string, document: {
+    id: string;
+    name: string;
+    type: string;
+    mimeType: string;
+    size: number;
+    url: string;
+    purpose?: string | null;
+  }) {
+    if (!this.isConfigured()) return;
+    if (!document.url.startsWith('/uploads/')) return;
+    if (document.purpose === 'BLANK_CONTRACT' || document.purpose === 'SIGNED_CONTRACT') return;
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { taskDemandId: true },
+    });
+    if (!sale?.taskDemandId) return;
+    try {
+      await this.importSaleDocumentsToTask(saleId, [{
+        id: document.id,
+        name: document.name,
+        type: document.type,
+        mimeType: document.mimeType,
+        size: document.size,
+      }]);
+    } catch (error) {
+      // Não bloqueia o upload local; a sincronização pode ser retentada no refresh.
+      console.warn('[task-integration] Falha ao enviar anexo ao Luxus Task', error);
+    }
   }
 
   private mapTaskStatus(status: string) {

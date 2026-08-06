@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentPurpose, DocumentType, Prisma, SaleContractStage, SaleStatus } from '@prisma/client';
@@ -24,6 +26,7 @@ import {
   isAdminRole,
   isPlatformAdmin,
 } from '@/common/utils/partner-scope';
+import { TaskIntegrationService } from '@/modules/task-integration/task-integration.service';
 
 const ALLOWED_MIME_TYPES = [
   'image/jpeg',
@@ -42,6 +45,8 @@ export class UploadsService {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    @Inject(forwardRef(() => TaskIntegrationService))
+    private readonly taskIntegration: TaskIntegrationService,
   ) {
     this.uploadDir =
       this.configService.get<string>('UPLOAD_DIR') ||
@@ -92,6 +97,7 @@ export class UploadsService {
 
     if (relations?.saleId) {
       await this.markSaleDocumentFulfilled(relations.saleId, type);
+      await this.taskIntegration.pushSaleDocumentIfSynced(relations.saleId, document);
     }
 
     return document;
@@ -301,7 +307,7 @@ export class UploadsService {
     writeFileSync(filepath, file.buffer);
 
     try {
-      return await this.prisma.document.update({
+      const updated = await this.prisma.document.update({
         where: { id: document.id },
         data: {
           name: file.originalname,
@@ -311,6 +317,10 @@ export class UploadsService {
           uploadedBy: user.id,
         },
       });
+      if (updated.saleId) {
+        await this.taskIntegration.pushSaleDocumentIfSynced(updated.saleId, updated);
+      }
+      return updated;
     } catch (error) {
       if (existsSync(filepath)) unlinkSync(filepath);
       throw error;

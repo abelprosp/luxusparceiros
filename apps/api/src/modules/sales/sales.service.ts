@@ -794,13 +794,15 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           requesterName: sale.createdBy.name,
           requesterEmail: sale.createdBy.email,
           priority: sale.taskPriority,
-          documents: sale.documents.map((document) => ({
-            id: document.id,
-            name: document.name,
-            type: document.type,
-            mimeType: document.mimeType,
-            size: document.size,
-          })),
+          documents: sale.documents
+            .filter((document) => document.url.startsWith('/uploads/'))
+            .map((document) => ({
+              id: document.id,
+              name: document.name,
+              type: document.type,
+              mimeType: document.mimeType,
+              size: document.size,
+            })),
         });
       }
       await this.prisma.sale.update({
