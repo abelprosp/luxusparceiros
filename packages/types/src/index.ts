@@ -77,15 +77,15 @@ export enum DocumentPurpose {
 }
 
 export const SALE_CONTRACT_STAGE_LABELS: Record<SaleContractStage, string> = {
-  [SaleContractStage.PRE_REVIEW]: 'Aguardando envio ao Luxus Task',
-  [SaleContractStage.TASK_PROCESSING]: 'Em tramitação no Luxus Task',
-  [SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN]: 'Contrato em branco aguardando o administrador',
+  [SaleContractStage.PRE_REVIEW]: 'Aguardando Luxus Task',
+  [SaleContractStage.TASK_PROCESSING]: 'Aguardando Luxus Task',
+  [SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN]: 'Contrato em branco recebido',
   [SaleContractStage.AWAITING_PARTNER_SIGNATURE]: 'Aguardando assinatura do parceiro',
-  [SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN]: 'Contrato assinado aguardando conferência',
-  [SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT]: 'Contrato assinado em validação no Luxus Task',
-  [SaleContractStage.TASK_APPROVED_REVIEW_PENDING]: 'Contrato aprovado no Task — aguardando finalização do administrador',
-  [SaleContractStage.TASK_REJECTED_REVIEW_PENDING]: 'Contrato recusado no Task — aguardando ação do administrador',
-  [SaleContractStage.CHANGES_REQUESTED]: 'Correção solicitada',
+  [SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN]: 'Contrato assinado pelo parceiro',
+  [SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT]: 'Contrato assinado enviado para conferência no Luxus Task',
+  [SaleContractStage.TASK_APPROVED_REVIEW_PENDING]: 'Contrato aprovado no Luxus Task',
+  [SaleContractStage.TASK_REJECTED_REVIEW_PENDING]: 'Contrato recusado no Luxus Task',
+  [SaleContractStage.CHANGES_REQUESTED]: 'Correção do contrato solicitada',
   [SaleContractStage.COMPLETED]: 'Venda concluída',
 };
 

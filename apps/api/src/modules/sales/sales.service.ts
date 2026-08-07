@@ -918,6 +918,13 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       message: `${sale.protocol}: baixe o contrato, colete as assinaturas e anexe o documento assinado.`,
       data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
     });
+    await this.notificationsService.create({
+      userId: sale.createdById,
+      type: 'DOCUMENTS_REQUESTED',
+      title: 'Contrato disponível para assinatura',
+      message: `${sale.protocol}: baixe o contrato, colete as assinaturas e anexe o documento assinado.`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    }).catch(() => undefined);
     return updated;
   }
 
@@ -944,10 +951,17 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     });
     await this.notificationsService.createForAdminUsers({
       type: 'SYSTEM',
-      title: 'Contrato assinado para conferir',
+      title: 'Contrato assinado pelo parceiro',
       message: `${sale.protocol}: o parceiro anexou o contrato assinado.`,
       data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
     });
+    await this.notificationsService.create({
+      userId: sale.createdById,
+      type: 'SYSTEM',
+      title: 'Contrato assinado pelo parceiro',
+      message: `${sale.protocol}: seu contrato assinado foi enviado para conferência.`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    }).catch(() => undefined);
     return updated;
   }
 
@@ -968,6 +982,13 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         timeline: { create: { actorId: user.id, actorName: user.name, action: 'Contrato assinado aprovado e enfileirado para o Luxus Task' } },
       },
     });
+    await this.notificationsService.create({
+      userId: sale.createdById,
+      type: 'SYSTEM',
+      title: 'Contrato assinado enviado para conferência no Luxus Task',
+      message: `${sale.protocol}: o contrato assinado foi enviado ao Luxus Task.`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    }).catch(() => undefined);
     setImmediate(() => void this.processTaskSyncQueue());
     return updated;
   }

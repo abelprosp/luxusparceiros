@@ -4,7 +4,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createReadStream, existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { basename, join } from 'path';
 import { SaleContractStage } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -134,7 +134,14 @@ export class TaskIntegrationService {
       || './uploads';
     const path = join(uploadDir, basename(document.url));
     if (!existsSync(path)) throw new BadGatewayException('Arquivo físico da venda não encontrado');
-    return { ...document, stream: createReadStream(path) };
+    const buffer = readFileSync(path);
+    if (!buffer.length) throw new BadGatewayException('Arquivo físico da venda está vazio');
+    return {
+      name: document.name,
+      mimeType: document.mimeType || 'application/octet-stream',
+      size: buffer.length,
+      buffer,
+    };
   }
 
   async applyCallback(dto: TaskDemandCallbackDto) {
@@ -317,11 +324,25 @@ export class TaskIntegrationService {
             ? 'Contrato recusado no Luxus Task'
           : callbackStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
             ? 'Contrato em branco recebido'
+            : callbackStage === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
+              ? 'Contrato assinado enviado para conferência no Luxus Task'
             : 'Venda atualizada no Luxus Task',
         message: `${sale.protocol}: ${resolution || `status ${dto.status}`}`,
         data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
       };
       await this.notifications.createForAdminUsers(notification);
+      // Quem abriu a venda e o time do parceiro também precisam acompanhar cada etapa.
+      await this.notifications.create({
+        userId: sale.createdById,
+        ...notification,
+      }).catch(() => undefined);
+      if (sale.partnerId) {
+        await this.notifications.createForPartnerUsers(
+          sale.partnerId,
+          notification,
+          [sale.createdById],
+        ).catch(() => undefined);
+      }
     }
     return { accepted: true };
   }

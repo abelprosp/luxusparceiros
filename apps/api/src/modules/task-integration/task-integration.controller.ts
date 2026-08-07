@@ -63,8 +63,8 @@ export class TaskIntegrationController {
   ) {
     const file = await this.integration.getSaleDocument(saleId, documentId);
     response.setHeader('Content-Type', file.mimeType);
-    response.setHeader('Content-Length', file.size);
+    response.setHeader('Content-Length', String(file.buffer.length));
     response.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`);
-    file.stream.pipe(response);
+    response.end(file.buffer);
   }
 }
