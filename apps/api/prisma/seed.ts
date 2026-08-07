@@ -174,25 +174,31 @@ async function seedPlans(operatorIds: Record<string, string>) {
 }
 
 async function seedPartnerAndUsers(hashedPassword: string) {
-  const partner = await prisma.partner.upsert({
+  const existingPartner = await prisma.partner.findFirst({
     where: { document: '12345678000190' },
-    create: {
-      name: 'Parceiro Luxus',
-      tradeName: 'Parceiro Luxus',
-      document: '12345678000190',
-      email: 'contato@luxus.com.br',
-      phone: '11988887777',
-      status: PartnerStatus.ACTIVE,
-      commissionRate: 10,
-      goal: 50,
-      goalMonth: 50,
-    },
-    update: {
-      name: 'Parceiro Luxus',
-      tradeName: 'Parceiro Luxus',
-      email: 'contato@luxus.com.br',
-    },
   });
+  const partner = existingPartner
+    ? await prisma.partner.update({
+        where: { id: existingPartner.id },
+        data: {
+          name: 'Parceiro Luxus',
+          tradeName: 'Parceiro Luxus',
+          email: 'contato@luxus.com.br',
+        },
+      })
+    : await prisma.partner.create({
+        data: {
+          name: 'Parceiro Luxus',
+          tradeName: 'Parceiro Luxus',
+          document: '12345678000190',
+          email: 'contato@luxus.com.br',
+          phone: '11988887777',
+          status: PartnerStatus.ACTIVE,
+          commissionRate: 10,
+          goal: 50,
+          goalMonth: 50,
+        },
+      });
   console.log(`✓ Parceiro: ${partner.name}`);
 
   const partnerUser = await prisma.user.upsert({
