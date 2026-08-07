@@ -46,6 +46,7 @@ interface Partner {
   users?: { id: string; email: string; name: string }[];
   branches?: Branch[];
   partnerPlans?: PartnerPlanLink[];
+  documentSharedWith?: string[];
 }
 
 interface Branch {
@@ -120,6 +121,7 @@ export default function ParceirosPage() {
   const [branchForm, setBranchForm] = useState(emptyBranchForm);
   const [newPassword, setNewPassword] = useState('');
   const [selectedPlanIds, setSelectedPlanIds] = useState<Record<string, boolean>>({});
+  const [documentDuplicates, setDocumentDuplicates] = useState<{ id: string; name: string }[]>([]);
   const { toast } = useToast();
 
   const loadPartners = useCallback(async () => {
@@ -143,6 +145,29 @@ export default function ParceirosPage() {
   useEffect(() => {
     loadPartners();
   }, [loadPartners]);
+
+  useEffect(() => {
+    const cleaned = form.document.replace(/\D/g, '');
+    if (cleaned.length < 11) {
+      setDocumentDuplicates([]);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const params = new URLSearchParams({ document: cleaned });
+          if (editing?.id) params.set('excludeId', editing.id);
+          const matches = await api<{ id: string; name: string }[]>(`/partners/check-document?${params}`);
+          setDocumentDuplicates(matches);
+        } catch {
+          setDocumentDuplicates([]);
+        }
+      })();
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [form.document, editing?.id]);
 
   const loadPlans = async () => {
     const res = await getPaginated<Plan>('/plans', { limit: 100 });
@@ -321,7 +346,7 @@ export default function ParceirosPage() {
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={() => { setEditing(null); setForm(emptyForm); setDialogOpen(true); }}>
+        <Button onClick={() => { setEditing(null); setForm(emptyForm); setDocumentDuplicates([]); setDialogOpen(true); }}>
           <Plus className="mr-2 h-4 w-4" /> Novo Parceiro
         </Button>
       </div>
@@ -348,7 +373,16 @@ export default function ParceirosPage() {
                 {partners.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell>{formatDocument(p.document)}</TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <span>{formatDocument(p.document)}</span>
+                        {(p.documentSharedWith?.length ?? 0) > 0 && (
+                          <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                            Mesmo CNPJ em: {p.documentSharedWith?.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{p.email}</TableCell>
                     <TableCell><Badge variant={statusVariant(p.status)}>{p.status}</Badge></TableCell>
                     <TableCell>{formatDate(p.createdAt)}</TableCell>
@@ -397,7 +431,16 @@ export default function ParceirosPage() {
           <DialogHeader><DialogTitle>{editing ? 'Editar Parceiro' : 'Novo Parceiro'}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2"><Label>Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Documento</Label><Input value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} /></div>
+            <div className="space-y-2">
+              <Label>Documento (CNPJ/CPF)</Label>
+              <Input value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} />
+              {documentDuplicates.length > 0 && (
+                <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                  Já existe outro acesso com este CNPJ: {documentDuplicates.map((item) => item.name).join(', ')}.
+                  Você pode criar mesmo assim (ex.: Matriz e Loja X).
+                </p>
+              )}
+            </div>
             <div className="space-y-2"><Label>E-mail</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
             <div className="space-y-2"><Label>Telefone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
             <div className="space-y-3 rounded-lg border p-4">
@@ -483,6 +526,12 @@ export default function ParceirosPage() {
             <DialogTitle>{selected?.name}</DialogTitle>
           </DialogHeader>
           {selected && (
+            <>
+              {(selected.documentSharedWith?.length ?? 0) > 0 && (
+                <p className="rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-300">
+                  Mesmo CNPJ também cadastrado em: {selected.documentSharedWith?.join(', ')}
+                </p>
+              )}
             <Tabs defaultValue="filiais">
               <TabsList>
                 <TabsTrigger value="filiais">Filiais</TabsTrigger>
@@ -549,6 +598,7 @@ export default function ParceirosPage() {
                 </Button>
               </TabsContent>
             </Tabs>
+            </>
           )}
         </DialogContent>
       </Dialog>

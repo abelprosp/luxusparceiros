@@ -65,7 +65,10 @@ export class PartnersService {
       this.prisma.partner.count({ where }),
     ]);
 
-    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+    return {
+      data: await this.attachDocumentShareInfo(data),
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async findOne(id: string, user?: AuthUser) {
@@ -93,17 +96,37 @@ export class PartnersService {
     });
     if (!partner) throw new NotFoundException(MESSAGES.NOT_FOUND);
     if (user) assertPartnerAccess(user, partner.id);
-    return partner;
+    const [enriched] = await this.attachDocumentShareInfo([partner]);
+    return enriched;
+  }
+
+  async findByDocument(document: string, excludeId?: string) {
+    const cleaned = document.replace(/\D/g, '');
+    if (!cleaned) return [];
+
+    const partners = await this.prisma.partner.findMany({
+      where: {
+        OR: [
+          { document: cleaned },
+          { document: { contains: cleaned } },
+        ],
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true, name: true, tradeName: true, document: true, status: true },
+      orderBy: { name: 'asc' },
+      take: 20,
+    });
+
+    return partners.filter((partner) => partner.document.replace(/\D/g, '') === cleaned);
   }
 
   async create(dto: CreatePartnerDto, actor: AuthUser) {
     if (actor.partnerId) {
       throw new ForbiddenException('Administradores de parceiro não podem criar outros parceiros');
     }
-    const exists = await this.prisma.partner.findUnique({ where: { document: dto.document } });
-    if (exists) throw new ConflictException(MESSAGES.DOCUMENT_EXISTS);
 
     const { user: userDto, ...partnerData } = dto;
+    const document = dto.document.replace(/\D/g, '');
     const coordinates = await this.geocodeAddress(partnerData);
 
     if (userDto) {
@@ -113,7 +136,7 @@ export class PartnersService {
 
     const partner = await this.prisma.$transaction(async (tx) => {
       const created = await tx.partner.create({
-        data: { ...partnerData, ...(coordinates ?? {}) },
+        data: { ...partnerData, document, ...(coordinates ?? {}) },
       });
 
       if (userDto) {
@@ -151,6 +174,9 @@ export class PartnersService {
   async update(id: string, dto: UpdatePartnerDto, actor: AuthUser) {
     const existing = await this.findOne(id, actor);
     const { user: _user, ...partnerData } = dto;
+    if (partnerData.document !== undefined) {
+      partnerData.document = partnerData.document.replace(/\D/g, '');
+    }
     const locationChanged = (['address', 'city', 'state', 'zipCode'] as const).some(
       (field) => partnerData[field] !== undefined && partnerData[field] !== existing[field],
     );
@@ -185,6 +211,42 @@ export class PartnersService {
       newData: partner as unknown as Prisma.InputJsonValue,
     });
     return this.findOne(id);
+  }
+
+  private async attachDocumentShareInfo<T extends { id: string; document: string }>(partners: T[]) {
+    if (!partners.length) return partners.map((partner) => ({ ...partner, documentSharedWith: [] as string[] }));
+
+    const cleanedDocs = [...new Set(partners.map((partner) => partner.document.replace(/\D/g, '')).filter(Boolean))];
+    if (!cleanedDocs.length) {
+      return partners.map((partner) => ({ ...partner, documentSharedWith: [] as string[] }));
+    }
+
+    const siblings = await this.prisma.partner.findMany({
+      where: {
+        OR: cleanedDocs.flatMap((doc) => [
+          { document: doc },
+          { document: { contains: doc } },
+        ]),
+      },
+      select: { id: true, name: true, document: true },
+    });
+
+    const byCleanDoc = new Map<string, { id: string; name: string }[]>();
+    for (const sibling of siblings) {
+      const cleaned = sibling.document.replace(/\D/g, '');
+      if (!cleanedDocs.includes(cleaned)) continue;
+      const list = byCleanDoc.get(cleaned) ?? [];
+      list.push({ id: sibling.id, name: sibling.name });
+      byCleanDoc.set(cleaned, list);
+    }
+
+    return partners.map((partner) => {
+      const cleaned = partner.document.replace(/\D/g, '');
+      const others = (byCleanDoc.get(cleaned) ?? [])
+        .filter((item) => item.id !== partner.id)
+        .map((item) => item.name);
+      return { ...partner, documentSharedWith: others };
+    });
   }
 
   private async geocodeAddress(address: PartnerAddress): Promise<PartnerCoordinates | null> {

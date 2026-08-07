@@ -44,6 +44,7 @@ export class CreatePartnerDto {
   tradeName?: string;
 
   @ApiProperty()
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/\D/g, '') : value))
   @IsString()
   document: string;
 

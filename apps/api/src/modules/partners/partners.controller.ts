@@ -31,6 +31,16 @@ export class PartnersController {
     });
   }
 
+  @Get('check-document')
+  @RequirePermissions(PERMISSIONS.PARTNERS_READ)
+  @ApiOperation({ summary: 'Verificar se o CNPJ/CPF já possui outros acessos' })
+  checkDocument(
+    @Query('document') document: string,
+    @Query('excludeId') excludeId?: string,
+  ) {
+    return this.partnersService.findByDocument(document ?? '', excludeId);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.PARTNERS_READ)
   @ApiOperation({ summary: 'Obter parceiro por ID' })

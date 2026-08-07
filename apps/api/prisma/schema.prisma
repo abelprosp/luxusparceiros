@@ -321,7 +321,7 @@ model Partner {
   id                String        @id @default(uuid())
   name              String
   tradeName         String?
-  document          String        @unique
+  document          String
   documentType      DocumentType  @default(CNPJ)
   email             String
   phone             String
