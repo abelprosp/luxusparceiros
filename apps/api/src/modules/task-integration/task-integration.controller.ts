@@ -7,6 +7,7 @@ import {
   Query,
   Res,
   UseGuards,
+  ValidationPipe,
 } from '@nestjs/common';
 import { PERMISSIONS } from '@luxus/types';
 import { Response } from 'express';
@@ -35,7 +36,16 @@ export class TaskIntegrationController {
   @Public()
   @UseGuards(TaskIntegrationGuard)
   @Post('integrations/luxus-task/callback')
-  callback(@Body() dto: TaskDemandCallbackDto) {
+  callback(
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: false,
+        transform: true,
+      }),
+    )
+    dto: TaskDemandCallbackDto,
+  ) {
     return this.integration.applyCallback(dto);
   }
 
