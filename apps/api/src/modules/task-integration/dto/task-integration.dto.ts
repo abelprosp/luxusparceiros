@@ -29,6 +29,10 @@ export class TaskCallbackAttachmentDto {
   @IsOptional()
   @IsDateString()
   createdAt?: string;
+
+  @IsOptional()
+  @IsString()
+  contentBase64?: string;
 }
 
 export class TaskDemandCallbackDto {

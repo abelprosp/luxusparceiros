@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, extname, join } from 'path';
 import { randomUUID } from 'crypto';
-import { SaleContractStage } from '@prisma/client';
+import { SaleContractStage, SaleTaskSyncStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TaskDemandCallbackDto, CreateTaskDemandInput } from './dto/task-integration.dto';
@@ -164,16 +164,26 @@ export class TaskIntegrationService {
           { url: { startsWith: 'uploads/' } },
         ],
       },
-      select: { id: true, name: true, type: true, mimeType: true, size: true, url: true },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        mimeType: true,
+        size: true,
+        url: true,
+        externalId: true,
+      },
       orderBy: { createdAt: 'asc' },
     });
-    return documents.map((document) => ({
-      id: document.id,
-      name: document.name,
-      type: document.type,
-      mimeType: document.mimeType,
-      size: document.size,
-    }));
+    return documents
+      .filter((document) => !document.externalId?.startsWith('task:'))
+      .map((document) => ({
+        id: document.id,
+        name: document.name,
+        type: document.type,
+        mimeType: document.mimeType,
+        size: document.size,
+      }));
   }
 
   async applyCallback(dto: TaskDemandCallbackDto) {
@@ -299,8 +309,15 @@ export class TaskIntegrationService {
       let storedUrl = `/task-integration/sales/${sale.id}/attachments/${attachment.id}`;
       let storedSize = attachment.size || 0;
       let storedMime = attachment.mimeType || 'application/octet-stream';
+      let materialized = false;
       try {
-        const file = await this.downloadTaskAttachment(dto.externalRequestId, attachment.id);
+        const file = attachment.contentBase64
+          ? {
+              buffer: this.decodeAttachmentBase64(attachment.contentBase64),
+              mimeType: storedMime,
+              name: attachment.name,
+            }
+          : await this.downloadTaskAttachment(dto.externalRequestId, attachment.id);
         const uploadDir = this.uploadDir();
         if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
         const extension = extname(file.name || attachment.name) || '.bin';
@@ -309,6 +326,7 @@ export class TaskIntegrationService {
         storedUrl = `/uploads/${filename}`;
         storedSize = file.buffer.length;
         storedMime = file.mimeType || storedMime;
+        materialized = true;
       } catch (error) {
         console.warn('[task-integration] Não foi possível materializar anexo do Task', attachment.id, error);
       }
@@ -328,9 +346,11 @@ export class TaskIntegrationService {
           name: attachment.name.replace(/^CONTRATO EM BRANCO\s*[—-]\s*/i, '').trim() || attachment.name,
           type: meta.type,
           purpose: meta.purpose,
-          url: storedUrl,
-          mimeType: storedMime,
-          size: storedSize,
+          ...(materialized ? {
+            url: storedUrl,
+            mimeType: storedMime,
+            size: storedSize,
+          } : {}),
         },
       });
     }
@@ -553,6 +573,16 @@ export class TaskIntegrationService {
       || './uploads';
   }
 
+  private decodeAttachmentBase64(contentBase64: string): Buffer {
+    const normalized = contentBase64.trim().replace(/\s+/g, '');
+    if (!normalized || !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) {
+      throw new Error('Conteúdo base64 do anexo é inválido');
+    }
+    const buffer = Buffer.from(normalized, 'base64');
+    if (!buffer.length) throw new Error('Conteúdo base64 do anexo está vazio');
+    return buffer;
+  }
+
   async pushSaleDocumentIfSynced(saleId: string, document: {
     id: string;
     name: string;
@@ -580,9 +610,24 @@ export class TaskIntegrationService {
         url: document.url,
       }]);
       if (!payload.length) return;
-      await this.importSaleDocumentsToTask(saleId, payload);
+      const result = await this.importSaleDocumentsToTask(saleId, payload);
+      if (
+        (result.imported + result.skipped) < payload.length
+        || result.failed.length > 0
+      ) {
+        throw new Error(result.failed.join('; ') || 'O Luxus Task não confirmou o anexo');
+      }
     } catch (error) {
-      // Não bloqueia o upload local; a sincronização pode ser retentada no refresh.
+      const message = error instanceof Error ? error.message : 'Falha ao enviar anexo ao Luxus Task';
+      await this.prisma.sale.update({
+        where: { id: saleId },
+        data: {
+          taskSyncStatus: SaleTaskSyncStatus.RETRY,
+          taskSyncError: message,
+          taskNextRetryAt: new Date(),
+        },
+      }).catch(() => undefined);
+      // Não bloqueia o upload local; a fila fará uma nova tentativa.
       console.warn('[task-integration] Falha ao enviar anexo ao Luxus Task', error);
     }
   }

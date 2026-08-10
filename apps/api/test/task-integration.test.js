@@ -1,5 +1,9 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { existsSync, readFileSync, rmSync } = require('node:fs');
+const { tmpdir } = require('node:os');
+const { join } = require('node:path');
+const { mkdtempSync } = require('node:fs');
 const { UnauthorizedException } = require('@nestjs/common');
 const {
   TaskIntegrationGuard,
@@ -164,4 +168,58 @@ test('aprovacao do Task aguarda confirmacao final do administrador sem ativar ve
   assert.equal(updates[0].data.status, undefined);
   assert.equal(updates[0].data.contractStage, 'TASK_APPROVED_REVIEW_PENDING');
   assert.equal(commissions, 0);
+});
+
+test('callback materializa bytes do anexo do Task sem depender de outro download', async () => {
+  const uploadDir = mkdtempSync(join(tmpdir(), 'luxus-task-callback-'));
+  const importedDocuments = [];
+  const sale = {
+    id: '11111111-1111-4111-8111-111111111111',
+    protocol: 'VND-TESTE',
+    partnerId: '33333333-3333-4333-8333-333333333333',
+    createdById: '44444444-4444-4444-8444-444444444444',
+    createdBy: { partnerId: '33333333-3333-4333-8333-333333333333' },
+    taskDemandId: '22222222-2222-4222-8222-222222222222',
+    taskStatus: 'em_andamento',
+    contractStage: 'TASK_PROCESSING',
+    status: 'APPROVED',
+  };
+  const prisma = {
+    request: { findUnique: async () => null },
+    sale: {
+      findUnique: async () => sale,
+      update: async () => sale,
+    },
+    document: { upsert: async (args) => importedDocuments.push(args) },
+  };
+  const service = new TaskIntegrationService(
+    { get: (key) => key === 'UPLOAD_DIR' ? uploadDir : undefined },
+    prisma,
+    { createForAdminUsers: async () => {}, createForPartnerUsers: async () => {}, create: async () => {} },
+  );
+
+  try {
+    await service.applyCallback({
+      externalRequestId: sale.id,
+      demandId: sale.taskDemandId,
+      protocol: 'LUX-2026-00003',
+      status: 'em_andamento',
+      attachments: [{
+        id: '55555555-5555-4555-8555-555555555555',
+        name: 'contrato.pdf',
+        mimeType: 'application/pdf',
+        size: 4,
+        contentBase64: Buffer.from('PDF!').toString('base64'),
+      }],
+    });
+
+    assert.equal(importedDocuments.length, 1);
+    const storedUrl = importedDocuments[0].create.url;
+    assert.match(storedUrl, /^\/uploads\//);
+    const storedPath = join(uploadDir, storedUrl.replace('/uploads/', ''));
+    assert.equal(existsSync(storedPath), true);
+    assert.equal(readFileSync(storedPath).toString(), 'PDF!');
+  } finally {
+    rmSync(uploadDir, { recursive: true, force: true });
+  }
 });

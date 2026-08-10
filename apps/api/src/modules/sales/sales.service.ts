@@ -829,8 +829,14 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           documents: [],
         });
       }
-      const uploadDocuments = this.taskIntegration.buildUploadDocumentsPayload(sale.documents);
-      const localUploadCount = sale.documents.filter((document) => document.url?.includes('uploads/')).length;
+      // Nunca devolve ao Task um arquivo que originalmente veio dele.
+      const partnerDocuments = sale.documents.filter(
+        (document) => !document.externalId?.startsWith('task:'),
+      );
+      const uploadDocuments = this.taskIntegration.buildUploadDocumentsPayload(partnerDocuments);
+      const localUploadCount = partnerDocuments.filter(
+        (document) => document.url?.includes('uploads/'),
+      ).length;
       if (localUploadCount > 0 && uploadDocuments.length === 0) {
         throw new Error(
           `Os ${localUploadCount} arquivo(s) da venda não foram encontrados no disco do servidor (UPLOAD_DIR).`,
