@@ -778,8 +778,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async syncSaleToTask(id: string) {
+    // Permite retry mesmo com taskDemandId já preenchido (ex.: demanda criada sem anexos).
     const claimed = await this.prisma.sale.updateMany({
-      where: { id, taskDemandId: null, taskSyncStatus: { in: [SaleTaskSyncStatus.PENDING, SaleTaskSyncStatus.RETRY] } },
+      where: { id, taskSyncStatus: { in: [SaleTaskSyncStatus.PENDING, SaleTaskSyncStatus.RETRY] } },
       data: { taskSyncStatus: SaleTaskSyncStatus.PROCESSING, taskSyncLockedAt: new Date() },
     });
     if (!claimed.count) return;
@@ -797,7 +798,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
       if (!task) {
         const contract = sale.contractFormat === 'ZAPSIGN' ? 'ZapSign' : 'Impressão';
-        const uploadDocuments = this.taskIntegration.buildUploadDocumentsPayload(sale.documents);
+        // Cria a demanda sem anexos pesados; a importação acontece em seguida, 1 a 1.
         task = await this.taskIntegration.createDemand({
           entityType: 'sale',
           requestId: sale.id,
@@ -826,18 +827,24 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           requesterName: sale.createdBy.name,
           requesterEmail: sale.createdBy.email,
           priority: sale.taskPriority,
-          documents: uploadDocuments,
+          documents: [],
         });
       }
       const uploadDocuments = this.taskIntegration.buildUploadDocumentsPayload(sale.documents);
+      const localUploadCount = sale.documents.filter((document) => document.url?.includes('uploads/')).length;
+      if (localUploadCount > 0 && uploadDocuments.length === 0) {
+        throw new Error(
+          `Os ${localUploadCount} arquivo(s) da venda não foram encontrados no disco do servidor (UPLOAD_DIR).`,
+        );
+      }
       if (uploadDocuments.length) {
         const imported = await this.taskIntegration.importSaleDocumentsToTask(sale.id, uploadDocuments);
-        if ((imported?.imported ?? 0) < 1) {
-          console.warn(
-            '[syncSaleToTask] Nenhum anexo novo importado no Luxus Task',
-            sale.id,
-            `enviados=${uploadDocuments.length}`,
-            imported,
+        const okCount = (imported?.imported ?? 0) + (imported?.skipped ?? 0);
+        if (okCount < uploadDocuments.length || (imported?.failed?.length ?? 0) > 0) {
+          throw new Error(
+            `Falha ao importar anexos no Luxus Task: ${imported?.imported ?? 0} importados, `
+            + `${imported?.skipped ?? 0} já existiam, ${uploadDocuments.length} enviados. `
+            + `${(imported?.failed ?? []).join('; ')}`,
           );
         }
       }

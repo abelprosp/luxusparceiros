@@ -69,10 +69,14 @@ export class TaskIntegrationService {
   }
 
   async createDemand(input: CreateTaskDemandInput): Promise<CreatedTaskDemand> {
-    return this.request<CreatedTaskDemand>('/integrations/luxus-parceiros/demandas', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
+    return this.request<CreatedTaskDemand>(
+      '/integrations/luxus-parceiros/demandas',
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+      },
+      120_000,
+    );
   }
 
   async getDemand(externalRequestId: string): Promise<CreatedTaskDemand> {
@@ -453,12 +457,36 @@ export class TaskIntegrationService {
       contentBase64?: string;
     }>,
   ) {
-    if (!documents.length) return { imported: 0 };
-    return this.request<{ imported: number }>(
-      `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}/anexos`,
-      { method: 'POST', body: JSON.stringify({ documents }) },
-      120_000,
-    );
+    if (!documents.length) return { imported: 0, skipped: 0, failed: [] as string[] };
+    const failed: string[] = [];
+    let imported = 0;
+    let skipped = 0;
+    // Um arquivo por vez evita timeout/corpo gigante e facilita diagnosticar falhas.
+    for (const document of documents) {
+      try {
+        const result = await this.request<{
+          imported: number;
+          skipped?: number;
+          failed?: string[];
+        }>(
+          `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}/anexos`,
+          { method: 'POST', body: JSON.stringify({ documents: [document] }) },
+          120_000,
+        );
+        imported += result?.imported ?? 0;
+        skipped += result?.skipped ?? 0;
+        if ((result?.failed?.length ?? 0) > 0) {
+          failed.push(...(result.failed ?? []));
+        } else if ((result?.imported ?? 0) + (result?.skipped ?? 0) < 1) {
+          failed.push(`${document.type}:${document.name}`);
+        }
+      } catch (error) {
+        failed.push(
+          `${document.type}:${document.name} (${error instanceof Error ? error.message : 'erro'})`,
+        );
+      }
+    }
+    return { imported, skipped, failed };
   }
 
   buildUploadDocumentsPayload(
@@ -471,28 +499,52 @@ export class TaskIntegrationService {
       url: string;
     }>,
   ) {
-    return documents
-      .filter((document) => Boolean(document.url?.includes('uploads/')))
-      .map((document) => {
-        const relative = document.url.includes('/uploads/')
-          ? document.url.slice(document.url.indexOf('/uploads/') + '/uploads/'.length)
-          : document.url.startsWith('uploads/')
-            ? document.url.slice('uploads/'.length)
-            : basename(document.url);
-        const path = join(this.uploadDir(), basename(relative));
-        let contentBase64: string | undefined;
-        if (existsSync(path)) {
-          contentBase64 = readFileSync(path).toString('base64');
-        }
-        return {
-          id: document.id,
-          name: document.name,
-          type: document.type,
-          mimeType: document.mimeType,
-          size: document.size,
-          contentBase64,
-        };
+    const payload: Array<{
+      id: string;
+      name: string;
+      type: string;
+      mimeType: string;
+      size: number;
+      contentBase64?: string;
+    }> = [];
+    const missing: string[] = [];
+
+    for (const document of documents) {
+      if (!document.url?.includes('uploads/')) continue;
+      const relative = document.url.includes('/uploads/')
+        ? document.url.slice(document.url.indexOf('/uploads/') + '/uploads/'.length)
+        : document.url.startsWith('uploads/')
+          ? document.url.slice('uploads/'.length)
+          : basename(document.url);
+      const candidates = [
+        join(this.uploadDir(), basename(relative)),
+        join(this.uploadDir(), relative.replace(/^\/+/, '')),
+        join(process.cwd(), 'uploads', basename(relative)),
+      ];
+      const path = candidates.find((candidate) => existsSync(candidate));
+      if (!path) {
+        missing.push(`${document.type}:${document.name} (${basename(relative)})`);
+        continue;
+      }
+      const buffer = readFileSync(path);
+      if (!buffer.length) {
+        missing.push(`${document.type}:${document.name} (vazio)`);
+        continue;
+      }
+      payload.push({
+        id: document.id,
+        name: document.name,
+        type: document.type,
+        mimeType: document.mimeType || 'application/octet-stream',
+        size: buffer.length,
+        contentBase64: buffer.toString('base64'),
       });
+    }
+
+    if (missing.length) {
+      console.error('[task-integration] Arquivos locais não encontrados para sync', missing);
+    }
+    return payload;
   }
 
   private uploadDir() {
