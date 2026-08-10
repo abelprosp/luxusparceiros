@@ -797,15 +797,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
       if (!task) {
         const contract = sale.contractFormat === 'ZAPSIGN' ? 'ZapSign' : 'Impressão';
-        const uploadDocuments = sale.documents
-          .filter((document) => Boolean(document.url?.includes('uploads/')))
-          .map((document) => ({
-            id: document.id,
-            name: document.name,
-            type: document.type,
-            mimeType: document.mimeType,
-            size: document.size,
-          }));
+        const uploadDocuments = this.taskIntegration.buildUploadDocumentsPayload(sale.documents);
         task = await this.taskIntegration.createDemand({
           entityType: 'sale',
           requestId: sale.id,
@@ -837,15 +829,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           documents: uploadDocuments,
         });
       }
-      const uploadDocuments = sale.documents
-        .filter((document) => Boolean(document.url?.includes('uploads/')))
-        .map((document) => ({
-          id: document.id,
-          name: document.name,
-          type: document.type,
-          mimeType: document.mimeType,
-          size: document.size,
-        }));
+      const uploadDocuments = this.taskIntegration.buildUploadDocumentsPayload(sale.documents);
       if (uploadDocuments.length) {
         const imported = await this.taskIntegration.importSaleDocumentsToTask(sale.id, uploadDocuments);
         if ((imported?.imported ?? 0) < 1) {

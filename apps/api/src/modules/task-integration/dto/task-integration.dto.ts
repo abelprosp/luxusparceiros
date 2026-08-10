@@ -3,10 +3,33 @@ import {
   IsBoolean,
   IsDateString,
   IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class TaskCallbackAttachmentDto {
+  @IsString()
+  id: string;
+
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  mimeType?: string;
+
+  @IsOptional()
+  @IsNumber()
+  size?: number;
+
+  @IsOptional()
+  @IsDateString()
+  createdAt?: string;
+}
 
 export class TaskDemandCallbackDto {
   @IsUUID()
@@ -64,13 +87,9 @@ export class TaskDemandCallbackDto {
 
   @IsOptional()
   @IsArray()
-  attachments?: Array<{
-    id: string;
-    name: string;
-    mimeType?: string;
-    size?: number;
-    createdAt?: string;
-  }>;
+  @ValidateNested({ each: true })
+  @Type(() => TaskCallbackAttachmentDto)
+  attachments?: TaskCallbackAttachmentDto[];
 }
 
 export class CreateTaskDemandInput {
@@ -137,6 +156,7 @@ export class CreateTaskDemandInput {
     type: string;
     mimeType: string;
     size: number;
+    contentBase64?: string;
   }>;
 }
 
