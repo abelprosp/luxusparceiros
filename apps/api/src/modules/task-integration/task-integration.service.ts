@@ -126,14 +126,21 @@ export class TaskIntegrationService {
       select: { name: true, url: true, mimeType: true, size: true },
     });
     if (!document) throw new BadGatewayException('Documento da venda não encontrado');
-    if (!document.url.startsWith('/uploads/')) {
+    const relative = document.url.includes('/uploads/')
+      ? document.url.slice(document.url.indexOf('/uploads/') + '/uploads/'.length)
+      : document.url.startsWith('uploads/')
+        ? document.url.slice('uploads/'.length)
+        : document.url.startsWith('/uploads/')
+          ? basename(document.url)
+          : null;
+    if (!relative) {
       throw new BadGatewayException('Documento sem arquivo local disponível para o Luxus Task');
     }
     const uploadDir = this.config.get<string>('UPLOAD_DIR')
       || this.config.get<string>('RAILWAY_VOLUME_MOUNT_PATH')
       || './uploads';
-    const path = join(uploadDir, basename(document.url));
-    if (!existsSync(path)) throw new BadGatewayException('Arquivo físico da venda não encontrado');
+    const path = join(uploadDir, basename(relative));
+    if (!existsSync(path)) throw new BadGatewayException(`Arquivo físico da venda não encontrado: ${basename(relative)}`);
     const buffer = readFileSync(path);
     if (!buffer.length) throw new BadGatewayException('Arquivo físico da venda está vazio');
     return {
@@ -142,6 +149,28 @@ export class TaskIntegrationService {
       size: buffer.length,
       buffer,
     };
+  }
+
+  async listSaleDocumentsForIntegration(saleId: string) {
+    const documents = await this.prisma.document.findMany({
+      where: {
+        saleId,
+        OR: [
+          { url: { startsWith: '/uploads/' } },
+          { url: { contains: '/uploads/' } },
+          { url: { startsWith: 'uploads/' } },
+        ],
+      },
+      select: { id: true, name: true, type: true, mimeType: true, size: true, url: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return documents.map((document) => ({
+      id: document.id,
+      name: document.name,
+      type: document.type,
+      mimeType: document.mimeType,
+      size: document.size,
+    }));
   }
 
   async applyCallback(dto: TaskDemandCallbackDto) {

@@ -65,6 +65,13 @@ export class TaskIntegrationController {
 
   @Public()
   @UseGuards(TaskIntegrationGuard)
+  @Get('integrations/luxus-task/sales/:saleId/documents')
+  listSaleDocuments(@Param('saleId') saleId: string) {
+    return this.integration.listSaleDocumentsForIntegration(saleId);
+  }
+
+  @Public()
+  @UseGuards(TaskIntegrationGuard)
   @Get('integrations/luxus-task/sales/:saleId/documents/:documentId')
   async saleDocument(
     @Param('saleId') saleId: string,
@@ -72,9 +79,10 @@ export class TaskIntegrationController {
     @Res() response: Response,
   ) {
     const file = await this.integration.getSaleDocument(saleId, documentId);
+    response.status(200);
     response.setHeader('Content-Type', file.mimeType);
     response.setHeader('Content-Length', String(file.buffer.length));
     response.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`);
-    response.end(file.buffer);
+    response.send(file.buffer);
   }
 }

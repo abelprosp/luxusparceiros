@@ -797,6 +797,15 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
       if (!task) {
         const contract = sale.contractFormat === 'ZAPSIGN' ? 'ZapSign' : 'Impressão';
+        const uploadDocuments = sale.documents
+          .filter((document) => Boolean(document.url?.includes('uploads/')))
+          .map((document) => ({
+            id: document.id,
+            name: document.name,
+            type: document.type,
+            mimeType: document.mimeType,
+            size: document.size,
+          }));
         task = await this.taskIntegration.createDemand({
           entityType: 'sale',
           requestId: sale.id,
@@ -818,7 +827,6 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
             `ICCID: ${sale.chipIccid ?? '-'}`,
             sale.isPortability ? `Portabilidade: ${sale.portabilityNumber ?? '-'} (${sale.donorOperator ?? '-'})` : '',
             sale.notes ? `Observações: ${sale.notes}` : '',
-            `Documentos recebidos no Parceiros: ${sale.documents.map((document) => `${document.type}: ${document.name}`).join('; ')}`,
           ].filter(Boolean).join('\n'),
           localProtocol: sale.protocol,
           partnerName: sale.partner.name,
@@ -826,16 +834,28 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           requesterName: sale.createdBy.name,
           requesterEmail: sale.createdBy.email,
           priority: sale.taskPriority,
-          documents: sale.documents
-            .filter((document) => document.url.startsWith('/uploads/'))
-            .map((document) => ({
-              id: document.id,
-              name: document.name,
-              type: document.type,
-              mimeType: document.mimeType,
-              size: document.size,
-            })),
+          documents: uploadDocuments,
         });
+      }
+      const uploadDocuments = sale.documents
+        .filter((document) => Boolean(document.url?.includes('uploads/')))
+        .map((document) => ({
+          id: document.id,
+          name: document.name,
+          type: document.type,
+          mimeType: document.mimeType,
+          size: document.size,
+        }));
+      if (uploadDocuments.length) {
+        const imported = await this.taskIntegration.importSaleDocumentsToTask(sale.id, uploadDocuments);
+        if ((imported?.imported ?? 0) < 1) {
+          console.warn(
+            '[syncSaleToTask] Nenhum anexo novo importado no Luxus Task',
+            sale.id,
+            `enviados=${uploadDocuments.length}`,
+            imported,
+          );
+        }
       }
       await this.prisma.sale.update({
         where: { id },
