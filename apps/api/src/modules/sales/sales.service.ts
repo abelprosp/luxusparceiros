@@ -750,7 +750,6 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       });
       const candidates = await this.prisma.sale.findMany({
         where: {
-          taskDemandId: null,
           taskResponsibleId: { not: null },
           taskSyncStatus: { in: [SaleTaskSyncStatus.PENDING, SaleTaskSyncStatus.RETRY] },
           OR: [{ taskNextRetryAt: null }, { taskNextRetryAt: { lte: new Date() } }],
