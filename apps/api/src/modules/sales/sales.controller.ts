@@ -46,6 +46,8 @@ export class SalesController {
       partnerId: query.partnerId,
       branchId: query.branchId,
       campaignId: query.campaignId,
+      turn: query.turn,
+      syncError: query.syncError,
     });
   }
 
@@ -150,6 +152,17 @@ export class SalesController {
   @ApiOperation({ summary: 'Administrador libera contrato em branco para assinatura' })
   releaseBlankContract(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.salesService.releaseBlankContract(id, user);
+  }
+
+  @Post(':id/workflow-turn')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Altera a vez do fluxo entre Luxus Task, Parceiros e Parceiro' })
+  setWorkflowTurn(
+    @Param('id') id: string,
+    @Body() body: { turn: 'luxus_task' | 'luxus_parceiros' | 'parceiro' },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesService.setWorkflowTurn(id, body.turn, user);
   }
 
   @Post(':id/submit-signed-contract')

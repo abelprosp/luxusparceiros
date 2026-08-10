@@ -88,6 +88,7 @@ interface SaleDocument {
   size: number;
   createdAt: string;
   purpose?: DocumentPurpose;
+  externalId?: string | null;
 }
 
 interface RequiredDocument {
@@ -374,6 +375,9 @@ function DocumentPreview({
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{label}</p>
           <p className="truncate text-xs text-muted-foreground">{doc.name}</p>
+          <p className="truncate text-[11px] text-muted-foreground">
+            Origem: {doc.externalId?.startsWith('task:') ? 'Luxus Task' : 'Luxus Parceiros'}
+          </p>
         </div>
         <div className="flex shrink-0 gap-1.5">
           <Button size="sm" variant="outline" onClick={onOpen} disabled={error}>
@@ -696,6 +700,39 @@ export function SaleDetailDialog({
                         }}>Devolver para correção</Button>
                       )}
                     </div>
+                    {!isPartnerScoped && (
+                      <div className="mt-2 space-y-2 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Alterar a vez (sincroniza o status com o Luxus Task para os dois não trabalharem ao mesmo tempo)
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={workflowBusy}
+                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'luxus_task' })}
+                          >
+                            Vez do Luxus Task
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={workflowBusy}
+                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'luxus_parceiros' })}
+                          >
+                            Vez do Luxus Parceiros
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={workflowBusy}
+                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'parceiro' })}
+                          >
+                            Vez do Parceiro
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                     {sale.correctionReason && (
                       <div className="my-3 rounded-md bg-amber-500/10 p-3 text-sm text-amber-600">
                         <p className="font-semibold">Correção solicitada</p>
@@ -718,7 +755,33 @@ export function SaleDetailDialog({
                       {!sale.taskIsBeingEdited && sale.taskEditorLastSeenAt && <DetailRow label="Última presença" value={formatDateTime(sale.taskEditorLastSeenAt)} />}
                       <DetailRow label="Cliente Task" value={sale.taskClientName} />
                       <DetailRow label="Prazo" value={sale.taskDeadline ? formatDateTime(sale.taskDeadline) : undefined} />
-                      {sale.taskSyncError && <div className="my-3 rounded-md bg-red-500/10 p-3 text-sm text-red-500">{sale.taskSyncError}</div>}
+                      {sale.taskSyncError && (
+                        <div className="my-3 space-y-2 rounded-md bg-red-500/10 p-3 text-sm text-red-500">
+                          <p>{sale.taskSyncError}</p>
+                          {!isPartnerScoped && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={workflowBusy}
+                              onClick={() => void runWorkflowAction('retry-task-sync')}
+                            >
+                              Reenviar sync ao Luxus Task
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                      {!sale.taskSyncError && (sale.taskSyncStatus === 'RETRY' || sale.taskSyncStatus === 'PENDING') && !isPartnerScoped && (
+                        <div className="my-3">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={workflowBusy}
+                            onClick={() => void runWorkflowAction('retry-task-sync')}
+                          >
+                            Reenviar sync ao Luxus Task
+                          </Button>
+                        </div>
+                      )}
                     </Section>
                   )}
                   {sale.status === SaleStatus.DOCUMENTS_PENDING &&

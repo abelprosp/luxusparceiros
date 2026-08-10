@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2 } from 'lucide-react';
-import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_CONTRACT_STAGE_LABELS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS } from '@luxus/types';
+import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_CONTRACT_STAGE_LABELS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS, saleWorkflowTurnLabel } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -37,6 +37,7 @@ interface Sale {
   taskProtocol?: string;
   taskStatus?: string;
   taskSyncStatus?: string;
+  taskSyncError?: string | null;
   taskDemandId?: string;
   contractStage: SaleContractStage;
   taskIsBeingEdited?: boolean;
@@ -69,6 +70,8 @@ export default function VendasPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [turnFilter, setTurnFilter] = useState('all');
+  const [syncErrorOnly, setSyncErrorOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selected, setSelected] = useState<Sale | null>(null);
@@ -106,6 +109,8 @@ export default function VendasPage() {
       const res = await getPaginated<Sale>('/sales', {
         search: search || undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
+        turn: turnFilter !== 'all' ? turnFilter : undefined,
+        syncError: syncErrorOnly || undefined,
         page,
         limit: 15,
       });
@@ -119,7 +124,7 @@ export default function VendasPage() {
         variant: 'destructive',
       });
     } finally { setLoading(false); }
-  }, [search, statusFilter, page, toast]);
+  }, [search, statusFilter, turnFilter, syncErrorOnly, page, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -233,6 +238,22 @@ export default function VendasPage() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={turnFilter} onValueChange={(v) => { setTurnFilter(v); setPage(1); }}>
+            <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="Da vez" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as vezes</SelectItem>
+              <SelectItem value="luxus_task">Vez do Luxus Task</SelectItem>
+              <SelectItem value="luxus_parceiros">Vez do Luxus Parceiros</SelectItem>
+              <SelectItem value="parceiro">Vez do Parceiro</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant={syncErrorOnly ? 'destructive' : 'outline'}
+            onClick={() => { setSyncErrorOnly((current) => !current); setPage(1); }}
+          >
+            {syncErrorOnly ? 'Só com erro de sync' : 'Erros de sync'}
+          </Button>
         </div>
         <div className="flex flex-wrap gap-2">
           {!isPartner && canDeleteSales && selectedIds.length > 0 && (
@@ -309,6 +330,12 @@ export default function VendasPage() {
                           <Badge variant={s.reviewStatus === SaleReviewStatus.APPROVED ? 'success' : s.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'destructive' : 'outline'}>
                             {workflowLabel(s)}
                           </Badge>
+                          {s.reviewStatus === SaleReviewStatus.APPROVED && saleWorkflowTurnLabel(s.contractStage) && (
+                            <Badge variant="outline">Da vez: {saleWorkflowTurnLabel(s.contractStage)}</Badge>
+                          )}
+                          {(s.taskSyncError || s.taskSyncStatus === 'RETRY') && (
+                            <span className="text-xs font-medium text-red-600">Sync com falha — reenvie no detalhe</span>
+                          )}
                           {s.taskIsBeingEdited && <span className="text-xs font-medium text-green-600">Em atendimento por {s.taskEditorName || 'responsável do Task'}</span>}
                           {s.reviewStatus === SaleReviewStatus.APPROVED && s.taskProtocol && <span className="text-xs text-muted-foreground">{s.taskProtocol}</span>}
                           {isPartner && s.status === SaleStatus.DOCUMENTS_PENDING && s.requiredDocuments?.length ? (
@@ -393,6 +420,12 @@ export default function VendasPage() {
                 badges={
                   <>
                     <Badge variant={s.reviewStatus === SaleReviewStatus.APPROVED ? 'success' : s.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'destructive' : 'outline'}>{workflowLabel(s)}</Badge>
+                    {s.reviewStatus === SaleReviewStatus.APPROVED && saleWorkflowTurnLabel(s.contractStage) && (
+                      <Badge variant="outline">Da vez: {saleWorkflowTurnLabel(s.contractStage)}</Badge>
+                    )}
+                    {(s.taskSyncError || s.taskSyncStatus === 'RETRY') && (
+                      <Badge variant="destructive">Sync com falha</Badge>
+                    )}
                     {!isPartner && s.partner?.name ? (
                       <Badge variant="outline">{s.partner.name}</Badge>
                     ) : null}

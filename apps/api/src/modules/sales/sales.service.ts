@@ -133,6 +133,8 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       partnerId?: string;
       branchId?: string;
       campaignId?: string;
+      turn?: 'luxus_task' | 'luxus_parceiros' | 'parceiro';
+      syncError?: boolean;
     },
   ) {
     const partnerId = resolvePartnerId(user, params.partnerId);
@@ -142,10 +144,40 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (branchId) where.branchId = branchId;
     if (params.campaignId) where.campaignId = params.campaignId;
     if (params.status) where.status = params.status;
+    if (params.turn === 'luxus_task') {
+      where.contractStage = { in: ['PRE_REVIEW', 'TASK_PROCESSING', 'TASK_VALIDATING_SIGNED_CONTRACT'] };
+    } else if (params.turn === 'luxus_parceiros') {
+      where.contractStage = {
+        in: [
+          'BLANK_CONTRACT_READY_FOR_ADMIN',
+          'SIGNED_CONTRACT_READY_FOR_ADMIN',
+          'TASK_APPROVED_REVIEW_PENDING',
+          'TASK_REJECTED_REVIEW_PENDING',
+        ],
+      };
+    } else if (params.turn === 'parceiro') {
+      where.contractStage = { in: ['AWAITING_PARTNER_SIGNATURE', 'CHANGES_REQUESTED'] };
+    }
+    if (params.syncError) {
+      where.AND = [
+        ...((where.AND as Prisma.SaleWhereInput[]) || []),
+        {
+          OR: [
+            { taskSyncError: { not: null } },
+            { taskSyncStatus: 'RETRY' },
+          ],
+        },
+      ];
+    }
     if (params.search) {
-      where.OR = [
-        { protocol: { contains: params.search, mode: 'insensitive' } },
-        { client: { name: { contains: params.search, mode: 'insensitive' } } },
+      where.AND = [
+        ...((where.AND as Prisma.SaleWhereInput[]) || []),
+        {
+          OR: [
+            { protocol: { contains: params.search, mode: 'insensitive' } },
+            { client: { name: { contains: params.search, mode: 'insensitive' } } },
+          ],
+        },
       ];
     }
 
@@ -925,6 +957,68 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       message: `${sale.protocol}: baixe o contrato, colete as assinaturas e anexe o documento assinado.`,
       data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
     }).catch(() => undefined);
+    return updated;
+  }
+
+  async setWorkflowTurn(
+    id: string,
+    turn: 'luxus_task' | 'luxus_parceiros' | 'parceiro',
+    user: AuthUser,
+  ) {
+    this.assertAdmin(user);
+    const sale = await this.findOne(id, user);
+    if (!sale.taskDemandId && sale.taskSyncStatus !== 'SYNCED') {
+      throw new BadRequestException('Esta venda ainda não está sincronizada com o Luxus Task');
+    }
+    const stage =
+      turn === 'luxus_task'
+        ? SaleContractStage.TASK_PROCESSING
+        : turn === 'parceiro'
+          ? SaleContractStage.AWAITING_PARTNER_SIGNATURE
+          : SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN;
+    const label =
+      turn === 'luxus_task'
+        ? 'Luxus Task'
+        : turn === 'parceiro'
+          ? 'Parceiro'
+          : 'Luxus Parceiros';
+    await this.taskIntegration.updateSaleStage(id, {
+      stage,
+      note: `Vez alterada para ${label} por ${user.name}.`,
+    }).catch(() => undefined);
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        contractStage: stage,
+        contractStageUpdatedAt: new Date(),
+        timeline: {
+          create: {
+            actorId: user.id,
+            actorName: user.name,
+            action: `Vez do fluxo alterada para ${label}`,
+            details: `Quem deve agir agora: ${label}`,
+          },
+        },
+      },
+    });
+    const notification = {
+      type: 'SYSTEM' as const,
+      title: `Vez do fluxo: ${label}`,
+      message: `${sale.protocol}: agora é a vez de ${label}.`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    };
+    await this.notificationsService.createForAdminUsers(notification).catch(() => undefined);
+    await this.notificationsService.create({
+      userId: sale.createdById,
+      ...notification,
+    }).catch(() => undefined);
+    if (sale.partnerId) {
+      await this.notificationsService.createForPartnerUsers(
+        sale.partnerId,
+        notification,
+        [sale.createdById],
+      ).catch(() => undefined);
+    }
     return updated;
   }
 

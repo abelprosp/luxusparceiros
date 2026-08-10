@@ -306,10 +306,25 @@ export class TaskIntegrationService {
         contractStage: callbackStage,
         contractStageUpdatedAt: callbackStage !== sale.contractStage ? new Date() : undefined,
         ...(workflowChanged ? { timeline: { create: {
-          action: 'Atualização recebida do Luxus Task',
+          action: callbackStage !== sale.contractStage
+            ? `Chegou do Luxus Task — vez de ${
+                callbackStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
+                  || callbackStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
+                  || callbackStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING
+                  || callbackStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING
+                  ? 'Luxus Parceiros'
+                  : callbackStage === SaleContractStage.AWAITING_PARTNER_SIGNATURE
+                    || callbackStage === SaleContractStage.CHANGES_REQUESTED
+                    ? 'Parceiro'
+                    : 'Luxus Task'
+              }`
+            : (dto.attachments?.length
+              ? `Anexos recebidos do Luxus Task (${dto.attachments.length})`
+              : 'Atualização recebida do Luxus Task'),
           details: [
             `Status Task: ${dto.status}`,
             `Etapa do contrato: ${callbackStage}`,
+            dto.attachments?.length ? `Anexos: ${dto.attachments.map((item) => item.name).join(', ')}` : '',
             resolution ? `Retorno: ${resolution}` : '',
           ].filter(Boolean).join('\n'),
         } } } : {}),
@@ -362,16 +377,15 @@ export class TaskIntegrationService {
     stage: SaleContractStage,
   ): { type: 'CONTRACT' | 'OTHER'; purpose: 'BLANK_CONTRACT' | 'SIGNED_CONTRACT' | 'GENERAL' } {
     const normalized = name.toLowerCase();
-    if (normalized.includes('contrato assinado') || normalized.includes('assinado')) {
+    if (normalized.includes('contrato assinado') || (normalized.includes('assinado') && normalized.includes('contrato'))) {
       return { type: 'CONTRACT', purpose: 'SIGNED_CONTRACT' };
     }
     if (
-      stage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
+      normalized.includes('contrato em branco')
+      || stage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
       || (normalized.includes('contrato') && !normalized.includes('assinado'))
     ) {
-      if (stage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN) {
-        return { type: 'CONTRACT', purpose: 'BLANK_CONTRACT' };
-      }
+      return { type: 'CONTRACT', purpose: 'BLANK_CONTRACT' };
     }
     return { type: 'OTHER', purpose: 'GENERAL' };
   }

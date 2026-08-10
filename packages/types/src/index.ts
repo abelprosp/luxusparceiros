@@ -89,6 +89,44 @@ export const SALE_CONTRACT_STAGE_LABELS: Record<SaleContractStage, string> = {
   [SaleContractStage.COMPLETED]: 'Venda concluída',
 };
 
+export type SaleWorkflowTurn = 'luxus_task' | 'luxus_parceiros' | 'parceiro' | 'concluido';
+
+export const SALE_TURN_STAGES: Record<Exclude<SaleWorkflowTurn, 'concluido'>, SaleContractStage[]> = {
+  luxus_task: [
+    SaleContractStage.PRE_REVIEW,
+    SaleContractStage.TASK_PROCESSING,
+    SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
+  ],
+  luxus_parceiros: [
+    SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN,
+    SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
+    SaleContractStage.TASK_APPROVED_REVIEW_PENDING,
+    SaleContractStage.TASK_REJECTED_REVIEW_PENDING,
+  ],
+  parceiro: [
+    SaleContractStage.AWAITING_PARTNER_SIGNATURE,
+    SaleContractStage.CHANGES_REQUESTED,
+  ],
+};
+
+export function saleWorkflowTurn(stage?: SaleContractStage | string | null): SaleWorkflowTurn | null {
+  if (!stage) return null;
+  if (stage === SaleContractStage.COMPLETED) return 'concluido';
+  if ((SALE_TURN_STAGES.luxus_parceiros as string[]).includes(stage)) return 'luxus_parceiros';
+  if ((SALE_TURN_STAGES.parceiro as string[]).includes(stage)) return 'parceiro';
+  if ((SALE_TURN_STAGES.luxus_task as string[]).includes(stage)) return 'luxus_task';
+  return null;
+}
+
+export function saleWorkflowTurnLabel(stage?: SaleContractStage | string | null): string | null {
+  const turn = saleWorkflowTurn(stage);
+  if (turn === 'luxus_task') return 'Luxus Task';
+  if (turn === 'luxus_parceiros') return 'Luxus Parceiros';
+  if (turn === 'parceiro') return 'Parceiro';
+  if (turn === 'concluido') return 'Concluído';
+  return null;
+}
+
 export enum CommissionType {
   PERCENTAGE = 'PERCENTAGE',
   FIXED = 'FIXED',

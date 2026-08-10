@@ -19,7 +19,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ContractFormat, DocumentType, DonorOperator, SaleStatus } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { PaginationDto } from '@/common/dto/pagination.dto';
 import { CreateClientInlineDto } from './create-client-inline.dto';
 
@@ -236,6 +236,16 @@ export class SalesQueryDto extends PaginationDto {
   @IsOptional()
   @IsEnum(SaleStatus)
   status?: SaleStatus;
+
+  @ApiPropertyOptional({ enum: ['luxus_task', 'luxus_parceiros', 'parceiro'] })
+  @IsOptional()
+  @IsString()
+  turn?: 'luxus_task' | 'luxus_parceiros' | 'parceiro';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === '1')
+  syncError?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
