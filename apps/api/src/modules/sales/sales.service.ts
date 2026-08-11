@@ -1026,7 +1026,13 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     turn: 'luxus_task' | 'luxus_parceiros' | 'parceiro',
     user: AuthUser,
   ) {
-    this.assertAdmin(user);
+    const adminActing = isAdminRole(user.role);
+    if (!adminActing && turn !== 'luxus_parceiros') {
+      throw new ForbiddenException('O parceiro só pode devolver a vez ao Luxus Parceiros');
+    }
+    if (adminActing) {
+      this.assertAdmin(user);
+    }
     const sale = await this.findOne(id, user);
     if (!sale.taskDemandId && sale.taskSyncStatus !== 'SYNCED') {
       throw new BadRequestException('Esta venda ainda não está sincronizada com o Luxus Task');
@@ -1036,7 +1042,11 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         ? SaleContractStage.TASK_PROCESSING
         : turn === 'parceiro'
           ? SaleContractStage.AWAITING_PARTNER_SIGNATURE
-          : SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN;
+          : sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
+            || sale.contractStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING
+            || sale.contractStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING
+            ? sale.contractStage
+            : SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN;
     const label =
       turn === 'luxus_task'
         ? 'Luxus Task'
@@ -1102,41 +1112,27 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
     if (!signed) throw new BadRequestException('Anexe o contrato assinado antes de enviar');
 
-    // Admin anexa e já devolve a vez ao Luxus Task com o contrato assinado.
+    // Admin anexa o assinado e deixa pronto para a própria conferência/aprovação.
     if (adminActing) {
-      await this.taskIntegration.updateSaleStage(id, {
-        stage: SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
-        documentId: signed.id,
-        documentName: signed.name,
-        documentMimeType: signed.mimeType,
-        note: `Contrato assinado anexado por ${user.name} e enviado ao Luxus Task.`,
-      }).catch(() => undefined);
       const updated = await this.prisma.sale.update({
         where: { id },
         data: {
-          contractStage: SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
+          contractStage: SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
           contractStageUpdatedAt: new Date(),
           contractCorrectionReason: null,
-          signedContractSyncStatus: SaleTaskSyncStatus.PENDING,
-          signedContractSyncError: null,
-          signedContractNextRetryAt: new Date(),
           timeline: {
             create: {
               actorId: user.id,
               actorName: user.name,
-              action: 'Contrato assinado anexado e enviado ao Luxus Task',
+              action: 'Contrato assinado anexado pelo administrador',
             },
           },
         },
       });
-      await this.notificationsService.create({
-        userId: sale.createdById,
-        type: 'SYSTEM',
-        title: 'Contrato assinado enviado ao Luxus Task',
-        message: `${sale.protocol}: o contrato assinado foi anexado e a vez voltou ao Luxus Task.`,
-        data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+      await this.taskIntegration.updateSaleStage(id, {
+        stage: SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
+        note: `Contrato assinado anexado por ${user.name}. Aguardando aprovação do administrador.`,
       }).catch(() => undefined);
-      setImmediate(() => void this.processTaskSyncQueue());
       return updated;
     }
 
@@ -1262,6 +1258,12 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           action: 'Venda finalizada após aprovação do contrato pelo Luxus Task',
         } },
       },
+    });
+    await this.taskIntegration.updateSaleStage(id, {
+      stage: SaleContractStage.COMPLETED,
+      note: `Venda finalizada por ${user.name} no Luxus Parceiros.`,
+    }).catch((error) => {
+      console.warn('[sales] Falha ao marcar a demanda como concluída no Luxus Task', error);
     });
     await this.commissionsService.createFromSale(updated, user.id);
     await this.notificationsService.createForPartnerUsers(sale.partnerId, {

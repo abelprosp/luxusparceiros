@@ -554,10 +554,10 @@ export function SaleDetailDialog({
       await uploadFile(file, DocumentType.CONTRACT, { saleId: sale.id, clientId: sale.client?.id }, DocumentPurpose.SIGNED_CONTRACT);
       await api(`/sales/${sale.id}/submit-signed-contract`, { method: 'POST' });
       toast({
-        title: isPartnerScoped ? 'Contrato enviado' : 'Contrato enviado ao Luxus Task',
+        title: 'Contrato assinado anexado',
         description: isPartnerScoped
-          ? 'O administrador foi avisado para conferir o documento.'
-          : 'O contrato assinado foi sincronizado e a vez voltou para o Luxus Task.',
+          ? 'O administrador foi avisado para conferir e enviar ao Luxus Task.'
+          : 'Agora aprove o contrato assinado para sincronizar e passar a vez ao Luxus Task.',
         variant: 'success',
       });
       await load();
@@ -573,7 +573,12 @@ export function SaleDetailDialog({
     if (!sale) return;
     setWorkflowBusy(true);
     try {
-      await api(`/sales/${sale.id}/submit-signed-contract`, { method: 'POST' });
+      if (sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN) {
+        await api(`/sales/${sale.id}/approve-signed-contract`, { method: 'POST' });
+      } else {
+        await api(`/sales/${sale.id}/submit-signed-contract`, { method: 'POST' });
+        await api(`/sales/${sale.id}/approve-signed-contract`, { method: 'POST' });
+      }
       toast({
         title: 'Contrato enviado ao Luxus Task',
         description: 'O contrato assinado foi sincronizado e a vez voltou para o Luxus Task.',
@@ -693,7 +698,7 @@ export function SaleDetailDialog({
                         || sale.contractStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING
                         ? 'Administrador'
                         : [SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED].includes(sale.contractStage)
-                          ? 'Parceiro'
+                          ? 'Parceiro / Administrador'
                           : sale.contractStage === SaleContractStage.TASK_PROCESSING || sale.contractStage === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
                             ? 'Luxus Task'
                             : undefined
@@ -704,122 +709,12 @@ export function SaleDetailDialog({
                         <p>{sale.contractCorrectionReason}</p>
                       </div>
                     )}
-                    <div className="flex flex-wrap gap-2 py-3">
-                      {!isPartnerScoped && sale.contractStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN && (
-                        <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('release-blank-contract')}>
-                          {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Liberar contrato ao parceiro
-                        </Button>
-                      )}
-                      {!isPartnerScoped && sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN && (
-                        <>
-                          <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('approve-signed-contract')}>
-                            {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Aprovar contrato assinado
-                          </Button>
-                          <Button variant="destructive" disabled={workflowBusy} onClick={() => {
-                            const reason = window.prompt('Explique o que o parceiro precisa corrigir no contrato:');
-                            if (reason?.trim()) void runWorkflowAction('request-contract-correction', { reason: reason.trim() });
-                          }}>Solicitar correção</Button>
-                        </>
-                      )}
-                      {!isPartnerScoped && sale.contractStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING && (
-                        <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('finalize-after-task-approval')}>
-                          {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Finalizar venda
-                        </Button>
-                      )}
-                      {!isPartnerScoped && sale.contractStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING && (
-                        <Button variant="destructive" disabled={workflowBusy} onClick={() => {
-                          const reason = window.prompt('Informe ao parceiro o que deve ser corrigido:');
-                          if (reason?.trim()) void runWorkflowAction('request-contract-correction', { reason: reason.trim() });
-                        }}>Devolver para correção</Button>
-                      )}
+                    <div className="my-3">
+                      <Button size="sm" variant="outline" onClick={() => setTab('photos')}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        Abrir documentos e ações do contrato
+                      </Button>
                     </div>
-                    {canAttachSignedContract && (
-                      <div className="mt-2 space-y-3 rounded-md border border-dashed border-primary/40 bg-background/60 p-3">
-                        <p className="text-sm font-medium">Contrato em branco e assinatura</p>
-                        <p className="text-xs text-muted-foreground">
-                          Baixe o contrato em branco, colete as assinaturas, anexe o arquivo assinado e sincronize para devolver a vez ao Luxus Task.
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {blankContract && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={workflowBusy}
-                              onClick={() => void downloadAuthenticatedUpload(blankContract.url, blankContract.name)}
-                            >
-                              <Download className="mr-2 h-4 w-4" />
-                              Baixar contrato em branco
-                            </Button>
-                          )}
-                          <input
-                            ref={signedContractInput}
-                            type="file"
-                            className="hidden"
-                            accept=".pdf,.jpg,.jpeg,.png,.webp"
-                            onChange={(event) => void uploadSignedContract(event.target.files?.[0])}
-                          />
-                          <Button
-                            size="sm"
-                            disabled={workflowBusy}
-                            onClick={() => signedContractInput.current?.click()}
-                          >
-                            {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                            {isPartnerScoped
-                              ? 'Anexar e enviar contrato assinado'
-                              : 'Anexar assinado e enviar ao Luxus Task'}
-                          </Button>
-                          {!isPartnerScoped && signedContract && (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              disabled={workflowBusy}
-                              onClick={() => void sendExistingSignedContractToTask()}
-                            >
-                              {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                              Sincronizar e passar a vez ao Luxus Task
-                            </Button>
-                          )}
-                        </div>
-                        {signedContract && (
-                          <p className="text-xs text-muted-foreground">
-                            Último contrato assinado anexado: <span className="font-medium text-foreground">{signedContract.name}</span>
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    {!isPartnerScoped && (
-                      <div className="mt-2 space-y-2 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          Alterar a vez (sincroniza o status com o Luxus Task para os dois não trabalharem ao mesmo tempo)
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={workflowBusy}
-                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'luxus_task' })}
-                          >
-                            Vez do Luxus Task
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={workflowBusy}
-                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'luxus_parceiros' })}
-                          >
-                            Vez do Luxus Parceiros
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={workflowBusy}
-                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'parceiro' })}
-                          >
-                            Vez do Parceiro
-                          </Button>
-                        </div>
-                      </div>
-                    )}
                     {sale.correctionReason && (
                       <div className="my-3 rounded-md bg-amber-500/10 p-3 text-sm text-amber-600">
                         <p className="font-semibold">Correção solicitada</p>
@@ -993,6 +888,145 @@ export function SaleDetailDialog({
 
               <TabsContent value="photos" className={TAB_PANEL_CLASS}>
                 <div className="space-y-4 pb-4">
+                  <Section title="Contrato e continuidade da venda" className="border-primary/40 bg-primary/5">
+                    <DetailRow label="Etapa atual" value={SALE_CONTRACT_STAGE_LABELS[sale.contractStage] ?? sale.contractStage} />
+                    <div className="flex flex-wrap gap-2 py-3">
+                      {!isPartnerScoped && sale.contractStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN && (
+                        <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('release-blank-contract')}>
+                          {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Liberar contrato ao parceiro
+                        </Button>
+                      )}
+                      {!isPartnerScoped && sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN && (
+                        <>
+                          <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('approve-signed-contract')}>
+                            {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Aprovar e enviar ao Luxus Task
+                          </Button>
+                          <Button variant="destructive" disabled={workflowBusy} onClick={() => {
+                            const reason = window.prompt('Explique o que o parceiro precisa corrigir no contrato:');
+                            if (reason?.trim()) void runWorkflowAction('request-contract-correction', { reason: reason.trim() });
+                          }}>Solicitar correção</Button>
+                        </>
+                      )}
+                      {!isPartnerScoped && sale.contractStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING && (
+                        <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('finalize-after-task-approval')}>
+                          {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Finalizar venda
+                        </Button>
+                      )}
+                      {!isPartnerScoped && sale.contractStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING && (
+                        <Button variant="destructive" disabled={workflowBusy} onClick={() => {
+                          const reason = window.prompt('Informe ao parceiro o que deve ser corrigido:');
+                          if (reason?.trim()) void runWorkflowAction('request-contract-correction', { reason: reason.trim() });
+                        }}>Devolver para correção</Button>
+                      )}
+                    </div>
+
+                    {(canAttachSignedContract || blankContract) && (
+                      <div className="mt-2 space-y-3 rounded-md border border-dashed border-primary/40 bg-background/60 p-3">
+                        <p className="text-sm font-medium">Contrato em branco e assinatura</p>
+                        <p className="text-xs text-muted-foreground">
+                          Baixe o contrato em branco, colete as assinaturas e anexe o arquivo assinado.
+                          Depois o administrador aprova e sincroniza a vez de volta ao Luxus Task.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {blankContract && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={workflowBusy}
+                              onClick={() => void downloadAuthenticatedUpload(blankContract.url, blankContract.name)}
+                            >
+                              <Download className="mr-2 h-4 w-4" />
+                              Baixar contrato em branco
+                            </Button>
+                          )}
+                          {canAttachSignedContract && (
+                            <>
+                              <input
+                                ref={signedContractInput}
+                                type="file"
+                                className="hidden"
+                                accept=".pdf,.jpg,.jpeg,.png,.webp"
+                                onChange={(event) => void uploadSignedContract(event.target.files?.[0])}
+                              />
+                              <Button
+                                size="sm"
+                                disabled={workflowBusy}
+                                onClick={() => signedContractInput.current?.click()}
+                              >
+                                {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                                Anexar contrato assinado
+                              </Button>
+                            </>
+                          )}
+                          {!isPartnerScoped && signedContract && sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={workflowBusy}
+                              onClick={() => void sendExistingSignedContractToTask()}
+                            >
+                              {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                              Sincronizar e passar a vez ao Luxus Task
+                            </Button>
+                          )}
+                        </div>
+                        {signedContract && (
+                          <p className="text-xs text-muted-foreground">
+                            Último contrato assinado anexado: <span className="font-medium text-foreground">{signedContract.name}</span>
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {!isPartnerScoped ? (
+                      <div className="mt-2 space-y-2 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Alterar a vez (somente o admin do Luxus Parceiros pode definir qualquer ordem)
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={workflowBusy}
+                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'luxus_task' })}
+                          >
+                            Vez do Luxus Task
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={workflowBusy}
+                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'luxus_parceiros' })}
+                          >
+                            Vez do Luxus Parceiros
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={workflowBusy}
+                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'parceiro' })}
+                          >
+                            Vez do Parceiro
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-2 space-y-2 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          O parceiro só pode devolver a vez ao Luxus Parceiros.
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={workflowBusy}
+                          onClick={() => void runWorkflowAction('workflow-turn', { turn: 'luxus_parceiros' })}
+                        >
+                          Passar a vez ao Luxus Parceiros
+                        </Button>
+                      </div>
+                    )}
+                  </Section>
+
                   {docCount === 0 ? (
                     <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed py-16 text-muted-foreground">
                       <ImageIcon className="h-12 w-12 opacity-30" />
