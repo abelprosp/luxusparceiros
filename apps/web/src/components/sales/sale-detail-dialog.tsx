@@ -1107,7 +1107,7 @@ export function SaleDetailDialog({
                     {!isPartnerScoped && sale.commissionValue != null && (
                       <DetailRow label="Comissão" value={formatCurrency(Number(sale.commissionValue))} />
                     )}
-                    {!isPartnerScoped && <DetailRow label="Filial" value={sale.branch?.name} />}
+                    <DetailRow label="Loja" value={sale.branch?.name ?? 'Matriz'} />
                     {!isPartnerScoped && <DetailRow label="Campanha" value={sale.campaign?.title} />}
                     <DetailRow label="Registrada por" value={sale.createdBy?.name} />
                     {sale.approvedAt && <DetailRow label="Aprovada em" value={formatDateTime(sale.approvedAt)} />}

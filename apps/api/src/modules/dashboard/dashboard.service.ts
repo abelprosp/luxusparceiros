@@ -180,8 +180,24 @@ export class DashboardService {
       this.prisma.sale.count({
         where: { ...saleFilter, createdAt: { gte: startOfMonth }, status: realizedSaleStatusFilter() },
       }),
-      this.prisma.line.count({ where: { partnerId, status: LineStatus.ACTIVATED } }),
-      this.prisma.line.count({ where: { partnerId, status: LineStatus.CANCELLED } }),
+      this.prisma.line.count({
+        where: {
+          partnerId,
+          status: LineStatus.ACTIVATED,
+          ...(branchId
+            ? { sales: { some: { branchId, status: realizedSaleStatusFilter() } } }
+            : {}),
+        },
+      }),
+      this.prisma.line.count({
+        where: {
+          partnerId,
+          status: LineStatus.CANCELLED,
+          ...(branchId
+            ? { sales: { some: { branchId, status: realizedSaleStatusFilter() } } }
+            : {}),
+        },
+      }),
       this.prisma.commission.aggregate({
         where: {
           partnerId,
@@ -281,7 +297,8 @@ export class DashboardService {
   ): Promise<DashboardDetails> {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const branchId = user.partnerId ? resolveBranchId(user, requestedBranchId) : undefined;
+    // Admin pode filtrar por filial; usuário de filial fica sempre restrito à própria.
+    const branchId = resolveBranchId(user, requestedBranchId);
     const scopedFilters: DashboardFiltersDto = {
       ...filters,
       ...(user.partnerId && { partnerId: user.partnerId }),
@@ -311,6 +328,7 @@ export class DashboardService {
           value: true,
           createdAt: true,
           partner: { select: { name: true } },
+          branch: { select: { name: true } },
           client: { select: { name: true } },
           plan: { select: { name: true } },
         },
@@ -376,7 +394,12 @@ export class DashboardService {
       sales: sales.map((sale) => ({
         id: sale.id,
         primary: sale.protocol,
-        secondary: `${sale.partner.name} • ${sale.client.name} • ${sale.plan.name}`,
+        secondary: [
+          sale.partner.name,
+          sale.branch?.name ?? 'Matriz',
+          sale.client.name,
+          sale.plan.name,
+        ].join(' • '),
         status: sale.status,
         value: Number(sale.value),
         date: sale.createdAt.toISOString(),

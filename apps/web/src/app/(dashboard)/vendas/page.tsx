@@ -294,6 +294,7 @@ export default function VendasPage() {
                     </TableHead>}
                     <TableHead>Protocolo</TableHead>
                     {!isPartner && <TableHead>Parceiro</TableHead>}
+                    <TableHead>Loja</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Plano</TableHead>
                     {!isPartner && <TableHead>Campanha</TableHead>}
@@ -321,6 +322,7 @@ export default function VendasPage() {
                       </TableCell>}
                       <TableCell className="font-mono text-sm">{s.protocol}</TableCell>
                       {!isPartner && <TableCell>{s.partner?.name || '-'}</TableCell>}
+                      <TableCell>{s.branch?.name || 'Matriz'}</TableCell>
                       <TableCell>{s.client?.name || '-'}</TableCell>
                       <TableCell>{s.plan?.name || '-'}</TableCell>
                       {!isPartner && <TableCell>{s.campaign?.title || '-'}</TableCell>}
@@ -415,7 +417,7 @@ export default function VendasPage() {
               <MobileListCard
                 key={s.id}
                 title={s.client?.name || s.protocol}
-                subtitle={`${s.protocol} · ${s.plan?.name || 'Sem plano'}`}
+                subtitle={`${s.protocol} · ${s.branch?.name || 'Matriz'} · ${s.plan?.name || 'Sem plano'}`}
                 meta={`${formatCurrency(Number(s.value))} · ${formatDate(s.createdAt)}`}
                 badges={
                   <>
@@ -429,6 +431,7 @@ export default function VendasPage() {
                     {!isPartner && s.partner?.name ? (
                       <Badge variant="outline">{s.partner.name}</Badge>
                     ) : null}
+                    <Badge variant="outline">{s.branch?.name || 'Matriz'}</Badge>
                   </>
                 }
                 onClick={() => setDetailSaleId(s.id)}

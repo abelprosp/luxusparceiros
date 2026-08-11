@@ -15,6 +15,7 @@ import {
 import type { DashboardDetails, DashboardPartnerMetrics } from '@luxus/types';
 import { formatCurrency } from '@luxus/utils';
 import { api } from '@/lib/api';
+import { useAuth } from '@/hooks/useAuth';
 import { MetricsCard } from '@/components/charts/metrics-card';
 import { SalesChart } from '@/components/charts/sales-chart';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -72,6 +73,8 @@ function BentoPanel({
 }
 
 export function PartnerDashboard() {
+  const { user } = useAuth();
+  const branchQuery = user?.branchId ? `?branchId=${encodeURIComponent(user.branchId)}` : '';
   const [metrics, setMetrics] = useState<DashboardPartnerMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<DashboardDetails | null>(null);
@@ -80,23 +83,23 @@ export function PartnerDashboard() {
   const [detailTitle, setDetailTitle] = useState('Detalhes');
 
   useEffect(() => {
-    api<DashboardPartnerMetrics>('/dashboard/partner')
+    api<DashboardPartnerMetrics>(`/dashboard/partner${branchQuery}`)
       .then(setMetrics)
       .catch(() => setMetrics(emptyMetrics))
       .finally(() => setLoading(false));
-  }, []);
+  }, [branchQuery]);
 
   const loadDetails = useCallback(async () => {
     if (details) return details;
     setDetailsLoading(true);
     try {
-      const result = await api<DashboardDetails>('/dashboard/details');
+      const result = await api<DashboardDetails>(`/dashboard/details${branchQuery}`);
       setDetails(result);
       return result;
     } finally {
       setDetailsLoading(false);
     }
-  }, [details]);
+  }, [details, branchQuery]);
 
   const openDetails = (section: 'sales' | 'lines' | 'commissions', title: string) => {
     setDetailSection(section);

@@ -17,14 +17,15 @@ export async function assertBranchBelongsToPartner(
 }
 
 export function resolveBranchId(user: AuthUser, requestedBranchId?: string): string | undefined {
-  if (user.role === UserRole.ATTENDANT) {
-    if (!user.branchId) {
-      throw new ForbiddenException('Usuário de filial sem vínculo');
-    }
+  // Qualquer usuário vinculado a uma filial fica restrito a ela (não só ATTENDANT).
+  if (user.branchId) {
     if (requestedBranchId && requestedBranchId !== user.branchId) {
       throw new ForbiddenException(MESSAGES.FORBIDDEN);
     }
     return user.branchId;
+  }
+  if (user.role === UserRole.ATTENDANT) {
+    throw new ForbiddenException('Usuário de filial sem vínculo');
   }
   return requestedBranchId;
 }

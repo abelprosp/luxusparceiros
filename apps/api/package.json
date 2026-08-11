@@ -14,7 +14,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
     "prisma:seed:dev": "ts-node prisma/seed.ts",
-    "prisma:cleanup": "ts-node prisma/cleanup-demo-data.ts"
+    "prisma:cleanup": "ts-node prisma/cleanup-demo-data.ts",
+    "prisma:fix-sale-branch": "ts-node prisma/fix-sale-branch-from-creator.ts"
   },
   "dependencies": {
     "@luxus/types": "workspace:*",
