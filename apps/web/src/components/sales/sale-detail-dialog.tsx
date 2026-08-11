@@ -770,7 +770,7 @@ export function SaleDetailDialog({
                           )}
                         </div>
                       )}
-                      {!sale.taskSyncError && (sale.taskSyncStatus === 'RETRY' || sale.taskSyncStatus === 'PENDING') && !isPartnerScoped && (
+                      {!sale.taskSyncError && sale.taskProtocol && !isPartnerScoped && (
                         <div className="my-3">
                           <Button
                             size="sm"
@@ -778,7 +778,7 @@ export function SaleDetailDialog({
                             disabled={workflowBusy}
                             onClick={() => void runWorkflowAction('retry-task-sync')}
                           >
-                            Reenviar sync ao Luxus Task
+                            Reenviar venda e anexos ao Luxus Task
                           </Button>
                         </div>
                       )}
