@@ -553,13 +553,37 @@ export function SaleDetailDialog({
     try {
       await uploadFile(file, DocumentType.CONTRACT, { saleId: sale.id, clientId: sale.client?.id }, DocumentPurpose.SIGNED_CONTRACT);
       await api(`/sales/${sale.id}/submit-signed-contract`, { method: 'POST' });
-      toast({ title: 'Contrato enviado', description: 'O administrador foi avisado para conferir o documento.', variant: 'success' });
+      toast({
+        title: isPartnerScoped ? 'Contrato enviado' : 'Contrato enviado ao Luxus Task',
+        description: isPartnerScoped
+          ? 'O administrador foi avisado para conferir o documento.'
+          : 'O contrato assinado foi sincronizado e a vez voltou para o Luxus Task.',
+        variant: 'success',
+      });
       await load();
     } catch (err) {
       toast({ title: 'Erro ao enviar contrato', description: err instanceof Error ? err.message : 'Falha na requisição', variant: 'destructive' });
     } finally {
       setWorkflowBusy(false);
       if (signedContractInput.current) signedContractInput.current.value = '';
+    }
+  };
+
+  const sendExistingSignedContractToTask = async () => {
+    if (!sale) return;
+    setWorkflowBusy(true);
+    try {
+      await api(`/sales/${sale.id}/submit-signed-contract`, { method: 'POST' });
+      toast({
+        title: 'Contrato enviado ao Luxus Task',
+        description: 'O contrato assinado foi sincronizado e a vez voltou para o Luxus Task.',
+        variant: 'success',
+      });
+      await load();
+    } catch (err) {
+      toast({ title: 'Não foi possível enviar', description: err instanceof Error ? err.message : 'Falha na requisição', variant: 'destructive' });
+    } finally {
+      setWorkflowBusy(false);
     }
   };
 
@@ -581,6 +605,24 @@ export function SaleDetailDialog({
   const imageDocs = sale?.documents?.filter(isImageDocument) ?? [];
   const otherDocs = sale?.documents?.filter((d) => !isImageDocument(d)) ?? [];
   const docCount = sale?.documents?.length ?? 0;
+  const blankContract = sale?.documents
+    ?.filter((document) => document.purpose === DocumentPurpose.BLANK_CONTRACT)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  const signedContract = sale?.documents
+    ?.filter((document) => document.purpose === DocumentPurpose.SIGNED_CONTRACT)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  const canAttachSignedContract = sale
+    ? (
+        isPartnerScoped
+          ? [SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED].includes(sale.contractStage)
+          : [
+              SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN,
+              SaleContractStage.AWAITING_PARTNER_SIGNATURE,
+              SaleContractStage.CHANGES_REQUESTED,
+              SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
+            ].includes(sale.contractStage)
+      )
+    : false;
 
   const lineNumber = sale?.newNumber
     ? formatPhone(sale.newNumber)
@@ -668,15 +710,6 @@ export function SaleDetailDialog({
                           {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Liberar contrato ao parceiro
                         </Button>
                       )}
-                      {isPartnerScoped && [SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED].includes(sale.contractStage) && (
-                        <>
-                          <input ref={signedContractInput} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => void uploadSignedContract(event.target.files?.[0])} />
-                          <Button disabled={workflowBusy} onClick={() => signedContractInput.current?.click()}>
-                            {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                            Anexar e enviar contrato assinado
-                          </Button>
-                        </>
-                      )}
                       {!isPartnerScoped && sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN && (
                         <>
                           <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('approve-signed-contract')}>
@@ -700,6 +733,60 @@ export function SaleDetailDialog({
                         }}>Devolver para correção</Button>
                       )}
                     </div>
+                    {canAttachSignedContract && (
+                      <div className="mt-2 space-y-3 rounded-md border border-dashed border-primary/40 bg-background/60 p-3">
+                        <p className="text-sm font-medium">Contrato em branco e assinatura</p>
+                        <p className="text-xs text-muted-foreground">
+                          Baixe o contrato em branco, colete as assinaturas, anexe o arquivo assinado e sincronize para devolver a vez ao Luxus Task.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {blankContract && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={workflowBusy}
+                              onClick={() => void downloadAuthenticatedUpload(blankContract.url, blankContract.name)}
+                            >
+                              <Download className="mr-2 h-4 w-4" />
+                              Baixar contrato em branco
+                            </Button>
+                          )}
+                          <input
+                            ref={signedContractInput}
+                            type="file"
+                            className="hidden"
+                            accept=".pdf,.jpg,.jpeg,.png,.webp"
+                            onChange={(event) => void uploadSignedContract(event.target.files?.[0])}
+                          />
+                          <Button
+                            size="sm"
+                            disabled={workflowBusy}
+                            onClick={() => signedContractInput.current?.click()}
+                          >
+                            {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                            {isPartnerScoped
+                              ? 'Anexar e enviar contrato assinado'
+                              : 'Anexar assinado e enviar ao Luxus Task'}
+                          </Button>
+                          {!isPartnerScoped && signedContract && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={workflowBusy}
+                              onClick={() => void sendExistingSignedContractToTask()}
+                            >
+                              {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                              Sincronizar e passar a vez ao Luxus Task
+                            </Button>
+                          )}
+                        </div>
+                        {signedContract && (
+                          <p className="text-xs text-muted-foreground">
+                            Último contrato assinado anexado: <span className="font-medium text-foreground">{signedContract.name}</span>
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {!isPartnerScoped && (
                       <div className="mt-2 space-y-2 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
                         <p className="text-xs font-medium text-muted-foreground">

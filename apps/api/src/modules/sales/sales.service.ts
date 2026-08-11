@@ -1084,17 +1084,62 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
   }
 
   async submitSignedContract(id: string, user: AuthUser) {
-    if (isAdminRole(user.role)) {
-      throw new ForbiddenException('O contrato assinado deve ser enviado pelo parceiro');
-    }
     const sale = await this.findOne(id, user);
-    if (!([SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED] as SaleContractStage[]).includes(sale.contractStage)) {
+    const adminActing = isAdminRole(user.role);
+    const allowedStages = adminActing
+      ? [
+          SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN,
+          SaleContractStage.AWAITING_PARTNER_SIGNATURE,
+          SaleContractStage.CHANGES_REQUESTED,
+          SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
+        ]
+      : [SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED];
+    if (!(allowedStages as SaleContractStage[]).includes(sale.contractStage)) {
       throw new BadRequestException('Esta venda não está aguardando o contrato assinado');
     }
     const signed = sale.documents
       .filter((document) => document.purpose === DocumentPurpose.SIGNED_CONTRACT)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
     if (!signed) throw new BadRequestException('Anexe o contrato assinado antes de enviar');
+
+    // Admin anexa e já devolve a vez ao Luxus Task com o contrato assinado.
+    if (adminActing) {
+      await this.taskIntegration.updateSaleStage(id, {
+        stage: SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
+        documentId: signed.id,
+        documentName: signed.name,
+        documentMimeType: signed.mimeType,
+        note: `Contrato assinado anexado por ${user.name} e enviado ao Luxus Task.`,
+      }).catch(() => undefined);
+      const updated = await this.prisma.sale.update({
+        where: { id },
+        data: {
+          contractStage: SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
+          contractStageUpdatedAt: new Date(),
+          contractCorrectionReason: null,
+          signedContractSyncStatus: SaleTaskSyncStatus.PENDING,
+          signedContractSyncError: null,
+          signedContractNextRetryAt: new Date(),
+          timeline: {
+            create: {
+              actorId: user.id,
+              actorName: user.name,
+              action: 'Contrato assinado anexado e enviado ao Luxus Task',
+            },
+          },
+        },
+      });
+      await this.notificationsService.create({
+        userId: sale.createdById,
+        type: 'SYSTEM',
+        title: 'Contrato assinado enviado ao Luxus Task',
+        message: `${sale.protocol}: o contrato assinado foi anexado e a vez voltou ao Luxus Task.`,
+        data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+      }).catch(() => undefined);
+      setImmediate(() => void this.processTaskSyncQueue());
+      return updated;
+    }
+
     const updated = await this.prisma.sale.update({
       where: { id },
       data: {
