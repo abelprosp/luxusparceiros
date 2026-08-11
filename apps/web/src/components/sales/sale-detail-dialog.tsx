@@ -888,6 +888,26 @@ export function SaleDetailDialog({
 
               <TabsContent value="photos" className={TAB_PANEL_CLASS}>
                 <div className="space-y-4 pb-4">
+                  {!isPartnerScoped && (sale.taskProtocol || sale.taskSyncError) && (
+                    <div className="space-y-2 rounded-md border border-primary/25 bg-primary/5 p-3">
+                      <p className="text-sm font-medium">Sincronizar documentos com o Luxus Task</p>
+                      <p className="text-xs text-muted-foreground">
+                        Reenvia a venda e os anexos desta aba para a demanda correspondente no Luxus Task.
+                      </p>
+                      {sale.taskSyncError && (
+                        <p className="text-sm text-red-500">{sale.taskSyncError}</p>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={workflowBusy}
+                        onClick={() => void runWorkflowAction('retry-task-sync')}
+                      >
+                        {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                        Reenviar venda e anexos ao Luxus Task
+                      </Button>
+                    </div>
+                  )}
                   <Section title="Contrato e continuidade da venda" className="border-primary/40 bg-primary/5">
                     <DetailRow label="Etapa atual" value={SALE_CONTRACT_STAGE_LABELS[sale.contractStage] ?? sale.contractStage} />
                     <div className="flex flex-wrap gap-2 py-3">
