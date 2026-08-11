@@ -771,13 +771,18 @@ export function SaleDetailDialog({
                         </div>
                       )}
                       {!sale.taskSyncError && sale.taskProtocol && !isPartnerScoped && (
-                        <div className="my-3">
+                        <div className="my-3 space-y-2 rounded-md border border-primary/25 bg-primary/5 p-3">
+                          <p className="text-sm text-muted-foreground">
+                            Após a aprovação, o sistema reenvia os anexos automaticamente.
+                            Se algum arquivo não aparecer no Luxus Task, force o reenvio aqui.
+                          </p>
                           <Button
                             size="sm"
                             variant="outline"
                             disabled={workflowBusy}
                             onClick={() => void runWorkflowAction('retry-task-sync')}
                           >
+                            {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             Reenviar venda e anexos ao Luxus Task
                           </Button>
                         </div>

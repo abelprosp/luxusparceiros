@@ -728,6 +728,49 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     return { queued: true };
   }
 
+  /** Reenvia anexos locais ao Task sem recriar a demanda (idempotente no destino). */
+  private async reinforceSaleAttachmentsToTask(id: string) {
+    if (!this.taskIntegration.isConfigured()) return;
+    const sale = await this.prisma.sale.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        protocol: true,
+        taskDemandId: true,
+        taskSyncStatus: true,
+        documents: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            mimeType: true,
+            size: true,
+            url: true,
+            externalId: true,
+          },
+        },
+      },
+    });
+    if (!sale?.taskDemandId || sale.taskSyncStatus !== SaleTaskSyncStatus.SYNCED) return;
+
+    const partnerDocuments = sale.documents.filter(
+      (document) => !document.externalId?.startsWith('task:'),
+    );
+    const uploadDocuments = this.taskIntegration.buildUploadDocumentsPayload(partnerDocuments);
+    if (!uploadDocuments.length) return;
+
+    try {
+      const imported = await this.taskIntegration.importSaleDocumentsToTask(sale.id, uploadDocuments);
+      if ((imported?.failed?.length ?? 0) > 0) {
+        console.warn(
+          `[sales] Reforço de anexos incompleto para ${sale.protocol}: ${(imported?.failed ?? []).join('; ')}`,
+        );
+      }
+    } catch (error) {
+      console.warn('[sales] Falha no reforço automático de anexos ao Luxus Task', error);
+    }
+  }
+
   private assertAdmin(user: AuthUser) {
     if (!isAdminRole(user.role)) throw new ForbiddenException('Apenas administradores podem revisar vendas');
   }
@@ -866,6 +909,8 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           timeline: { create: { action: `Venda vinculada ao Luxus Task (${task.protocol})` } },
         },
       });
+      // Segunda passagem automática: cobre falhas intermitentes do Task logo após a aprovação.
+      setTimeout(() => void this.reinforceSaleAttachmentsToTask(id), 20_000);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao sincronizar';
       await this.prisma.sale.update({
