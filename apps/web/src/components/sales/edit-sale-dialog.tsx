@@ -16,6 +16,7 @@ import {
   formatCepDigits,
   formatCpfDigits,
   formatPhoneDigits,
+  formatRgValue,
   onlyDigits,
 } from './digit-countdown-input';
 import { normalizeIccid } from './iccid-scanner';
@@ -132,6 +133,18 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
     }
     if (onlyDigits(client.phone).length < 10) {
       toast({ title: 'Telefone deve ter ao menos 10 dígitos', variant: 'destructive' });
+      return;
+    }
+    if (client.rg.trim() && client.rg.replace(/[^0-9A-Za-z]/g, '').length < 7) {
+      toast({ title: 'RG deve ter ao menos 7 caracteres', variant: 'destructive' });
+      return;
+    }
+    if (client.state.trim() && client.state.replace(/[^A-Za-z]/g, '').length !== 2) {
+      toast({ title: 'UF deve ter 2 letras', variant: 'destructive' });
+      return;
+    }
+    if (client.zipCode.trim() && onlyDigits(client.zipCode).length !== 8) {
+      toast({ title: 'CEP deve ter 8 dígitos', variant: 'destructive' });
       return;
     }
     if (!contractFormat) {
@@ -273,7 +286,18 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
                     hintLabel="CPF"
                   />
                 </div>
-                <div className="space-y-2"><Label>RG</Label><Input value={client.rg} onChange={(e) => setClient({ ...client, rg: e.target.value })} /></div>
+                <div className="space-y-2">
+                  <Label>RG</Label>
+                  <DigitCountdownInput
+                    value={client.rg}
+                    onChange={(value) => setClient({ ...client, rg: value })}
+                    requiredDigits={7}
+                    maxDigits={11}
+                    charset="alphanumeric"
+                    formatDisplay={formatRgValue}
+                    hintLabel="RG (mín. 7; até 9 ou CIN)"
+                  />
+                </div>
                 <div className="space-y-2"><Label>E-mail</Label><Input type="email" value={client.email} onChange={(e) => setClient({ ...client, email: e.target.value })} /></div>
                 <div className="space-y-2">
                   <Label>Telefone *</Label>
@@ -291,7 +315,17 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
                 <div className="space-y-2"><Label>Complemento</Label><Input value={client.complement} onChange={(e) => setClient({ ...client, complement: e.target.value })} /></div>
                 <div className="space-y-2"><Label>Bairro</Label><Input value={client.neighborhood} onChange={(e) => setClient({ ...client, neighborhood: e.target.value })} /></div>
                 <div className="space-y-2"><Label>Cidade</Label><Input value={client.city} onChange={(e) => setClient({ ...client, city: e.target.value })} /></div>
-                <div className="space-y-2"><Label>UF</Label><Input maxLength={2} value={client.state} onChange={(e) => setClient({ ...client, state: e.target.value.toUpperCase() })} /></div>
+                <div className="space-y-2">
+                  <Label>UF</Label>
+                  <DigitCountdownInput
+                    value={client.state}
+                    onChange={(value) => setClient({ ...client, state: value })}
+                    requiredDigits={2}
+                    charset="letters"
+                    hintLabel="UF"
+                    placeholder="RS"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label>CEP</Label>
                   <DigitCountdownInput

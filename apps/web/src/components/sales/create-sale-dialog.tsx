@@ -18,6 +18,7 @@ import {
   formatCepDigits,
   formatCpfDigits,
   formatPhoneDigits,
+  formatRgValue,
 } from './digit-countdown-input';
 
 interface Operator {
@@ -204,6 +205,15 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     if (isPortability && !donorOperator) errors.push('Operadora doadora');
     if (isPortability && !portabilityNumber.trim()) errors.push('Número a ser portado');
     else if (isPortability && portabilityNumber.replace(/\D/g, '').length < 10) errors.push('Número portado com ao menos 10 dígitos');
+    if (client.rg.trim() && client.rg.replace(/[^0-9A-Za-z]/g, '').length < 7) {
+      errors.push('RG com ao menos 7 caracteres');
+    }
+    if (client.state.trim() && client.state.replace(/[^A-Za-z]/g, '').length !== 2) {
+      errors.push('UF com 2 letras');
+    }
+    if (client.zipCode.trim() && client.zipCode.replace(/\D/g, '').length !== 8) {
+      errors.push('CEP com 8 dígitos');
+    }
     if (errors.length) {
       setValidationErrors(errors);
       requestAnimationFrame(() => validationRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -498,7 +508,15 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
               </div>
               <div className="space-y-2">
                 <Label>RG</Label>
-                <Input value={client.rg} onChange={(e) => setClient({ ...client, rg: e.target.value })} />
+                <DigitCountdownInput
+                  value={client.rg}
+                  onChange={(value) => setClient({ ...client, rg: value })}
+                  requiredDigits={7}
+                  maxDigits={11}
+                  charset="alphanumeric"
+                  formatDisplay={formatRgValue}
+                  hintLabel="RG (mín. 7; até 9 ou CIN)"
+                />
               </div>
               <div className="space-y-2">
                 <Label>E-mail</Label>
@@ -538,7 +556,14 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
               </div>
               <div className="space-y-2">
                 <Label>UF</Label>
-                <Input value={client.state} onChange={(e) => setClient({ ...client, state: e.target.value })} maxLength={2} />
+                <DigitCountdownInput
+                  value={client.state}
+                  onChange={(value) => setClient({ ...client, state: value })}
+                  requiredDigits={2}
+                  charset="letters"
+                  hintLabel="UF"
+                  placeholder="RS"
+                />
               </div>
               <div className="space-y-2">
                 <Label>CEP</Label>
