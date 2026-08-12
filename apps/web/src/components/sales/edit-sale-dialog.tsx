@@ -11,6 +11,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toaster';
+import {
+  DigitCountdownInput,
+  formatCepDigits,
+  formatCpfDigits,
+  formatPhoneDigits,
+  onlyDigits,
+} from './digit-countdown-input';
+import { normalizeIccid } from './iccid-scanner';
 
 interface SaleDetail {
   id: string;
@@ -118,6 +126,14 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
       toast({ title: 'Preencha os campos obrigatórios', variant: 'destructive' });
       return;
     }
+    if (onlyDigits(client.document).length !== 11) {
+      toast({ title: 'CPF deve ter 11 dígitos', variant: 'destructive' });
+      return;
+    }
+    if (onlyDigits(client.phone).length < 10) {
+      toast({ title: 'Telefone deve ter ao menos 10 dígitos', variant: 'destructive' });
+      return;
+    }
     if (!contractFormat) {
       toast({ title: 'Informe o formato do contrato', variant: 'destructive' });
       return;
@@ -200,11 +216,24 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
                 </div>
                 <div className="space-y-2">
                   <Label>Número da linha</Label>
-                  <Input value={newNumber} onChange={(event) => setNewNumber(event.target.value)} />
+                  <DigitCountdownInput
+                    value={newNumber}
+                    onChange={setNewNumber}
+                    requiredDigits={10}
+                    maxDigits={11}
+                    formatDisplay={formatPhoneDigits}
+                    hintLabel="telefone da linha"
+                  />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label>ICCID do chip</Label>
-                  <Input value={chipIccid} onChange={(event) => setChipIccid(event.target.value)} />
+                  <DigitCountdownInput
+                    value={chipIccid}
+                    onChange={(digits) => setChipIccid(normalizeIccid(digits))}
+                    requiredDigits={19}
+                    maxDigits={22}
+                    hintLabel="ICCID (começa com 89)"
+                  />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label>Formato do contrato</Label>
@@ -234,17 +263,45 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
               <h3 className="text-sm font-semibold text-muted-foreground">Dados do cliente</h3>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2 sm:col-span-2"><Label>Nome *</Label><Input value={client.name} onChange={(e) => setClient({ ...client, name: e.target.value })} /></div>
-                <div className="space-y-2"><Label>CPF *</Label><Input value={client.document} onChange={(e) => setClient({ ...client, document: e.target.value })} /></div>
+                <div className="space-y-2">
+                  <Label>CPF *</Label>
+                  <DigitCountdownInput
+                    value={client.document}
+                    onChange={(digits) => setClient({ ...client, document: digits })}
+                    requiredDigits={11}
+                    formatDisplay={formatCpfDigits}
+                    hintLabel="CPF"
+                  />
+                </div>
                 <div className="space-y-2"><Label>RG</Label><Input value={client.rg} onChange={(e) => setClient({ ...client, rg: e.target.value })} /></div>
                 <div className="space-y-2"><Label>E-mail</Label><Input type="email" value={client.email} onChange={(e) => setClient({ ...client, email: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Telefone *</Label><Input value={client.phone} onChange={(e) => setClient({ ...client, phone: e.target.value })} /></div>
+                <div className="space-y-2">
+                  <Label>Telefone *</Label>
+                  <DigitCountdownInput
+                    value={client.phone}
+                    onChange={(digits) => setClient({ ...client, phone: digits })}
+                    requiredDigits={10}
+                    maxDigits={11}
+                    formatDisplay={formatPhoneDigits}
+                    hintLabel="telefone de contato"
+                  />
+                </div>
                 <div className="space-y-2 sm:col-span-2"><Label>Endereço</Label><Input value={client.address} onChange={(e) => setClient({ ...client, address: e.target.value })} /></div>
                 <div className="space-y-2"><Label>Número</Label><Input value={client.addressNumber} onChange={(e) => setClient({ ...client, addressNumber: e.target.value })} /></div>
                 <div className="space-y-2"><Label>Complemento</Label><Input value={client.complement} onChange={(e) => setClient({ ...client, complement: e.target.value })} /></div>
                 <div className="space-y-2"><Label>Bairro</Label><Input value={client.neighborhood} onChange={(e) => setClient({ ...client, neighborhood: e.target.value })} /></div>
                 <div className="space-y-2"><Label>Cidade</Label><Input value={client.city} onChange={(e) => setClient({ ...client, city: e.target.value })} /></div>
                 <div className="space-y-2"><Label>UF</Label><Input maxLength={2} value={client.state} onChange={(e) => setClient({ ...client, state: e.target.value.toUpperCase() })} /></div>
-                <div className="space-y-2"><Label>CEP</Label><Input value={client.zipCode} onChange={(e) => setClient({ ...client, zipCode: e.target.value })} /></div>
+                <div className="space-y-2">
+                  <Label>CEP</Label>
+                  <DigitCountdownInput
+                    value={client.zipCode}
+                    onChange={(digits) => setClient({ ...client, zipCode: digits })}
+                    requiredDigits={8}
+                    formatDisplay={formatCepDigits}
+                    hintLabel="CEP"
+                  />
+                </div>
               </div>
             </section>
           </div>

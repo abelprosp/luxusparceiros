@@ -403,8 +403,8 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       SaleStatus.CANCELLED,
       SaleStatus.REJECTED,
     ];
-    if (lockedStatuses.includes(existing.status)) {
-      throw new BadRequestException('Venda não pode ser editada neste status');
+    if (lockedStatuses.includes(existing.status) || existing.contractStage === SaleContractStage.COMPLETED) {
+      throw new BadRequestException('Venda concluída ou encerrada não pode ser editada');
     }
     if (
       ([SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED] as SaleReviewStatus[]).includes(
@@ -564,6 +564,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         action: shouldRequeueTaskSync
           ? 'Dados da venda atualizados — sync com Luxus Task reenfileirado'
           : 'Dados da venda atualizados',
+        details: this.buildSaleEditDetails(existing, dto),
         changes: Object.keys(dto) as Prisma.InputJsonValue,
       },
     });
@@ -802,6 +803,56 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       console.warn('[sales] Falha no reforço automático de anexos ao Luxus Task', error);
     }
+  }
+
+  private buildSaleEditDetails(
+    existing: {
+      value: unknown;
+      newNumber?: string | null;
+      chipIccid?: string | null;
+      notes?: string | null;
+      contractFormat?: string | null;
+      client?: {
+        name?: string | null;
+        document?: string | null;
+        phone?: string | null;
+        email?: string | null;
+        rg?: string | null;
+        address?: string | null;
+        city?: string | null;
+        state?: string | null;
+        zipCode?: string | null;
+      } | null;
+    },
+    dto: UpdateSaleDto,
+  ): string | undefined {
+    const lines: string[] = [];
+    const pushChange = (label: string, before: unknown, after: unknown) => {
+      const from = before == null || before === '' ? '—' : String(before);
+      const to = after == null || after === '' ? '—' : String(after);
+      if (from === to) return;
+      lines.push(`${label}: ${from} → ${to}`);
+    };
+
+    if (dto.value !== undefined) pushChange('Valor', existing.value, dto.value);
+    if (dto.newNumber !== undefined) pushChange('Linha', existing.newNumber, dto.newNumber);
+    if (dto.chipIccid !== undefined) pushChange('ICCID', existing.chipIccid, dto.chipIccid);
+    if (dto.contractFormat !== undefined) pushChange('Formato do contrato', existing.contractFormat, dto.contractFormat);
+    if (dto.notes !== undefined) pushChange('Observações', existing.notes, dto.notes);
+
+    if (dto.client) {
+      pushChange('Cliente', existing.client?.name, dto.client.name);
+      pushChange('CPF', existing.client?.document, dto.client.document);
+      pushChange('Telefone', existing.client?.phone, dto.client.phone);
+      pushChange('E-mail', existing.client?.email, dto.client.email);
+      pushChange('RG', existing.client?.rg, dto.client.rg);
+      pushChange('Endereço', existing.client?.address, dto.client.address);
+      pushChange('Cidade', existing.client?.city, dto.client.city);
+      pushChange('UF', existing.client?.state, dto.client.state);
+      pushChange('CEP', existing.client?.zipCode, dto.client.zipCode);
+    }
+
+    return lines.length ? lines.join('\n') : undefined;
   }
 
   private assertAdmin(user: AuthUser) {

@@ -13,6 +13,12 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toaster';
 import { IccidScanner, isValidIccid, normalizeIccid } from './iccid-scanner';
+import {
+  DigitCountdownInput,
+  formatCepDigits,
+  formatCpfDigits,
+  formatPhoneDigits,
+} from './digit-countdown-input';
 
 interface Operator {
   id: string;
@@ -184,16 +190,20 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     if (!operatorId) errors.push('Operadora');
     if (!planId) errors.push('Plano');
     if (!newNumber.trim()) errors.push('Número da linha');
+    else if (newNumber.replace(/\D/g, '').length < 10) errors.push('Linha com ao menos 10 dígitos');
     if (!contractFormat) errors.push('Formato do contrato');
     if (!client.name.trim()) errors.push('Nome do cliente');
     if (!client.document.trim()) errors.push('CPF do cliente');
+    else if (client.document.replace(/\D/g, '').length !== 11) errors.push('CPF com 11 dígitos');
     if (!client.phone.trim()) errors.push('Telefone de contato');
+    else if (client.phone.replace(/\D/g, '').length < 10) errors.push('Telefone com ao menos 10 dígitos');
     if (!chipPhoto) errors.push('Foto do chip');
     if (!cpfPhoto) errors.push('Foto do CPF');
     if (!rgPhoto) errors.push('Foto do RG');
     if (isVirginChip && !chipIccid) errors.push('ICCID do chip');
     if (isPortability && !donorOperator) errors.push('Operadora doadora');
     if (isPortability && !portabilityNumber.trim()) errors.push('Número a ser portado');
+    else if (isPortability && portabilityNumber.replace(/\D/g, '').length < 10) errors.push('Número portado com ao menos 10 dígitos');
     if (errors.length) {
       setValidationErrors(errors);
       requestAnimationFrame(() => validationRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -402,7 +412,15 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
               </div>
               <div className="space-y-2">
                 <Label>Número da linha *</Label>
-                <Input value={newNumber} onChange={(e) => setNewNumber(e.target.value)} placeholder="(11) 99999-9999" />
+                <DigitCountdownInput
+                  value={newNumber}
+                  onChange={setNewNumber}
+                  requiredDigits={10}
+                  maxDigits={11}
+                  formatDisplay={formatPhoneDigits}
+                  hintLabel="telefone da linha"
+                  placeholder="(11) 99999-9999"
+                />
               </div>
               <div className="flex items-center gap-2 sm:col-span-2">
                 <input
@@ -416,18 +434,19 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
               {isVirginChip && (
                 <div className="space-y-2 sm:col-span-2">
                   <Label>ICCID do chip *</Label>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <Input
-                      value={chipIccid}
-                      onChange={(e) => setChipIccid(normalizeIccid(e.target.value))}
-                      placeholder="8955..."
-                      inputMode="numeric"
-                      autoComplete="off"
-                      maxLength={22}
-                    />
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                    <div className="flex-1">
+                      <DigitCountdownInput
+                        value={chipIccid}
+                        onChange={(digits) => setChipIccid(normalizeIccid(digits))}
+                        requiredDigits={19}
+                        maxDigits={22}
+                        hintLabel="ICCID (começa com 89)"
+                        placeholder="8955..."
+                      />
+                    </div>
                     <IccidScanner value={chipIccid} onScan={setChipIccid} />
                   </div>
-                  <p className="text-xs text-muted-foreground">Deve começar com 89 e ter de 19 a 22 dígitos.</p>
                 </div>
               )}
               <div className="space-y-2 sm:col-span-2">
@@ -469,7 +488,13 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
               </div>
               <div className="space-y-2">
                 <Label>CPF *</Label>
-                <Input value={client.document} onChange={(e) => setClient({ ...client, document: e.target.value })} />
+                <DigitCountdownInput
+                  value={client.document}
+                  onChange={(digits) => setClient({ ...client, document: digits })}
+                  requiredDigits={11}
+                  formatDisplay={formatCpfDigits}
+                  hintLabel="CPF"
+                />
               </div>
               <div className="space-y-2">
                 <Label>RG</Label>
@@ -481,7 +506,15 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
               </div>
               <div className="space-y-2">
                 <Label>Telefone de contato *</Label>
-                <Input value={client.phone} onChange={(e) => setClient({ ...client, phone: e.target.value })} placeholder="Diferente da linha" />
+                <DigitCountdownInput
+                  value={client.phone}
+                  onChange={(digits) => setClient({ ...client, phone: digits })}
+                  requiredDigits={10}
+                  maxDigits={11}
+                  formatDisplay={formatPhoneDigits}
+                  hintLabel="diferente da linha"
+                  placeholder="Diferente da linha"
+                />
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label>Endereço</Label>
@@ -509,7 +542,13 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
               </div>
               <div className="space-y-2">
                 <Label>CEP</Label>
-                <Input value={client.zipCode} onChange={(e) => setClient({ ...client, zipCode: e.target.value })} />
+                <DigitCountdownInput
+                  value={client.zipCode}
+                  onChange={(digits) => setClient({ ...client, zipCode: digits })}
+                  requiredDigits={8}
+                  formatDisplay={formatCepDigits}
+                  hintLabel="CEP"
+                />
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label>Foto do CPF *</Label>
@@ -558,9 +597,13 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                 </div>
                 <div className="space-y-2">
                   <Label>Número a ser portado *</Label>
-                  <Input
+                  <DigitCountdownInput
                     value={portabilityNumber}
-                    onChange={(e) => setPortabilityNumber(e.target.value)}
+                    onChange={setPortabilityNumber}
+                    requiredDigits={10}
+                    maxDigits={11}
+                    formatDisplay={formatPhoneDigits}
+                    hintLabel="número portado"
                     placeholder="(11) 99999-9999"
                   />
                 </div>

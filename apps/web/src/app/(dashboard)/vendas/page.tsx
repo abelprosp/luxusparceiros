@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Download, ShoppingCart, Check, X, AlertTriangle, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2 } from 'lucide-react';
+import { Search, Download, ShoppingCart, Check, X, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2 } from 'lucide-react';
 import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_CONTRACT_STAGE_LABELS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS, saleWorkflowTurnLabel } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
@@ -75,7 +75,7 @@ export default function VendasPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selected, setSelected] = useState<Sale | null>(null);
-  const [actionDialog, setActionDialog] = useState<'reject' | 'contest' | 'documents' | null>(null);
+  const [actionDialog, setActionDialog] = useState<'reject' | 'documents' | null>(null);
   const [reason, setReason] = useState('');
   const [docMessage, setDocMessage] = useState('');
   const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
@@ -97,7 +97,8 @@ export default function VendasPage() {
     && !sale.taskDemandId
     && (sale.taskSyncStatus ?? 'NOT_READY') === 'NOT_READY';
   const canEdit = (sale: Sale) =>
-    ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
+    sale.contractStage !== SaleContractStage.COMPLETED
+    && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
     && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus);
   const canReview = (sale: Sale) =>
     [SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW].includes(sale.reviewStatus);
@@ -142,9 +143,6 @@ export default function VendasPage() {
       if (actionDialog === 'reject') {
         await api(`/sales/${selected.id}/request-correction`, { method: 'POST', body: { reason } });
         toast({ title: 'Venda devolvida para correção', variant: 'success' });
-      } else if (actionDialog === 'contest') {
-        await api(`/sales/${selected.id}/contest`, { method: 'POST', body: { reason } });
-        toast({ title: 'Venda contestada', variant: 'success' });
       } else if (actionDialog === 'documents') {
         const documents = DOC_OPTIONS.filter((d) => selectedDocs[d.type]).map((d) => ({
           type: d.type,
@@ -388,11 +386,6 @@ export default function VendasPage() {
                                   <X className="mr-2 h-4 w-4 text-red-600" /> Solicitar correção
                                 </DropdownMenuItem>
                               )}
-                              {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING].includes(s.status) && (
-                                <DropdownMenuItem onClick={() => openAction(s, 'contest')}>
-                                  <AlertTriangle className="mr-2 h-4 w-4 text-amber-600" /> Contestar
-                                </DropdownMenuItem>
-                              )}
                               {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.CONTESTED].includes(s.status) && (
                                 <DropdownMenuItem onClick={() => openAction(s, 'documents')}>
                                   <FileText className="mr-2 h-4 w-4" /> Solicitar documentos
@@ -472,11 +465,6 @@ export default function VendasPage() {
                             <X className="mr-2 h-4 w-4 text-red-600" /> Solicitar correção
                           </DropdownMenuItem>
                         )}
-                        {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.DOCUMENTS_PENDING].includes(s.status) && (
-                          <DropdownMenuItem onClick={() => openAction(s, 'contest')}>
-                            <AlertTriangle className="mr-2 h-4 w-4 text-amber-600" /> Contestar
-                          </DropdownMenuItem>
-                        )}
                         {[SaleStatus.IN_ANALYSIS, SaleStatus.PENDING, SaleStatus.CONTESTED].includes(s.status) && (
                           <DropdownMenuItem onClick={() => openAction(s, 'documents')}>
                             <FileText className="mr-2 h-4 w-4" /> Solicitar documentos
@@ -504,10 +492,10 @@ export default function VendasPage() {
         </>
       )}
 
-      <Dialog open={actionDialog === 'reject' || actionDialog === 'contest'} onOpenChange={() => setActionDialog(null)}>
+      <Dialog open={actionDialog === 'reject'} onOpenChange={() => setActionDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{actionDialog === 'reject' ? 'Solicitar correção da venda' : 'Contestar venda'}</DialogTitle>
+            <DialogTitle>Solicitar correção da venda</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-4">
             <Label>O que o parceiro precisa corrigir *</Label>
@@ -515,7 +503,7 @@ export default function VendasPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setActionDialog(null)}>Cancelar</Button>
-            <Button onClick={handleAction} variant={actionDialog === 'reject' ? 'destructive' : 'default'}>
+            <Button onClick={handleAction} variant="destructive">
               Confirmar
             </Button>
           </DialogFooter>

@@ -12,6 +12,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toaster';
+import {
+  DigitCountdownInput,
+  formatCnpjDigits,
+  formatCpfDigits,
+} from './digit-countdown-input';
 
 interface Responsible { id: string; name: string; email: string }
 interface TaskClient { id: string; name: string; document?: string; tradeName?: string }
@@ -232,7 +237,15 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
                 <div className="space-y-2"><Label>Nome / razão social *</Label><Input value={clientName} onChange={(event) => setClientName(event.target.value)} /></div>
                 <div className="grid gap-3 sm:grid-cols-[130px_1fr]">
                   <div className="space-y-2"><Label>Documento</Label><Select value={documentType} onValueChange={(value) => setDocumentType(value as 'pf' | 'pj')}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pf">CPF</SelectItem><SelectItem value="pj">CNPJ</SelectItem></SelectContent></Select></div>
-                  <div className="space-y-2"><Label>{documentType === 'pf' ? 'CPF' : 'CNPJ'} *</Label><Input value={document} onChange={(event) => setDocument(event.target.value)} /></div>
+                  <div className="space-y-2"><Label>{documentType === 'pf' ? 'CPF' : 'CNPJ'} *</Label>
+                    <DigitCountdownInput
+                      value={document}
+                      onChange={setDocument}
+                      requiredDigits={documentType === 'pf' ? 11 : 14}
+                      formatDisplay={documentType === 'pf' ? formatCpfDigits : formatCnpjDigits}
+                      hintLabel={documentType === 'pf' ? 'CPF' : 'CNPJ'}
+                    />
+                  </div>
                 </div>
                 {duplicateDocument && <p className="flex items-center gap-2 text-sm text-amber-600"><AlertCircle className="h-4 w-4" /> Este documento já pertence a {duplicateDocument.name}. Use o cliente existente.</p>}
               </div>

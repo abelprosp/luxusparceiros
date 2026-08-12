@@ -444,6 +444,7 @@ export function SaleDetailDialog({
   const signedContractInput = useRef<HTMLInputElement>(null);
   const canEditSale = Boolean(
     sale
+    && sale.contractStage !== SaleContractStage.COMPLETED
     && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
     && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus)
     && onEdit,
