@@ -9,8 +9,12 @@ import { ToasterProvider } from '@/components/ui/toaster';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Luxus Parceiros - Admin',
+  title: 'Luxus Parceiros',
   description: 'Plataforma administrativa Luxus Telefonia',
+  icons: {
+    icon: [{ url: '/icon.png', type: 'image/png', sizes: '256x256' }],
+    apple: [{ url: '/apple-icon.png', type: 'image/png', sizes: '180x180' }],
+  },
 };
 
 export const viewport: Viewport = {
