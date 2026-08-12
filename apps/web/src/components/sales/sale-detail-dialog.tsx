@@ -8,6 +8,7 @@ import {
   FileText,
   ImageIcon,
   Loader2,
+  Pencil,
   Upload,
   UploadCloud,
   X,
@@ -169,6 +170,7 @@ interface SaleDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onResubmitDocuments?: (saleId: string) => void;
+  onEdit?: (saleId: string) => void;
 }
 
 const TAB_PANEL_CLASS = 'mt-0 h-[calc(90vh-13.5rem)] overflow-y-auto px-5 py-4 focus-visible:outline-none sm:px-6';
@@ -429,6 +431,7 @@ export function SaleDetailDialog({
   open,
   onOpenChange,
   onResubmitDocuments,
+  onEdit,
 }: SaleDetailDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -439,6 +442,12 @@ export function SaleDetailDialog({
   const [lightbox, setLightbox] = useState<{ src: string; label: string } | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const signedContractInput = useRef<HTMLInputElement>(null);
+  const canEditSale = Boolean(
+    sale
+    && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
+    && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus)
+    && onEdit,
+  );
 
   const load = useCallback(async () => {
     if (!saleId) return;
@@ -740,7 +749,21 @@ export function SaleDetailDialog({
                       {sale.taskSyncError && (
                         <div className="my-3 space-y-2 rounded-md bg-red-500/10 p-3 text-sm text-red-500">
                           <p>{sale.taskSyncError}</p>
-                          {!isPartnerScoped && (
+                          <div className="flex flex-wrap gap-2">
+                            {canEditSale && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={workflowBusy}
+                                onClick={() => {
+                                  onOpenChange(false);
+                                  onEdit?.(sale.id);
+                                }}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Editar dados e CPF
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"
@@ -749,10 +772,10 @@ export function SaleDetailDialog({
                             >
                               Reenviar sync ao Luxus Task
                             </Button>
-                          )}
+                          </div>
                         </div>
                       )}
-                      {!sale.taskSyncError && sale.taskProtocol && !isPartnerScoped && (
+                      {!sale.taskSyncError && sale.taskProtocol && (
                         <div className="my-3 space-y-2 rounded-md border border-primary/25 bg-primary/5 p-3">
                           <p className="text-sm text-muted-foreground">
                             Após a aprovação, o sistema reenvia os anexos automaticamente.
@@ -888,7 +911,7 @@ export function SaleDetailDialog({
 
               <TabsContent value="photos" className={TAB_PANEL_CLASS}>
                 <div className="space-y-4 pb-4">
-                  {!isPartnerScoped && (sale.taskProtocol || sale.taskSyncError) && (
+                  {(sale.taskProtocol || sale.taskSyncError) && (
                     <div className="space-y-2 rounded-md border border-primary/25 bg-primary/5 p-3">
                       <p className="text-sm font-medium">Sincronizar documentos com o Luxus Task</p>
                       <p className="text-xs text-muted-foreground">
@@ -897,15 +920,31 @@ export function SaleDetailDialog({
                       {sale.taskSyncError && (
                         <p className="text-sm text-red-500">{sale.taskSyncError}</p>
                       )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={workflowBusy}
-                        onClick={() => void runWorkflowAction('retry-task-sync')}
-                      >
-                        {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                        Reenviar venda e anexos ao Luxus Task
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        {canEditSale && sale.taskSyncError && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={workflowBusy}
+                            onClick={() => {
+                              onOpenChange(false);
+                              onEdit?.(sale.id);
+                            }}
+                          >
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Editar dados e CPF
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={workflowBusy}
+                          onClick={() => void runWorkflowAction('retry-task-sync')}
+                        >
+                          {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                          Reenviar venda e anexos ao Luxus Task
+                        </Button>
+                      </div>
                     </div>
                   )}
                   <Section title="Contrato e continuidade da venda" className="border-primary/40 bg-primary/5">
@@ -1189,6 +1228,18 @@ export function SaleDetailDialog({
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Fechar
             </Button>
+            {canEditSale && sale && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  onOpenChange(false);
+                  onEdit?.(sale.id);
+                }}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                Editar venda
+              </Button>
+            )}
             {sale?.documents && sale.documents.length > 0 && (
               <>
                 <Button variant="secondary" onClick={() => setTab('photos')}>

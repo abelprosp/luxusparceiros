@@ -398,20 +398,20 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
 
   async update(id: string, dto: UpdateSaleDto, user: AuthUser) {
     const existing = await this.findOne(id, user);
-    const editableStatuses: SaleStatus[] = [
-      SaleStatus.IN_ANALYSIS,
-      SaleStatus.PENDING,
-      SaleStatus.DOCUMENTS_PENDING,
-      SaleStatus.CONTESTED,
+    const lockedStatuses: SaleStatus[] = [
+      SaleStatus.ACTIVATED,
+      SaleStatus.CANCELLED,
+      SaleStatus.REJECTED,
     ];
-    if (!editableStatuses.includes(existing.status)) {
+    if (lockedStatuses.includes(existing.status)) {
       throw new BadRequestException('Venda não pode ser editada neste status');
     }
     if (
-      !isAdminRole(user.role)
-      && !([SaleReviewStatus.DRAFT, SaleReviewStatus.CHANGES_REQUESTED] as SaleReviewStatus[]).includes(existing.reviewStatus)
+      ([SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED] as SaleReviewStatus[]).includes(
+        existing.reviewStatus,
+      )
     ) {
-      throw new BadRequestException('A venda só pode ser editada pelo parceiro quando está em rascunho ou aguardando correção');
+      throw new BadRequestException('Venda encerrada não pode ser editada');
     }
     if (
       existing.status === SaleStatus.DOCUMENTS_PENDING &&
@@ -505,6 +505,16 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
+    const shouldRequeueTaskSync =
+      existing.reviewStatus === SaleReviewStatus.APPROVED
+      && existing.taskSyncStatus !== SaleTaskSyncStatus.SYNCED
+      && (
+        Boolean(existing.taskSyncError)
+        || existing.taskSyncStatus === SaleTaskSyncStatus.RETRY
+        || existing.taskSyncStatus === SaleTaskSyncStatus.PENDING
+        || Boolean(clientChanges)
+      );
+
     const sale = await this.prisma.sale.update({
       where: { id },
       data: {
@@ -527,6 +537,17 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         ...(chipIccid !== undefined && { chipIccid }),
         ...(contractFormat !== undefined && { contractFormat }),
         ...(notes !== undefined && { notes }),
+        ...(clientChanges && existing.reviewStatus === SaleReviewStatus.APPROVED && {
+          taskClientName: clientChanges.name ?? existing.taskClientName,
+          taskClientDocument: clientChanges.document
+            ? clientChanges.document.replace(/\D/g, '')
+            : existing.taskClientDocument,
+        }),
+        ...(shouldRequeueTaskSync && {
+          taskSyncStatus: SaleTaskSyncStatus.PENDING,
+          taskSyncError: null,
+          taskNextRetryAt: new Date(),
+        }),
       },
       include: {
         client: { select: { id: true, name: true } },
@@ -540,7 +561,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         saleId: id,
         actorId: user.id,
         actorName: user.name,
-        action: 'Dados da venda atualizados',
+        action: shouldRequeueTaskSync
+          ? 'Dados da venda atualizados — sync com Luxus Task reenfileirado'
+          : 'Dados da venda atualizados',
         changes: Object.keys(dto) as Prisma.InputJsonValue,
       },
     });
@@ -552,6 +575,10 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       entityId: id,
       entityType: 'Sale',
     });
+
+    if (shouldRequeueTaskSync) {
+      setImmediate(() => void this.processTaskSyncQueue());
+    }
 
     return sale;
   }
@@ -715,14 +742,20 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
   }
 
   async retryTaskSync(id: string, user: AuthUser) {
-    this.assertAdmin(user);
     const sale = await this.findOne(id, user);
     if (sale.reviewStatus !== SaleReviewStatus.APPROVED) {
       throw new BadRequestException('A venda ainda não foi aprovada para o Luxus Task');
     }
     await this.prisma.sale.update({
       where: { id },
-      data: { taskSyncStatus: SaleTaskSyncStatus.PENDING, taskSyncError: null, taskNextRetryAt: new Date() },
+      data: {
+        taskSyncStatus: SaleTaskSyncStatus.PENDING,
+        taskSyncError: null,
+        taskNextRetryAt: new Date(),
+        // Garante que o CPF/nome corrigidos na venda sejam usados no reenvio.
+        taskClientName: sale.taskClientName ?? sale.client.name,
+        taskClientDocument: sale.taskClientDocument ?? sale.client.document?.replace(/\D/g, ''),
+      },
     });
     setImmediate(() => void this.processTaskSyncQueue());
     return { queued: true };
@@ -848,7 +881,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           clientId: sale.taskClientId ?? undefined,
           clientName: sale.taskClientName ?? sale.client.name,
           clientDocumentType: (sale.taskClientDocumentType as 'pf' | 'pj' | null) ?? undefined,
-          clientDocument: sale.taskClientDocument ?? undefined,
+          clientDocument: sale.taskClientDocument ?? sale.client.document?.replace(/\D/g, '') ?? undefined,
           deadline: sale.taskDeadline.toISOString().slice(0, 10),
           subject: `Venda ${sale.protocol} — ${sale.partner.name}`,
           description: [

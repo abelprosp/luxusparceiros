@@ -141,10 +141,20 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
         },
       });
       const shouldResubmit = sale.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED;
+      const shouldRetrySync = sale.reviewStatus === SaleReviewStatus.APPROVED;
       if (shouldResubmit) await api(`/sales/${sale.id}/submit`, { method: 'POST' });
+      if (shouldRetrySync) await api(`/sales/${sale.id}/retry-task-sync`, { method: 'POST' });
       toast({
-        title: shouldResubmit ? 'Venda corrigida e reenviada' : 'Venda atualizada',
-        description: shouldResubmit ? 'O administrador foi avisado para analisar novamente.' : undefined,
+        title: shouldResubmit
+          ? 'Venda corrigida e reenviada'
+          : shouldRetrySync
+            ? 'Venda atualizada e reenviada ao Luxus Task'
+            : 'Venda atualizada',
+        description: shouldResubmit
+          ? 'O administrador foi avisado para analisar novamente.'
+          : shouldRetrySync
+            ? 'O sync com o Luxus Task foi reenfileirado com os dados corrigidos.'
+            : undefined,
         variant: 'success',
       });
       onOpenChange(false);

@@ -97,9 +97,8 @@ export default function VendasPage() {
     && !sale.taskDemandId
     && (sale.taskSyncStatus ?? 'NOT_READY') === 'NOT_READY';
   const canEdit = (sale: Sale) =>
-    isPartner
-      ? [SaleReviewStatus.DRAFT, SaleReviewStatus.CHANGES_REQUESTED].includes(sale.reviewStatus)
-      : ![SaleReviewStatus.APPROVED, SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus);
+    ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
+    && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus);
   const canReview = (sale: Sale) =>
     [SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW].includes(sale.reviewStatus);
 
@@ -561,6 +560,10 @@ export default function VendasPage() {
         saleId={detailSaleId}
         open={!!detailSaleId}
         onOpenChange={(open) => { if (!open) setDetailSaleId(null); }}
+        onEdit={(saleId) => {
+          setDetailSaleId(null);
+          setEditSaleId(saleId);
+        }}
         onResubmitDocuments={(saleId) => {
           setDetailSaleId(null);
           setResubmitSaleId(saleId);
