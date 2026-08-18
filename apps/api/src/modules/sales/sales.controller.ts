@@ -165,6 +165,28 @@ export class SalesController {
     return this.salesService.setWorkflowTurn(id, body.turn, user);
   }
 
+  @Post(':id/request-workflow-turn')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Solicita a vez do fluxo com justificativa' })
+  requestWorkflowTurn(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesService.requestWorkflowTurn(id, body.reason || '', user);
+  }
+
+  @Post(':id/respond-workflow-turn')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Aceita ou recusa um pedido de vez' })
+  respondWorkflowTurn(
+    @Param('id') id: string,
+    @Body() body: { accept?: boolean },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesService.respondWorkflowTurn(id, Boolean(body.accept), user);
+  }
+
   @Post(':id/submit-signed-contract')
   @RequirePermissions(PERMISSIONS.SALES_WRITE)
   @ApiOperation({ summary: 'Parceiro envia o contrato assinado para conferência' })

@@ -24,6 +24,8 @@ import {
   DocumentPurpose,
   SALE_CONTRACT_STAGE_LABELS,
   SALE_REVIEW_STATUS_LABELS,
+  saleWorkflowTurn,
+  saleWorkflowTurnLabel,
 } from '@luxus/types';
 import { formatCurrency, formatDateTime, formatDocument, formatPhone } from '@luxus/utils';
 import {
@@ -42,6 +44,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
 
@@ -118,6 +121,9 @@ interface SaleDetail {
   taskLastMessage?: string | null;
   contractStage: SaleContractStage;
   contractCorrectionReason?: string | null;
+  turnRequestFrom?: string | null;
+  turnRequestReason?: string | null;
+  turnRequestAt?: string | null;
   signedContractSyncStatus?: string | null;
   signedContractSyncError?: string | null;
   value: number;
@@ -441,6 +447,9 @@ export function SaleDetailDialog({
   const [tab, setTab] = useState('overview');
   const [lightbox, setLightbox] = useState<{ src: string; label: string } | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
+  const [pendingTurn, setPendingTurn] = useState<'luxus_task' | 'luxus_parceiros' | 'parceiro' | null>(null);
+  const [pendingRespond, setPendingRespond] = useState<boolean | null>(null);
+  const [turnRequestReason, setTurnRequestReason] = useState('');
   const signedContractInput = useRef<HTMLInputElement>(null);
   const canEditSale = Boolean(
     sale
@@ -476,6 +485,9 @@ export function SaleDetailDialog({
       setSale(null);
       setLightbox(null);
       setTab('overview');
+      setPendingTurn(null);
+      setPendingRespond(null);
+      setTurnRequestReason('');
     }
   }, [open, saleId, load]);
 
@@ -555,6 +567,30 @@ export function SaleDetailDialog({
     } finally {
       setWorkflowBusy(false);
     }
+  };
+
+  const confirmPendingTurn = async () => {
+    if (!pendingTurn) return;
+    const turn = pendingTurn;
+    setPendingTurn(null);
+    await runWorkflowAction('workflow-turn', { turn });
+  };
+
+  const confirmPendingRespond = async () => {
+    if (pendingRespond === null) return;
+    const accept = pendingRespond;
+    setPendingRespond(null);
+    await runWorkflowAction('respond-workflow-turn', { accept });
+  };
+
+  const submitTurnRequest = async () => {
+    const reason = turnRequestReason.trim();
+    if (reason.length < 3) {
+      toast({ title: 'Informe a justificativa', description: 'Explique por que precisa da vez.', variant: 'destructive' });
+      return;
+    }
+    await runWorkflowAction('request-workflow-turn', { reason });
+    setTurnRequestReason('');
   };
 
   const uploadSignedContract = async (file?: File) => {
@@ -638,6 +674,40 @@ export function SaleDetailDialog({
             ].includes(sale.contractStage)
       )
     : false;
+  const currentWorkflowTurn = sale ? saleWorkflowTurn(sale.contractStage) : null;
+  const turnLocked = Boolean(
+    sale
+    && (
+      sale.contractStage === SaleContractStage.COMPLETED
+      || [SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
+    ),
+  );
+  const iHaveWorkflowTurn = Boolean(
+    currentWorkflowTurn
+    && currentWorkflowTurn !== 'concluido'
+    && (isPartnerScoped ? currentWorkflowTurn === 'parceiro' : currentWorkflowTurn === 'luxus_parceiros'),
+  );
+  const pendingTurnRequester = sale?.turnRequestFrom || null;
+  const pendingTurnRequesterLabel = pendingTurnRequester === 'luxus_task'
+    ? 'Luxus Task'
+    : pendingTurnRequester === 'parceiro'
+      ? 'Parceiro'
+      : pendingTurnRequester === 'luxus_parceiros'
+        ? 'Luxus Parceiros'
+        : null;
+  const myTurnSide = isPartnerScoped ? 'parceiro' : 'luxus_parceiros';
+  const canRespondTurnRequest = Boolean(
+    iHaveWorkflowTurn
+    && pendingTurnRequester
+    && pendingTurnRequester !== myTurnSide,
+  );
+  const pendingTurnLabel = pendingTurn === 'luxus_task'
+    ? 'Luxus Task'
+    : pendingTurn === 'parceiro'
+      ? 'Parceiro'
+      : pendingTurn === 'luxus_parceiros'
+        ? 'Luxus Parceiros'
+        : '';
 
   const lineNumber = sale?.newNumber
     ? formatPhone(sale.newNumber)
@@ -771,7 +841,7 @@ export function SaleDetailDialog({
                               disabled={workflowBusy}
                               onClick={() => void runWorkflowAction('retry-task-sync')}
                             >
-                              Reenviar sync ao Luxus Task
+                              Sincronizar arquivos
                             </Button>
                           </div>
                         </div>
@@ -780,7 +850,7 @@ export function SaleDetailDialog({
                         <div className="my-3 space-y-2 rounded-md border border-primary/25 bg-primary/5 p-3">
                           <p className="text-sm text-muted-foreground">
                             Após a aprovação, o sistema reenvia os anexos automaticamente.
-                            Se algum arquivo não aparecer no Luxus Task, force o reenvio aqui.
+                            Se algum arquivo não aparecer no Luxus Task, sincronize os arquivos aqui.
                           </p>
                           <Button
                             size="sm"
@@ -789,7 +859,7 @@ export function SaleDetailDialog({
                             onClick={() => void runWorkflowAction('retry-task-sync')}
                           >
                             {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            Reenviar venda e anexos ao Luxus Task
+                            Sincronizar arquivos
                           </Button>
                         </div>
                       )}
@@ -916,7 +986,7 @@ export function SaleDetailDialog({
                     <div className="space-y-2 rounded-md border border-primary/25 bg-primary/5 p-3">
                       <p className="text-sm font-medium">Sincronizar documentos com o Luxus Task</p>
                       <p className="text-xs text-muted-foreground">
-                        Reenvia a venda e os anexos desta aba para a demanda correspondente no Luxus Task.
+                        Sincroniza a venda e os anexos desta aba com a demanda correspondente no Luxus Task.
                       </p>
                       {sale.taskSyncError && (
                         <p className="text-sm text-red-500">{sale.taskSyncError}</p>
@@ -943,7 +1013,7 @@ export function SaleDetailDialog({
                           onClick={() => void runWorkflowAction('retry-task-sync')}
                         >
                           {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                          Reenviar venda e anexos ao Luxus Task
+                          Sincronizar arquivos
                         </Button>
                       </div>
                     </div>
@@ -1038,51 +1108,134 @@ export function SaleDetailDialog({
                       </div>
                     )}
 
-                    {!isPartnerScoped ? (
-                      <div className="mt-2 space-y-2 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          Alterar a vez (somente o admin do Luxus Parceiros pode definir qualquer ordem)
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={workflowBusy}
-                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'luxus_task' })}
-                          >
-                            Vez do Luxus Task
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={workflowBusy}
-                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'luxus_parceiros' })}
-                          >
-                            Vez do Luxus Parceiros
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={workflowBusy}
-                            onClick={() => void runWorkflowAction('workflow-turn', { turn: 'parceiro' })}
-                          >
-                            Vez do Parceiro
-                          </Button>
+                    {!turnLocked ? (
+                      iHaveWorkflowTurn ? (
+                        <div className="mt-2 space-y-3 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
+                          {canRespondTurnRequest && (
+                            <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+                              <p className="text-xs font-medium text-amber-700 dark:text-amber-200">Pedido de vez pendente</p>
+                              <p className="text-sm text-muted-foreground">
+                                {pendingTurnRequesterLabel} pediu a vez
+                                {sale.turnRequestReason ? `: ${sale.turnRequestReason}` : '.'}
+                              </p>
+                              {pendingRespond !== null ? (
+                                <div className="space-y-2">
+                                  <p className="text-sm font-medium">
+                                    {pendingRespond
+                                      ? `Tem certeza de que deseja passar a vez para ${pendingTurnRequesterLabel}?`
+                                      : `Tem certeza de que deseja recusar o pedido de ${pendingTurnRequesterLabel}?`}
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button size="sm" disabled={workflowBusy} onClick={() => void confirmPendingRespond()}>
+                                      {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                      {pendingRespond ? 'Sim, passar a vez' : 'Sim, recusar'}
+                                    </Button>
+                                    <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingRespond(null)}>
+                                      Cancelar
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    size="sm"
+                                    disabled={workflowBusy}
+                                    onClick={() => setPendingRespond(true)}
+                                  >
+                                    Aceitar e passar a vez
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={workflowBusy}
+                                    onClick={() => setPendingRespond(false)}
+                                  >
+                                    Recusar
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {pendingTurn ? (
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium">Tem certeza de que deseja passar a vez para {pendingTurnLabel}?</p>
+                              <p className="text-xs text-muted-foreground">Essa ação atualiza o status nos dois sistemas.</p>
+                              <div className="flex flex-wrap gap-2">
+                                <Button size="sm" disabled={workflowBusy} onClick={() => void confirmPendingTurn()}>
+                                  {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                  Sim, passar a vez
+                                </Button>
+                                <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingTurn(null)}>
+                                  Cancelar
+                                </Button>
+                              </div>
+                            </div>
+                          ) : !isPartnerScoped ? (
+                            <>
+                              <p className="text-xs font-medium text-muted-foreground">
+                                Passar a vez — quem está com a vez transfere agora, com confirmação.
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingTurn('luxus_task')}>
+                                  Vez do Luxus Task
+                                </Button>
+                                <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingTurn('luxus_parceiros')}>
+                                  Vez do Luxus Parceiros
+                                </Button>
+                                <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingTurn('parceiro')}>
+                                  Vez do Parceiro
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-xs font-medium text-muted-foreground">
+                                O parceiro só pode devolver a vez ao Luxus Parceiros.
+                              </p>
+                              <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingTurn('luxus_parceiros')}>
+                                Passar a vez ao Luxus Parceiros
+                              </Button>
+                            </>
+                          )}
                         </div>
-                      </div>
+                      ) : (
+                        <div className="mt-2 space-y-2 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Vez de {saleWorkflowTurnLabel(sale.contractStage) || 'outro sistema'}
+                          </p>
+                          {pendingTurnRequester === myTurnSide ? (
+                            <p className="text-sm text-muted-foreground">
+                              Pedido enviado. Aguarde a outra parte aceitar ou recusar.
+                            </p>
+                          ) : (
+                            <>
+                              <p className="text-sm text-muted-foreground">
+                                Para agir nesta venda, solicite a vez e explique o motivo.
+                              </p>
+                              <Textarea
+                                value={turnRequestReason}
+                                onChange={(event) => setTurnRequestReason(event.target.value)}
+                                placeholder="Justificativa para solicitar a vez"
+                                disabled={workflowBusy}
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={workflowBusy || turnRequestReason.trim().length < 3}
+                                onClick={() => void submitTurnRequest()}
+                              >
+                                {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                Solicitar vez
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      )
                     ) : (
-                      <div className="mt-2 space-y-2 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          O parceiro só pode devolver a vez ao Luxus Parceiros.
+                      <div className="mt-2 rounded-md border border-dashed border-muted p-3">
+                        <p className="text-sm text-muted-foreground">
+                          Esta venda já foi concluída. A vez não pode mais ser alterada.
                         </p>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={workflowBusy}
-                          onClick={() => void runWorkflowAction('workflow-turn', { turn: 'luxus_parceiros' })}
-                        >
-                          Passar a vez ao Luxus Parceiros
-                        </Button>
                       </div>
                     )}
                   </Section>

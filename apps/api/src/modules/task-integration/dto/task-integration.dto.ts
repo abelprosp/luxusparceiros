@@ -90,6 +90,18 @@ export class TaskDemandCallbackDto {
   workflowStage?: string;
 
   @IsOptional()
+  @IsIn(['luxus_task', 'luxus_parceiros', 'parceiro'])
+  turnRequestFrom?: string | null;
+
+  @IsOptional()
+  @IsString()
+  turnRequestReason?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  clearTurnRequest?: boolean;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => TaskCallbackAttachmentDto)

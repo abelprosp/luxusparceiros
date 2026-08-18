@@ -16,7 +16,7 @@ import {
   Prisma,
   UserRole,
 } from '@prisma/client';
-import { AuthUser } from '@luxus/types';
+import { AuthUser, saleWorkflowTurn } from '@luxus/types';
 import { generateProtocol, calculatePlanCommission } from '@luxus/utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
@@ -1105,6 +1105,37 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     return updated;
   }
 
+  private assertWorkflowTurnOpen(sale: { contractStage: SaleContractStage; status: SaleStatus }) {
+    if (
+      sale.contractStage === SaleContractStage.COMPLETED
+      || sale.status === SaleStatus.ACTIVATED
+      || sale.status === SaleStatus.CANCELLED
+      || sale.status === SaleStatus.REJECTED
+    ) {
+      throw new BadRequestException('Esta venda já foi concluída e não pode mais ter a vez alterada.');
+    }
+  }
+
+  private stageForWorkflowTurn(
+    turn: 'luxus_task' | 'luxus_parceiros' | 'parceiro',
+    currentStage: SaleContractStage,
+  ) {
+    if (turn === 'luxus_task') return SaleContractStage.TASK_PROCESSING;
+    if (turn === 'parceiro') return SaleContractStage.AWAITING_PARTNER_SIGNATURE;
+    if (
+      currentStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
+      || currentStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING
+      || currentStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING
+    ) {
+      return currentStage;
+    }
+    return SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN;
+  }
+
+  private workflowTurnLabel(turn: 'luxus_task' | 'luxus_parceiros' | 'parceiro') {
+    return turn === 'luxus_task' ? 'Luxus Task' : turn === 'parceiro' ? 'Parceiro' : 'Luxus Parceiros';
+  }
+
   async setWorkflowTurn(
     id: string,
     turn: 'luxus_task' | 'luxus_parceiros' | 'parceiro',
@@ -1118,34 +1149,25 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       this.assertAdmin(user);
     }
     const sale = await this.findOne(id, user);
+    this.assertWorkflowTurnOpen(sale);
     if (!sale.taskDemandId && sale.taskSyncStatus !== 'SYNCED') {
       throw new BadRequestException('Esta venda ainda não está sincronizada com o Luxus Task');
     }
-    const stage =
-      turn === 'luxus_task'
-        ? SaleContractStage.TASK_PROCESSING
-        : turn === 'parceiro'
-          ? SaleContractStage.AWAITING_PARTNER_SIGNATURE
-          : sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
-            || sale.contractStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING
-            || sale.contractStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING
-            ? sale.contractStage
-            : SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN;
-    const label =
-      turn === 'luxus_task'
-        ? 'Luxus Task'
-        : turn === 'parceiro'
-          ? 'Parceiro'
-          : 'Luxus Parceiros';
+    const stage = this.stageForWorkflowTurn(turn, sale.contractStage);
+    const label = this.workflowTurnLabel(turn);
     await this.taskIntegration.updateSaleStage(id, {
       stage,
       note: `Vez alterada para ${label} por ${user.name}.`,
+      clearTurnRequest: true,
     }).catch(() => undefined);
     const updated = await this.prisma.sale.update({
       where: { id },
       data: {
         contractStage: stage,
         contractStageUpdatedAt: new Date(),
+        turnRequestFrom: null,
+        turnRequestReason: null,
+        turnRequestAt: null,
         timeline: {
           create: {
             actorId: user.id,
@@ -1174,6 +1196,138 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         [sale.createdById],
       ).catch(() => undefined);
     }
+    return updated;
+  }
+
+  async requestWorkflowTurn(id: string, reason: string, user: AuthUser) {
+    const sale = await this.findOne(id, user);
+    this.assertWorkflowTurnOpen(sale);
+    const requester = isAdminRole(user.role) ? 'luxus_parceiros' : 'parceiro';
+    const currentTurn = saleWorkflowTurn(sale.contractStage);
+    if (!currentTurn || currentTurn === 'concluido') {
+      throw new BadRequestException('Não há vez para solicitar nesta venda');
+    }
+    if (currentTurn === requester) {
+      throw new BadRequestException('Você já está com a vez deste fluxo');
+    }
+    const trimmed = reason.trim();
+    if (trimmed.length < 3) {
+      throw new BadRequestException('Informe a justificativa para solicitar a vez');
+    }
+    const requesterLabel = this.workflowTurnLabel(requester);
+    await this.taskIntegration.updateSaleStage(id, {
+      stage: sale.contractStage,
+      note: `${requesterLabel} solicitou a vez: ${trimmed}`,
+      turnRequestFrom: requester,
+      turnRequestReason: trimmed,
+    }).catch(() => undefined);
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        turnRequestFrom: requester,
+        turnRequestReason: trimmed,
+        turnRequestAt: new Date(),
+        timeline: {
+          create: {
+            actorId: user.id,
+            actorName: user.name,
+            action: `${requesterLabel} solicitou a vez`,
+            details: trimmed,
+          },
+        },
+      },
+    });
+    const notification = {
+      type: 'SYSTEM' as const,
+      title: `${requesterLabel} solicitou a vez`,
+      message: `${sale.protocol}: ${trimmed}`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    };
+    await this.notificationsService.createForAdminUsers(notification).catch(() => undefined);
+    await this.notificationsService.create({
+      userId: sale.createdById,
+      ...notification,
+    }).catch(() => undefined);
+    return updated;
+  }
+
+  async respondWorkflowTurn(id: string, accept: boolean, user: AuthUser) {
+    const sale = await this.findOne(id, user);
+    this.assertWorkflowTurnOpen(sale);
+    const requester = sale.turnRequestFrom as 'luxus_task' | 'luxus_parceiros' | 'parceiro' | null;
+    if (!requester) {
+      throw new BadRequestException('Não há pedido de vez pendente nesta venda');
+    }
+    const currentTurn = saleWorkflowTurn(sale.contractStage);
+    const adminActing = isAdminRole(user.role);
+    if (currentTurn === 'luxus_task') {
+      throw new ForbiddenException('Quem está com a vez no Luxus Task precisa responder o pedido por lá');
+    }
+    if (currentTurn === 'luxus_parceiros' && !adminActing) {
+      throw new ForbiddenException('Apenas o Luxus Parceiros pode responder este pedido');
+    }
+    if (currentTurn === 'parceiro' && !adminActing && requester !== 'luxus_parceiros' && requester !== 'luxus_task') {
+      throw new ForbiddenException('Você não pode responder este pedido');
+    }
+    const requesterLabel = this.workflowTurnLabel(requester);
+    if (!accept) {
+      await this.taskIntegration.updateSaleStage(id, {
+        stage: sale.contractStage,
+        note: `Pedido de vez recusado por ${user.name}.`,
+        clearTurnRequest: true,
+      }).catch(() => undefined);
+      return this.prisma.sale.update({
+        where: { id },
+        data: {
+          turnRequestFrom: null,
+          turnRequestReason: null,
+          turnRequestAt: null,
+          timeline: {
+            create: {
+              actorId: user.id,
+              actorName: user.name,
+              action: 'Pedido de vez recusado',
+              details: `Pedido de ${requesterLabel} recusado.`,
+            },
+          },
+        },
+      });
+    }
+    const stage = this.stageForWorkflowTurn(requester, sale.contractStage);
+    await this.taskIntegration.updateSaleStage(id, {
+      stage,
+      note: `Pedido de vez aceito por ${user.name}. Vez de ${requesterLabel}.`,
+      clearTurnRequest: true,
+    }).catch(() => undefined);
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        contractStage: stage,
+        contractStageUpdatedAt: new Date(),
+        turnRequestFrom: null,
+        turnRequestReason: null,
+        turnRequestAt: null,
+        timeline: {
+          create: {
+            actorId: user.id,
+            actorName: user.name,
+            action: `Pedido de vez aceito — agora é a vez de ${requesterLabel}`,
+            details: sale.turnRequestReason || `Quem deve agir agora: ${requesterLabel}`,
+          },
+        },
+      },
+    });
+    const notification = {
+      type: 'SYSTEM' as const,
+      title: `Vez do fluxo: ${requesterLabel}`,
+      message: `${sale.protocol}: o pedido de vez foi aceito.`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    };
+    await this.notificationsService.createForAdminUsers(notification).catch(() => undefined);
+    await this.notificationsService.create({
+      userId: sale.createdById,
+      ...notification,
+    }).catch(() => undefined);
     return updated;
   }
 

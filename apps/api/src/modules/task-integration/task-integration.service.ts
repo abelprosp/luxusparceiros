@@ -103,7 +103,16 @@ export class TaskIntegrationService {
 
   async updateSaleStage(
     externalRequestId: string,
-    input: { stage: string; documentId?: string; documentName?: string; documentMimeType?: string; note?: string },
+    input: {
+      stage: string;
+      documentId?: string;
+      documentName?: string;
+      documentMimeType?: string;
+      note?: string;
+      turnRequestFrom?: string | null;
+      turnRequestReason?: string | null;
+      clearTurnRequest?: boolean;
+    },
   ) {
     return this.request(
       `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}/etapa-venda`,
@@ -289,6 +298,7 @@ export class TaskIntegrationService {
         taskStatus: true, contractStage: true, status: true,
         taskIsBeingEdited: true, taskEditorName: true,
         taskEditorActivity: true, taskEditorLastSeenAt: true, taskLastMessage: true,
+        turnRequestFrom: true, turnRequestReason: true,
       },
     });
     if (!sale) return { accepted: true };
@@ -299,13 +309,31 @@ export class TaskIntegrationService {
       || dto.observations?.filter(Boolean).at(-1)?.trim()
       || undefined;
     const callbackStage = this.resolveSaleContractStage(dto, sale.contractStage);
+    const saleLocked = sale.contractStage === SaleContractStage.COMPLETED
+      || sale.status === 'ACTIVATED'
+      || sale.status === 'CANCELLED'
+      || sale.status === 'REJECTED';
+    const nextStage = saleLocked ? sale.contractStage : callbackStage;
+    const incomingTurnRequest = saleLocked
+      ? {}
+      : dto.clearTurnRequest
+      ? { turnRequestFrom: null, turnRequestReason: null, turnRequestAt: null }
+      : dto.turnRequestFrom
+        ? {
+            turnRequestFrom: dto.turnRequestFrom,
+            turnRequestReason: dto.turnRequestReason?.trim() || null,
+            turnRequestAt: new Date(),
+          }
+        : {};
     const workflowChanged = sale.taskStatus !== dto.status
-      || callbackStage !== sale.contractStage
-      || sale.taskLastMessage !== (resolution ?? null);
+      || nextStage !== sale.contractStage
+      || sale.taskLastMessage !== (resolution ?? null)
+      || Boolean(dto.turnRequestFrom)
+      || Boolean(dto.clearTurnRequest);
     for (const attachment of dto.attachments ?? []) {
       if (!attachment.id || !attachment.name) continue;
       const externalId = `task:${dto.demandId}:${attachment.id}`;
-      const meta = this.resolveIncomingAttachmentMeta(attachment.name, callbackStage);
+      const meta = this.resolveIncomingAttachmentMeta(attachment.name, nextStage);
       let storedUrl = `/task-integration/sales/${sale.id}/attachments/${attachment.id}`;
       let storedSize = attachment.size || 0;
       let storedMime = attachment.mimeType || 'application/octet-stream';
@@ -354,8 +382,8 @@ export class TaskIntegrationService {
         },
       });
     }
-    const isAwaitingFinalAdmin = callbackStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING;
-    const isRejectedByTask = callbackStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING;
+    const isAwaitingFinalAdmin = nextStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING;
+    const isRejectedByTask = nextStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING;
     await this.prisma.sale.update({
       where: { id: sale.id },
       data: {
@@ -372,18 +400,21 @@ export class TaskIntegrationService {
         taskEditorActivity: dto.editorActivity || null,
         taskEditorLastSeenAt: dto.editorLastSeenAt ? new Date(dto.editorLastSeenAt) : null,
         taskLastMessage: resolution || null,
-        contractStage: callbackStage,
-        contractStageUpdatedAt: callbackStage !== sale.contractStage ? new Date() : undefined,
+        contractStage: nextStage,
+        contractStageUpdatedAt: nextStage !== sale.contractStage ? new Date() : undefined,
+        ...incomingTurnRequest,
         ...(workflowChanged ? { timeline: { create: {
-          action: callbackStage !== sale.contractStage
+          action: dto.turnRequestFrom
+            ? `Luxus Task solicitou a vez de volta${dto.turnRequestReason ? `: ${dto.turnRequestReason}` : ''}`
+            : nextStage !== sale.contractStage
             ? `Chegou do Luxus Task — vez de ${
-                callbackStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
-                  || callbackStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
-                  || callbackStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING
-                  || callbackStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING
+                nextStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
+                  || nextStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
+                  || nextStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING
+                  || nextStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING
                   ? 'Luxus Parceiros'
-                  : callbackStage === SaleContractStage.AWAITING_PARTNER_SIGNATURE
-                    || callbackStage === SaleContractStage.CHANGES_REQUESTED
+                  : nextStage === SaleContractStage.AWAITING_PARTNER_SIGNATURE
+                    || nextStage === SaleContractStage.CHANGES_REQUESTED
                     ? 'Parceiro'
                     : 'Luxus Task'
               }`
@@ -392,8 +423,9 @@ export class TaskIntegrationService {
               : 'Atualização recebida do Luxus Task'),
           details: [
             `Status Task: ${dto.status}`,
-            `Etapa do contrato: ${callbackStage}`,
+            `Etapa do contrato: ${nextStage}`,
             dto.attachments?.length ? `Anexos: ${dto.attachments.map((item) => item.name).join(', ')}` : '',
+            dto.turnRequestReason ? `Pedido de vez: ${dto.turnRequestReason}` : '',
             resolution ? `Retorno: ${resolution}` : '',
           ].filter(Boolean).join('\n'),
         } } } : {}),
@@ -402,16 +434,18 @@ export class TaskIntegrationService {
     if (workflowChanged) {
       const notification = {
         type: 'SYSTEM' as const,
-        title: isAwaitingFinalAdmin
+        title: dto.turnRequestFrom
+          ? 'Luxus Task solicitou a vez'
+          : isAwaitingFinalAdmin
           ? 'Contrato aprovado no Luxus Task'
           : isRejectedByTask
             ? 'Contrato recusado no Luxus Task'
-          : callbackStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
+          : nextStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
             ? 'Contrato em branco recebido'
-            : callbackStage === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
+            : nextStage === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
               ? 'Contrato assinado enviado para conferência no Luxus Task'
             : 'Venda atualizada no Luxus Task',
-        message: `${sale.protocol}: ${resolution || `status ${dto.status}`}`,
+        message: `${sale.protocol}: ${dto.turnRequestReason || resolution || `status ${dto.status}`}`,
         data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
       };
       await this.notifications.createForAdminUsers(notification);
@@ -432,8 +466,12 @@ export class TaskIntegrationService {
   }
 
   private resolveSaleContractStage(dto: TaskDemandCallbackDto, current: SaleContractStage): SaleContractStage {
+    if (current === SaleContractStage.COMPLETED) return current;
     const explicit = dto.workflowStage as SaleContractStage | undefined;
-    if (explicit && Object.values(SaleContractStage).includes(explicit)) return explicit;
+    if (explicit && Object.values(SaleContractStage).includes(explicit)) {
+      if (explicit === SaleContractStage.COMPLETED) return current;
+      return explicit;
+    }
     if (dto.status !== 'concluido' && dto.status !== 'cancelado') return current;
     if (dto.status === 'cancelado') return SaleContractStage.TASK_REJECTED_REVIEW_PENDING;
     return current === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT

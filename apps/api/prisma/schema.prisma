@@ -601,6 +601,9 @@ model Sale {
   contractStage     SaleContractStage @default(PRE_REVIEW)
   contractStageUpdatedAt DateTime @default(now())
   contractCorrectionReason String?
+  turnRequestFrom   String?
+  turnRequestReason String?
+  turnRequestAt     DateTime?
   signedContractSyncStatus SaleTaskSyncStatus @default(NOT_READY)
   signedContractSyncError String?
   signedContractSyncAttempts Int @default(0)
