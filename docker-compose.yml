@@ -54,6 +54,7 @@ services:
       RUN_DB_SEED: ${RUN_DB_SEED:-true}
       LUXUS_TASK_API_URL: ${LUXUS_TASK_API_URL:-http://host.docker.internal:4000}
       LUXUS_TASK_INTEGRATION_KEY: ${LUXUS_TASK_INTEGRATION_KEY:-}
+      EXTERNAL_SALES_API_KEY: ${EXTERNAL_SALES_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

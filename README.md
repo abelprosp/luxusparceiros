@@ -342,6 +342,33 @@ LUXUS_TASK_API_URL=https://API-DO-LUXUS-TASK
 LUXUS_TASK_INTEGRATION_KEY=SEGREDO-COMPARTILHADO
 ```
 
+### API externa — consulta de vendas (sistemas terceiros)
+
+Para um sistema externo consultar vendas de parceiros, configure na API:
+
+```env
+EXTERNAL_SALES_API_KEY=SEGREDO-LONGO-ALEATORIO
+```
+
+Rotas (prefixo `/api`):
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/integrations/external/sales` | Lista paginada |
+| GET | `/integrations/external/sales/:idOrProtocol` | Detalhe por UUID ou protocolo |
+
+Header obrigatório: `x-api-key: <EXTERNAL_SALES_API_KEY>`  
+(também aceita `x-integration-key`).
+
+Query params da listagem: `page`, `limit` (máx. 100), `search`, `status`, `partnerId`, `branchId`, `createdFrom`, `createdTo`, `onlyActivated`.
+
+Exemplo:
+
+```bash
+curl -H "x-api-key: SUA-CHAVE" \
+  "https://SEU-DOMINIO/api/integrations/external/sales?onlyActivated=true&page=1&limit=50"
+```
+
 Antes do deploy, aplique a migration
 `20260728120000_luxus_task_integration`.
 
