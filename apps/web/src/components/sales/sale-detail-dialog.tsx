@@ -1056,6 +1056,50 @@ export function SaleDetailDialog({
                           if (reason?.trim()) void runWorkflowAction('request-contract-correction', { reason: reason.trim() });
                         }}>Devolver para correção</Button>
                       )}
+                      {!isPartnerScoped
+                        && sale.contractStage !== SaleContractStage.COMPLETED
+                        && sale.contractStage !== SaleContractStage.TASK_APPROVED_REVIEW_PENDING
+                        && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
+                        && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED, SaleReviewStatus.DRAFT].includes(sale.reviewStatus) && (
+                        <Button
+                          variant="secondary"
+                          disabled={workflowBusy}
+                          onClick={() => {
+                            const reason = window.prompt(
+                              'Finalizar esta venda agora no Luxus Parceiros? (mesmo se estiver parada no Luxus Task)\n\nMotivo opcional:',
+                            );
+                            if (reason === null) return;
+                            void runWorkflowAction('force-finalize', { reason: reason.trim() || undefined });
+                          }}
+                        >
+                          {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Finalizar no Luxus Parceiros
+                        </Button>
+                      )}
+                      {!isPartnerScoped
+                        && (
+                          sale.contractStage === SaleContractStage.COMPLETED
+                          || sale.status === SaleStatus.ACTIVATED
+                        ) && (
+                        <Button
+                          variant="outline"
+                          disabled={workflowBusy}
+                          onClick={() => {
+                            const reason = window.prompt(
+                              'Reabrir esta venda concluída para correção?\n\nDescreva o erro encontrado:',
+                            );
+                            if (reason === null) return;
+                            if (!reason.trim()) {
+                              toast({ title: 'Informe o motivo da reabertura', variant: 'destructive' });
+                              return;
+                            }
+                            void runWorkflowAction('reopen', { reason: reason.trim() });
+                          }}
+                        >
+                          {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Reabrir venda
+                        </Button>
+                      )}
                     </div>
 
                     {(canAttachSignedContract || blankContract) && (

@@ -1531,32 +1531,163 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (sale.contractStage !== SaleContractStage.TASK_APPROVED_REVIEW_PENDING) {
       throw new BadRequestException('O Luxus Task ainda não aprovou o contrato assinado');
     }
+    return this.completeSaleAsActivated(sale, user, {
+      timelineAction: 'Venda finalizada após aprovação do contrato pelo Luxus Task',
+      notifyTask: true,
+      notificationTitle: 'Venda concluída',
+      notificationMessage: `${sale.protocol}: contrato aprovado e venda concluída.`,
+    });
+  }
+
+  /**
+   * Finaliza a venda no Luxus Parceiros independentemente do estágio no Luxus Task.
+   * Usado quando a demanda está parada/travada no Task ou o admin decide concluir aqui.
+   */
+  async forceFinalize(id: string, user: AuthUser, reason?: string) {
+    this.assertAdmin(user);
+    const sale = await this.findOne(id, user);
+    if (sale.contractStage === SaleContractStage.COMPLETED || sale.status === SaleStatus.ACTIVATED) {
+      throw new BadRequestException('Esta venda já está concluída');
+    }
+    if ([SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)) {
+      throw new BadRequestException('Venda cancelada ou rejeitada não pode ser finalizada');
+    }
+    if ([SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus)) {
+      throw new BadRequestException('Venda rejeitada ou cancelada na revisão não pode ser finalizada');
+    }
+
+    const note = reason?.trim();
+    return this.completeSaleAsActivated(sale, user, {
+      timelineAction: 'Venda finalizada pelo Luxus Parceiros (controle total)',
+      timelineDetails: note
+        ? `Finalização forçada sem depender do Luxus Task. Motivo: ${note}`
+        : 'Finalização forçada sem depender do estágio atual no Luxus Task.',
+      notifyTask: Boolean(sale.taskDemandId),
+      notificationTitle: 'Venda concluída no Luxus Parceiros',
+      notificationMessage: `${sale.protocol} foi finalizada pelo administrador no Luxus Parceiros.`,
+      ensureApprovedReview: true,
+    });
+  }
+
+  /**
+   * Reabre venda já concluída para correção de erro identificado depois.
+   */
+  async reopen(id: string, user: AuthUser, reason?: string) {
+    this.assertAdmin(user);
+    const sale = await this.findOne(id, user);
+    const isCompleted =
+      sale.contractStage === SaleContractStage.COMPLETED
+      || sale.status === SaleStatus.ACTIVATED;
+    if (!isCompleted) {
+      throw new BadRequestException('Somente vendas concluídas podem ser reabertas');
+    }
+
+    const note = reason?.trim();
+    const nextStage = sale.taskDemandId
+      ? SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
+      : SaleContractStage.PRE_REVIEW;
+
     const updated = await this.prisma.sale.update({
       where: { id },
+      data: {
+        status: SaleStatus.IN_ANALYSIS,
+        reviewStatus: SaleReviewStatus.UNDER_REVIEW,
+        reviewStartedAt: sale.reviewStartedAt ?? new Date(),
+        reviewedAt: null,
+        activatedAt: null,
+        cancelledAt: null,
+        contractStage: nextStage,
+        contractStageUpdatedAt: new Date(),
+        turnRequestFrom: null,
+        turnRequestReason: null,
+        turnRequestAt: null,
+        timeline: {
+          create: {
+            actorId: user.id,
+            actorName: user.name,
+            action: 'Venda reaberta para correção',
+            fromReviewStatus: sale.reviewStatus,
+            toReviewStatus: SaleReviewStatus.UNDER_REVIEW,
+            details: note
+              ? `Reabertura após conclusão. Motivo: ${note}`
+              : 'Reabertura após conclusão para correção de erro.',
+          },
+        },
+      },
+    });
+
+    if (sale.taskDemandId) {
+      await this.taskIntegration.updateSaleStage(id, {
+        stage: nextStage,
+        note: `Venda reaberta por ${user.name} no Luxus Parceiros.${note ? ` Motivo: ${note}` : ''}`,
+      }).catch((error) => {
+        console.warn('[sales] Falha ao notificar reabertura no Luxus Task', error);
+      });
+    }
+
+    await this.notificationsService.createForPartnerUsers(sale.partnerId, {
+      type: 'SYSTEM',
+      title: 'Venda reaberta',
+      message: `${sale.protocol} foi reaberta para correção no Luxus Parceiros.`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    });
+
+    return updated;
+  }
+
+  private async completeSaleAsActivated(
+    sale: Awaited<ReturnType<SalesService['findOne']>>,
+    user: AuthUser,
+    options: {
+      timelineAction: string;
+      timelineDetails?: string;
+      notifyTask: boolean;
+      notificationTitle: string;
+      notificationMessage: string;
+      ensureApprovedReview?: boolean;
+    },
+  ) {
+    const updated = await this.prisma.sale.update({
+      where: { id: sale.id },
       data: {
         contractStage: SaleContractStage.COMPLETED,
         contractStageUpdatedAt: new Date(),
         status: SaleStatus.ACTIVATED,
-        approvedAt: new Date(),
+        approvedAt: sale.approvedAt ?? new Date(),
         activatedAt: new Date(),
-        timeline: { create: {
-          actorId: user.id,
-          actorName: user.name,
-          action: 'Venda finalizada após aprovação do contrato pelo Luxus Task',
-        } },
+        reviewStatus: options.ensureApprovedReview ? SaleReviewStatus.APPROVED : sale.reviewStatus,
+        reviewedAt: options.ensureApprovedReview ? (sale.reviewedAt ?? new Date()) : sale.reviewedAt,
+        reviewedById: options.ensureApprovedReview ? (sale.reviewedById ?? user.id) : sale.reviewedById,
+        turnRequestFrom: null,
+        turnRequestReason: null,
+        turnRequestAt: null,
+        timeline: {
+          create: {
+            actorId: user.id,
+            actorName: user.name,
+            action: options.timelineAction,
+            details: options.timelineDetails,
+            fromReviewStatus: sale.reviewStatus,
+            toReviewStatus: options.ensureApprovedReview ? SaleReviewStatus.APPROVED : sale.reviewStatus,
+          },
+        },
       },
     });
-    await this.taskIntegration.updateSaleStage(id, {
-      stage: SaleContractStage.COMPLETED,
-      note: `Venda finalizada por ${user.name} no Luxus Parceiros.`,
-    }).catch((error) => {
-      console.warn('[sales] Falha ao marcar a demanda como concluída no Luxus Task', error);
-    });
+
+    if (options.notifyTask && sale.taskDemandId) {
+      await this.taskIntegration.updateSaleStage(sale.id, {
+        stage: SaleContractStage.COMPLETED,
+        note: `${options.timelineAction} por ${user.name}.`,
+      }).catch((error) => {
+        console.warn('[sales] Falha ao marcar a demanda como concluída no Luxus Task', error);
+      });
+    }
+
     await this.commissionsService.createFromSale(updated, user.id);
     await this.notificationsService.createForPartnerUsers(sale.partnerId, {
       type: 'SALE_APPROVED',
-      title: 'Venda concluída',
-      message: `${sale.protocol}: contrato aprovado e venda concluída.`,
+      title: options.notificationTitle,
+      message: options.notificationMessage,
       data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
     });
     return updated;

@@ -191,6 +191,20 @@ export class RequestContractCorrectionDto {
   reason: string;
 }
 
+export class ForceFinalizeSaleDto {
+  @ApiPropertyOptional({ description: 'Motivo opcional da finalização pelo Luxus Parceiros' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+export class ReopenSaleDto {
+  @ApiPropertyOptional({ description: 'Motivo da reabertura (erro encontrado após a conclusão)' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
 export class ApproveSaleForTaskDto {
   @ApiProperty()
   @IsUUID()

@@ -9,7 +9,9 @@ import {
   BulkDeleteSalesDto,
   ApproveSaleForTaskDto,
   CreateSaleDto,
+  ForceFinalizeSaleDto,
   RejectSaleDto,
+  ReopenSaleDto,
   RequestSaleDocumentsDto,
   RequestSaleCorrectionDto,
   RequestContractCorrectionDto,
@@ -152,6 +154,28 @@ export class SalesController {
   @ApiOperation({ summary: 'Finalizar venda após aprovação do contrato no Luxus Task' })
   finalizeAfterTaskApproval(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.salesService.finalizeAfterTaskApproval(id, user);
+  }
+
+  @Post(':id/force-finalize')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Finalizar venda no Luxus Parceiros mesmo com demanda parada no Luxus Task' })
+  forceFinalize(
+    @Param('id') id: string,
+    @Body() dto: ForceFinalizeSaleDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesService.forceFinalize(id, user, dto.reason);
+  }
+
+  @Post(':id/reopen')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Reabrir venda concluída para correção de erro' })
+  reopen(
+    @Param('id') id: string,
+    @Body() dto: ReopenSaleDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesService.reopen(id, user, dto.reason);
   }
 
   @Post(':id/release-blank-contract')
