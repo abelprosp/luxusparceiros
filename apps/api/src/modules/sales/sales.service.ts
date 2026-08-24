@@ -1549,10 +1549,13 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (sale.contractStage === SaleContractStage.COMPLETED || sale.status === SaleStatus.ACTIVATED) {
       throw new BadRequestException('Esta venda já está concluída');
     }
-    if ([SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)) {
+    if (sale.status === SaleStatus.CANCELLED || sale.status === SaleStatus.REJECTED) {
       throw new BadRequestException('Venda cancelada ou rejeitada não pode ser finalizada');
     }
-    if ([SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus)) {
+    if (
+      sale.reviewStatus === SaleReviewStatus.REJECTED
+      || sale.reviewStatus === SaleReviewStatus.CANCELLED
+    ) {
       throw new BadRequestException('Venda rejeitada ou cancelada na revisão não pode ser finalizada');
     }
 
