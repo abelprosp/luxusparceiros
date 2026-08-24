@@ -126,6 +126,13 @@ export class SalesController {
     return this.salesService.approveForTask(id, dto, user);
   }
 
+  @Post(':id/approve-internal')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Aprovar e concluir a venda no Luxus Parceiros sem enviar ao Luxus Task' })
+  approveInternal(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesService.approveInternal(id, user);
+  }
+
   @Post(':id/retry-task-sync')
   @RequirePermissions(PERMISSIONS.SALES_WRITE)
   @ApiOperation({ summary: 'Tentar novamente o envio da venda ao Luxus Task' })

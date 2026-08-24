@@ -226,7 +226,10 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     if (branchId) {
       await assertBranchBelongsToPartner(this.prisma, branchId, partnerId);
     }
-    if (this.taskIntegration.isConfigured()) {
+
+    const resolveInternally = dto.resolveInternally === true || !this.taskIntegration.isConfigured();
+
+    if (!resolveInternally && this.taskIntegration.isConfigured()) {
       if (!dto.taskResponsibleId) {
         throw new BadRequestException('Selecione o responsável pela demanda');
       }
@@ -260,15 +263,15 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         branchId,
         clientId: dto.clientId,
         createdById: user.id,
-        taskResponsibleId: dto.taskResponsibleId,
-        taskClientId: dto.taskClientId,
-        taskClientName: dto.taskClientName,
-        taskClientDocumentType: dto.taskClientDocumentType,
-        taskClientDocument: dto.taskClientDocument?.replace(/\D/g, ''),
-        taskDeadline: dto.taskDeadline,
-        taskPriority: dto.taskPriority ?? false,
-        taskSyncState: this.taskIntegration.isConfigured() ? 'PENDING' : 'DISABLED',
-        taskNextRetryAt: this.taskIntegration.isConfigured() ? new Date() : null,
+        taskResponsibleId: resolveInternally ? undefined : dto.taskResponsibleId,
+        taskClientId: resolveInternally ? undefined : dto.taskClientId,
+        taskClientName: resolveInternally ? undefined : dto.taskClientName,
+        taskClientDocumentType: resolveInternally ? undefined : dto.taskClientDocumentType,
+        taskClientDocument: resolveInternally ? undefined : dto.taskClientDocument?.replace(/\D/g, ''),
+        taskDeadline: resolveInternally ? undefined : dto.taskDeadline,
+        taskPriority: resolveInternally ? false : (dto.taskPriority ?? false),
+        taskSyncState: resolveInternally ? 'DISABLED' : 'PENDING',
+        taskNextRetryAt: resolveInternally ? null : new Date(),
       },
       include: {
         partner: { select: { id: true, name: true } },
@@ -278,7 +281,15 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    await this.addTimeline(request.id, 'Solicitação criada', null, RequestStatus.OPEN, user.id);
+    await this.addTimeline(
+      request.id,
+      resolveInternally
+        ? 'Solicitação criada (fluxo interno no Luxus Parceiros)'
+        : 'Solicitação criada',
+      null,
+      RequestStatus.OPEN,
+      user.id,
+    );
     await this.auditService.log({
       userId: user.id,
       action: 'CREATE',
@@ -289,7 +300,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
 
     this.eventsGateway.emitToPartner(partnerId, 'request:created', request);
 
-    if (this.taskIntegration.isConfigured() && dto.taskResponsibleId) {
+    if (!resolveInternally && this.taskIntegration.isConfigured() && dto.taskResponsibleId) {
       setImmediate(() => void this.processTaskSyncQueue());
     }
     return request;

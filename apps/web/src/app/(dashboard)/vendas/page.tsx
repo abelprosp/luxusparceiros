@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Search, Download, ShoppingCart, Check, X, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2 } from 'lucide-react';
-import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_CONTRACT_STAGE_LABELS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS, saleWorkflowTurnLabel } from '@luxus/types';
+import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS, saleContractStageLabel, saleTaskUserName, saleWorkflowTurnLabel } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -42,6 +42,7 @@ interface Sale {
   contractStage: SaleContractStage;
   taskIsBeingEdited?: boolean;
   taskEditorName?: string;
+  taskResponsibleName?: string;
   value: number;
   partner?: { name: string };
   client?: { name: string };
@@ -208,9 +209,19 @@ export default function VendasPage() {
     } finally { setDeleting(false); }
   };
 
-  const workflowLabel = (sale: Sale) => sale.reviewStatus === SaleReviewStatus.APPROVED
-    ? SALE_CONTRACT_STAGE_LABELS[sale.contractStage] ?? sale.contractStage
-    : SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus;
+  const workflowLabel = (sale: Sale) => {
+    const taskName = saleTaskUserName(sale);
+    if (sale.reviewStatus === SaleReviewStatus.APPROVED) {
+      if (sale.contractStage === SaleContractStage.COMPLETED && !sale.taskDemandId) {
+        return 'Concluída no Luxus Parceiros';
+      }
+      return saleContractStageLabel(sale.contractStage, taskName);
+    }
+    return SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus;
+  };
+
+  const turnLabel = (sale: Sale) =>
+    saleWorkflowTurnLabel(sale.contractStage, saleTaskUserName(sale));
 
   const statusBadge = (status: SaleStatus) => {
     if ([SaleStatus.APPROVED, SaleStatus.ACTIVATED].includes(status)) return 'success';
@@ -329,8 +340,8 @@ export default function VendasPage() {
                           <Badge variant={s.reviewStatus === SaleReviewStatus.APPROVED ? 'success' : s.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'destructive' : 'outline'}>
                             {workflowLabel(s)}
                           </Badge>
-                          {s.reviewStatus === SaleReviewStatus.APPROVED && saleWorkflowTurnLabel(s.contractStage) && (
-                            <Badge variant="outline">Da vez: {saleWorkflowTurnLabel(s.contractStage)}</Badge>
+                          {s.reviewStatus === SaleReviewStatus.APPROVED && turnLabel(s) && (
+                            <Badge variant="outline">Da vez: {turnLabel(s)}</Badge>
                           )}
                           {(s.taskSyncError || s.taskSyncStatus === 'RETRY') && (
                             <span className="text-xs font-medium text-red-600">Sync com falha — reenvie no detalhe</span>
@@ -414,8 +425,8 @@ export default function VendasPage() {
                 badges={
                   <>
                     <Badge variant={s.reviewStatus === SaleReviewStatus.APPROVED ? 'success' : s.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'destructive' : 'outline'}>{workflowLabel(s)}</Badge>
-                    {s.reviewStatus === SaleReviewStatus.APPROVED && saleWorkflowTurnLabel(s.contractStage) && (
-                      <Badge variant="outline">Da vez: {saleWorkflowTurnLabel(s.contractStage)}</Badge>
+                    {s.reviewStatus === SaleReviewStatus.APPROVED && turnLabel(s) && (
+                      <Badge variant="outline">Da vez: {turnLabel(s)}</Badge>
                     )}
                     {(s.taskSyncError || s.taskSyncStatus === 'RETRY') && (
                       <Badge variant="destructive">Sync com falha</Badge>

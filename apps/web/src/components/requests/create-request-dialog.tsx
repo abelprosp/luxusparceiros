@@ -88,6 +88,7 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
   const [checkingDocument, setCheckingDocument] = useState(false);
   const [taskDeadline, setTaskDeadline] = useState('');
   const [priority, setPriority] = useState(false);
+  const [resolveInternally, setResolveInternally] = useState(false);
   const [integrationError, setIntegrationError] = useState('');
 
   useEffect(() => {
@@ -110,6 +111,7 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
     setCheckingDocument(false);
     setTaskDeadline('');
     setPriority(false);
+    setResolveInternally(false);
     setIntegrationError('');
     if (isAdmin) {
       setPartnersLoading(true);
@@ -137,7 +139,20 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
       .finally(() => {
         if (!cancelled) setClientsLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isAdmin]);
+
+  useEffect(() => {
+    if (!open || resolveInternally) {
+      setResponsibles([]);
+      setResponsiblesLoading(false);
+      return;
+    }
+    let cancelled = false;
     setResponsiblesLoading(true);
+    setIntegrationError('');
     api<TaskResponsible[]>('/task-integration/responsibles')
       .then((items) => {
         if (!cancelled) setResponsibles(items);
@@ -155,10 +170,10 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
     return () => {
       cancelled = true;
     };
-  }, [open, isAdmin]);
+  }, [open, resolveInternally]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || resolveInternally) return;
     let cancelled = false;
     setTaskClientsLoading(true);
     const timer = setTimeout(() => {
@@ -180,7 +195,7 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, taskClientSearch]);
+  }, [open, taskClientSearch, resolveInternally]);
 
   useEffect(() => {
     if (!open || taskClientMode !== 'manual') return;
@@ -217,64 +232,80 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
       toast({ title: 'Selecione o parceiro', variant: 'destructive' });
       return;
     }
-    if (!responsibleId) {
-      toast({ title: 'Selecione o responsável pela demanda', variant: 'destructive' });
-      return;
+
+    if (!resolveInternally) {
+      if (!responsibleId) {
+        toast({ title: 'Selecione o responsável pela demanda', variant: 'destructive' });
+        return;
+      }
+      const manualDigits = manualDocument.replace(/\D/g, '');
+      const expectedDocumentLength = manualDocumentType === 'pf' ? 11 : 14;
+      const selectedTaskClient = taskClientMode === 'existing'
+        ? taskClients.find((client) => client.id === taskClientId)
+        : documentMatch;
+      if (taskClientMode === 'existing' && (!taskClientId || !taskClientName)) {
+        toast({ title: 'Selecione o cliente do Luxus Task', variant: 'destructive' });
+        return;
+      }
+      if (
+        taskClientMode === 'manual'
+        && (!manualClientName.trim() || manualDigits.length !== expectedDocumentLength)
+      ) {
+        toast({
+          title: `Informe o nome e um ${manualDocumentType === 'pf' ? 'CPF' : 'CNPJ'} válido`,
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (!taskDeadline) {
+        toast({ title: 'Informe o prazo da demanda', variant: 'destructive' });
+        return;
+      }
     }
-    const manualDigits = manualDocument.replace(/\D/g, '');
-    const expectedDocumentLength = manualDocumentType === 'pf' ? 11 : 14;
-    const selectedTaskClient = taskClientMode === 'existing'
-      ? taskClients.find((client) => client.id === taskClientId)
-      : documentMatch;
-    if (taskClientMode === 'existing' && (!taskClientId || !taskClientName)) {
-      toast({ title: 'Selecione o cliente do Luxus Task', variant: 'destructive' });
-      return;
-    }
-    if (
-      taskClientMode === 'manual'
-      && (!manualClientName.trim() || manualDigits.length !== expectedDocumentLength)
-    ) {
-      toast({
-        title: `Informe o nome e um ${manualDocumentType === 'pf' ? 'CPF' : 'CNPJ'} válido`,
-        variant: 'destructive',
-      });
-      return;
-    }
-    if (!taskDeadline) {
-      toast({ title: 'Informe o prazo da demanda', variant: 'destructive' });
-      return;
-    }
+
     setLoading(true);
     try {
-      const created = await api<{ taskSyncError?: string; taskProtocol?: string }>('/requests', {
+      const manualDigits = manualDocument.replace(/\D/g, '');
+      const selectedTaskClient = taskClientMode === 'existing'
+        ? taskClients.find((client) => client.id === taskClientId)
+        : documentMatch;
+
+      const created = await api<{ taskSyncError?: string; taskProtocol?: string; taskSyncState?: string }>('/requests', {
         method: 'POST',
         body: {
           type,
           description,
           clientId: clientId || undefined,
           partnerId: isAdmin && partnerId ? partnerId : undefined,
-          taskResponsibleId: responsibleId,
-          taskClientId: selectedTaskClient?.id || undefined,
-          taskClientName: selectedTaskClient?.name || manualClientName.trim(),
-          taskClientDocumentType:
-            taskClientMode === 'manual' && !selectedTaskClient
-              ? manualDocumentType
-              : undefined,
-          taskClientDocument:
-            taskClientMode === 'manual' && !selectedTaskClient
-              ? manualDigits
-              : undefined,
-          taskDeadline,
-          taskPriority: priority,
+          resolveInternally,
+          ...(resolveInternally ? {} : {
+            taskResponsibleId: responsibleId,
+            taskClientId: selectedTaskClient?.id || undefined,
+            taskClientName: selectedTaskClient?.name || manualClientName.trim(),
+            taskClientDocumentType:
+              taskClientMode === 'manual' && !selectedTaskClient
+                ? manualDocumentType
+                : undefined,
+            taskClientDocument:
+              taskClientMode === 'manual' && !selectedTaskClient
+                ? manualDigits
+                : undefined,
+            taskDeadline,
+            taskPriority: priority,
+          }),
         },
       });
       toast({
-        title: created.taskSyncError
-          ? 'Demanda salva, aguardando sincronização'
-          : 'Demanda salva e enviada para processamento',
-        description: created.taskSyncError || (
-          created.taskProtocol ? `Protocolo no Luxus Task: ${created.taskProtocol}` : undefined
-        ),
+        title: resolveInternally
+          ? 'Demanda criada no Luxus Parceiros'
+          : created.taskSyncError
+            ? 'Demanda salva, aguardando sincronização'
+            : 'Demanda salva e enviada para processamento',
+        description: resolveInternally
+          ? 'Será tratada internamente, sem enviar ao Luxus Task.'
+          : created.taskSyncError || (
+            created.taskProtocol ? `Protocolo no Luxus Task: ${created.taskProtocol}` : undefined
+          ),
         variant: created.taskSyncError ? 'default' : 'success',
       });
       onOpenChange(false);
@@ -341,6 +372,31 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
             </Select>
             {clientsLoading && <LoadingField label="Carregando clientes do parceiro..." />}
           </div>
+          <div className="grid grid-cols-2 gap-2 rounded-lg border p-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={!resolveInternally ? 'secondary' : 'ghost'}
+              onClick={() => setResolveInternally(false)}
+            >
+              Enviar ao Luxus Task
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={resolveInternally ? 'secondary' : 'ghost'}
+              onClick={() => setResolveInternally(true)}
+            >
+              Só no Parceiros
+            </Button>
+          </div>
+          {resolveInternally ? (
+            <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+              A demanda ficará apenas no Luxus Parceiros. Você poderá atualizar o status por aqui,
+              sem criar chamado no Luxus Task.
+            </p>
+          ) : (
+            <>
           <div className="space-y-2">
             <Label>Responsável no Luxus Task *</Label>
             <Select
@@ -517,6 +573,8 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
             />
             Marcar como prioridade
           </label>
+            </>
+          )}
           <div className="space-y-2">
             <Label>Descrição</Label>
             <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Descreva o que precisa..." />

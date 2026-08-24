@@ -742,6 +742,55 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     return updated;
   }
 
+  /** Aprova e conclui a venda inteiramente no Luxus Parceiros, sem enviar ao Luxus Task. */
+  async approveInternal(id: string, user: AuthUser) {
+    this.assertAdmin(user);
+    const sale = await this.findOne(id, user);
+    if (!([SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW] as SaleReviewStatus[]).includes(sale.reviewStatus)) {
+      throw new BadRequestException('Esta venda não está disponível para aprovação');
+    }
+    if (sale.taskDemandId) {
+      throw new BadRequestException('Esta venda já foi enviada ao Luxus Task. Use o fluxo de integração.');
+    }
+
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        reviewStatus: SaleReviewStatus.APPROVED,
+        reviewedAt: new Date(),
+        reviewedById: user.id,
+        reviewStartedAt: sale.reviewStartedAt ?? new Date(),
+        status: SaleStatus.ACTIVATED,
+        approvedAt: new Date(),
+        activatedAt: new Date(),
+        contractStage: SaleContractStage.COMPLETED,
+        contractStageUpdatedAt: new Date(),
+        taskSyncStatus: SaleTaskSyncStatus.NOT_READY,
+        taskSyncError: null,
+        taskNextRetryAt: null,
+        timeline: {
+          create: {
+            actorId: user.id,
+            actorName: user.name,
+            action: 'Venda aprovada e concluída no Luxus Parceiros (sem Luxus Task)',
+            fromReviewStatus: sale.reviewStatus,
+            toReviewStatus: SaleReviewStatus.APPROVED,
+            details: 'Fluxo interno: a venda não foi enviada ao Luxus Task.',
+          },
+        },
+      },
+    });
+
+    await this.commissionsService.createFromSale(updated, user.id);
+    await this.notificationsService.createForPartnerUsers(sale.partnerId, {
+      type: 'SALE_APPROVED',
+      title: 'Venda concluída no Luxus Parceiros',
+      message: `${sale.protocol} foi aprovada e concluída sem passar pelo Luxus Task.`,
+      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+    });
+    return updated;
+  }
+
   async retryTaskSync(id: string, user: AuthUser) {
     const sale = await this.findOne(id, user);
     if (sale.reviewStatus !== SaleReviewStatus.APPROVED) {

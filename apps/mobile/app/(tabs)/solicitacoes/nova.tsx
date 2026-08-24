@@ -28,20 +28,26 @@ export default function NovaSolicitacaoScreen() {
   const [clients, setClients] = useState<Client[]>([]);
   const [responsibles, setResponsibles] = useState<TaskResponsible[]>([]);
   const [responsibleId, setResponsibleId] = useState('');
+  const [resolveInternally, setResolveInternally] = useState(false);
 
   useEffect(() => {
     clientsApi.list({ limit: 50 }).then((r) => r.success && r.data && setClients(r.data.data));
-    taskIntegrationApi.responsibles()
-      .then((r) => r.success && r.data && setResponsibles(r.data))
-      .catch(() => setResponsibles([]));
-  }, []);
+    if (!resolveInternally) {
+      taskIntegrationApi.responsibles()
+        .then((r) => r.success && r.data && setResponsibles(r.data))
+        .catch(() => setResponsibles([]));
+    } else {
+      setResponsibles([]);
+      setResponsibleId('');
+    }
+  }, [resolveInternally]);
 
   const handleSubmit = async () => {
     if (!description.trim()) {
       Alert.alert('Atenção', 'Descreva a solicitação');
       return;
     }
-    if (!responsibleId) {
+    if (!resolveInternally && !responsibleId) {
       Alert.alert('Atenção', 'Selecione o responsável pela demanda');
       return;
     }
@@ -51,10 +57,11 @@ export default function NovaSolicitacaoScreen() {
         type,
         description,
         clientId: clientId || undefined,
-        taskResponsibleId: responsibleId,
+        resolveInternally,
+        ...(resolveInternally ? {} : { taskResponsibleId: responsibleId }),
       });
       if (response.success) {
-        Alert.alert('Sucesso', 'Demanda criada', [{ text: 'OK', onPress: () => router.back() }]);
+        Alert.alert('Sucesso', resolveInternally ? 'Demanda criada no Luxus Parceiros' : 'Demanda criada', [{ text: 'OK', onPress: () => router.back() }]);
       }
     } catch (err) {
       Alert.alert('Erro', err instanceof Error ? err.message : 'Falha ao criar solicitação');
@@ -99,24 +106,48 @@ export default function NovaSolicitacaoScreen() {
 
           <Input label="Descrição *" value={description} onChangeText={setDescription} multiline numberOfLines={4} placeholder="Descreva o que precisa..." />
 
-          <Text style={[styles.label, { color: colors.text }]}>Responsável no Luxus Task *</Text>
-          <View style={styles.clients}>
-            {responsibles.map((responsible) => (
-              <TouchableOpacity
-                key={responsible.id}
-                style={[
-                  styles.clientChip,
-                  {
-                    backgroundColor: responsibleId === responsible.id ? `${colors.primary}20` : colors.surface,
-                    borderColor: responsibleId === responsible.id ? colors.primary : colors.border,
-                  },
-                ]}
-                onPress={() => setResponsibleId(responsible.id)}
-              >
-                <Text style={{ color: colors.text, ...typography.caption }}>{responsible.name}</Text>
-              </TouchableOpacity>
-            ))}
+          <Text style={[styles.label, { color: colors.text }]}>Fluxo</Text>
+          <View style={styles.types}>
+            <TouchableOpacity
+              style={[styles.typeChip, { backgroundColor: !resolveInternally ? colors.primary : colors.surface, borderColor: !resolveInternally ? colors.primary : colors.border }]}
+              onPress={() => setResolveInternally(false)}
+            >
+              <Text style={{ color: !resolveInternally ? '#FFF' : colors.text, ...typography.caption, fontSize: 11 }}>
+                Enviar ao Luxus Task
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.typeChip, { backgroundColor: resolveInternally ? colors.primary : colors.surface, borderColor: resolveInternally ? colors.primary : colors.border }]}
+              onPress={() => setResolveInternally(true)}
+            >
+              <Text style={{ color: resolveInternally ? '#FFF' : colors.text, ...typography.caption, fontSize: 11 }}>
+                Só no Parceiros
+              </Text>
+            </TouchableOpacity>
           </View>
+
+          {!resolveInternally && (
+            <>
+              <Text style={[styles.label, { color: colors.text }]}>Responsável no Luxus Task *</Text>
+              <View style={styles.clients}>
+                {responsibles.map((responsible) => (
+                  <TouchableOpacity
+                    key={responsible.id}
+                    style={[
+                      styles.clientChip,
+                      {
+                        backgroundColor: responsibleId === responsible.id ? `${colors.primary}20` : colors.surface,
+                        borderColor: responsibleId === responsible.id ? colors.primary : colors.border,
+                      },
+                    ]}
+                    onPress={() => setResponsibleId(responsible.id)}
+                  >
+                    <Text style={{ color: colors.text, ...typography.caption }}>{responsible.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
 
           <Button title="Enviar demanda" onPress={handleSubmit} loading={loading} fullWidth />
         </ScrollView>

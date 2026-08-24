@@ -22,8 +22,9 @@ import {
   SaleReviewStatus,
   SaleContractStage,
   DocumentPurpose,
-  SALE_CONTRACT_STAGE_LABELS,
   SALE_REVIEW_STATUS_LABELS,
+  saleContractStageLabel,
+  saleTaskUserName,
   saleWorkflowTurn,
   saleWorkflowTurnLabel,
 } from '@luxus/types';
@@ -109,6 +110,7 @@ interface SaleDetail {
   correctionReason?: string | null;
   taskProtocol?: string | null;
   taskStatus?: string | null;
+  taskDemandId?: string | null;
   taskResponsibleName?: string | null;
   taskClientName?: string | null;
   taskDeadline?: string | null;
@@ -728,7 +730,11 @@ export function SaleDetailDialog({
                     <span className="font-mono text-sm font-semibold text-primary">{sale.protocol}</span>
                     <Badge variant={statusBadgeVariant(sale.status)}>
                       {sale.reviewStatus === SaleReviewStatus.APPROVED
-                        ? SALE_CONTRACT_STAGE_LABELS[sale.contractStage]
+                        ? (
+                          sale.contractStage === SaleContractStage.COMPLETED && !sale.taskDemandId
+                            ? 'Concluída no Luxus Parceiros'
+                            : saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))
+                        )
                         : SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus}
                     </Badge>
                     {sale.taskIsBeingEdited && <Badge variant="success">Em atendimento agora</Badge>}
@@ -770,7 +776,7 @@ export function SaleDetailDialog({
                       label="Formato"
                       value={sale.contractFormat ? CONTRACT_FORMAT_LABELS[sale.contractFormat] : 'Não informado'}
                     />
-                    <DetailRow label="Etapa atual" value={SALE_CONTRACT_STAGE_LABELS[sale.contractStage] ?? sale.contractStage} />
+                    <DetailRow label="Etapa atual" value={saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))} />
                     <DetailRow label="Aguardando ação de" value={
                       sale.contractStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
                         || sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
@@ -779,8 +785,10 @@ export function SaleDetailDialog({
                         ? 'Administrador'
                         : [SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED].includes(sale.contractStage)
                           ? 'Parceiro / Administrador'
-                          : sale.contractStage === SaleContractStage.TASK_PROCESSING || sale.contractStage === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
-                            ? 'Luxus Task'
+                          : sale.contractStage === SaleContractStage.TASK_PROCESSING
+                            || sale.contractStage === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
+                            || sale.contractStage === SaleContractStage.PRE_REVIEW
+                            ? (saleTaskUserName(sale) || 'Luxus Task')
                             : undefined
                     } />
                     {sale.contractCorrectionReason && (
@@ -1019,7 +1027,7 @@ export function SaleDetailDialog({
                     </div>
                   )}
                   <Section title="Contrato e continuidade da venda" className="border-primary/40 bg-primary/5">
-                    <DetailRow label="Etapa atual" value={SALE_CONTRACT_STAGE_LABELS[sale.contractStage] ?? sale.contractStage} />
+                    <DetailRow label="Etapa atual" value={saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))} />
                     <div className="flex flex-wrap gap-2 py-3">
                       {!isPartnerScoped && sale.contractStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN && (
                         <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('release-blank-contract')}>
@@ -1201,7 +1209,7 @@ export function SaleDetailDialog({
                       ) : (
                         <div className="mt-2 space-y-2 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
                           <p className="text-xs font-medium text-muted-foreground">
-                            Vez de {saleWorkflowTurnLabel(sale.contractStage) || 'outro sistema'}
+                            Vez de {saleWorkflowTurnLabel(sale.contractStage, saleTaskUserName(sale)) || 'outro sistema'}
                           </p>
                           {pendingTurnRequester === myTurnSide ? (
                             <p className="text-sm text-muted-foreground">

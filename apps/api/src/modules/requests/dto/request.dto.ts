@@ -120,6 +120,13 @@ export class CreateRequestDto {
   @IsOptional()
   @IsBoolean()
   taskPriority?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Se true, a solicitação fica só no Luxus Parceiros (não envia ao Luxus Task)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  resolveInternally?: boolean;
 }
 
 export class UpdateRequestDto extends PartialType(
