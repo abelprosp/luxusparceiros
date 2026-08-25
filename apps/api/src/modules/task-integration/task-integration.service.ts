@@ -1,6 +1,7 @@
 import {
   BadGatewayException,
   Injectable,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -170,13 +171,19 @@ export class TaskIntegrationService {
       throw new BadGatewayException('Documento sem arquivo local disponível para o Luxus Task');
     }
     const uploadDir = this.uploadDir();
-    const path = join(uploadDir, basename(relative));
-    if (!existsSync(path)) throw new BadGatewayException(`Arquivo físico da venda não encontrado: ${basename(relative)}`);
+    const candidates = [
+      join(uploadDir, basename(relative)),
+      join(uploadDir, relative.replace(/^\/+/, '')),
+      join(process.cwd(), 'uploads', basename(relative)),
+    ];
+    const path = candidates.find((candidate) => existsSync(candidate));
+    if (!path) throw new BadGatewayException(`Arquivo físico da venda não encontrado: ${basename(relative)}`);
     const buffer = readFileSync(path);
     if (!buffer.length) throw new BadGatewayException('Arquivo físico da venda está vazio');
+    const mimeType = this.resolveDocumentMimeType(document.name, document.mimeType, path);
     return {
       name: document.name,
-      mimeType: document.mimeType || 'application/octet-stream',
+      mimeType,
       size: buffer.length,
       buffer,
     };
@@ -212,6 +219,105 @@ export class TaskIntegrationService {
         mimeType: document.mimeType,
         size: document.size,
       }));
+  }
+
+  async getSaleSummaryForIntegration(saleId: string) {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      include: {
+        partner: { select: { name: true } },
+        branch: { select: { name: true } },
+        client: true,
+        operator: { select: { name: true } },
+        plan: { select: { name: true } },
+        campaign: { select: { title: true } },
+        createdBy: { select: { name: true, email: true } },
+      },
+    });
+    if (!sale) {
+      throw new NotFoundException('Venda não encontrada no Luxus Parceiros');
+    }
+
+    const formatPhone = (value?: string | null) => {
+      const digits = (value ?? '').replace(/\D/g, '');
+      if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+      if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+      return value?.trim() || '—';
+    };
+    const formatDocument = (value?: string | null) => {
+      const digits = (value ?? '').replace(/\D/g, '');
+      if (digits.length === 11) {
+        return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+      }
+      if (digits.length === 14) {
+        return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+      }
+      return value?.trim() || '—';
+    };
+    const formatCurrency = (value: unknown) => {
+      const amount = Number(value);
+      if (!Number.isFinite(amount)) return '—';
+      return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    };
+    const donorLabels: Record<string, string> = {
+      VIVO: 'Vivo', TIM: 'TIM', CLARO: 'Claro', SURF: 'Surf', OTHER: 'Outras',
+    };
+    const contract = sale.contractFormat === 'ZAPSIGN' ? 'ZapSign' : 'Impressão';
+    const address = [
+      sale.client.address,
+      sale.client.addressNumber,
+      sale.client.complement,
+      sale.client.neighborhood,
+      sale.client.city,
+      sale.client.state,
+      sale.client.zipCode,
+    ].filter(Boolean).join(', ');
+    const lineNumber = formatPhone(sale.newNumber);
+
+    const description = [
+      '=== DADOS DA VENDA (Luxus Parceiros) ===',
+      `Protocolo: ${sale.protocol}`,
+      `Parceiro: ${sale.partner.name}`,
+      `Loja: ${sale.branch?.name ?? 'Matriz'}`,
+      `Operadora: ${sale.operator.name}`,
+      `Plano: ${sale.plan.name}`,
+      `Valor: ${formatCurrency(sale.value)}`,
+      sale.commissionValue != null ? `Comissão: ${formatCurrency(sale.commissionValue)}` : null,
+      sale.campaign?.title ? `Campanha: ${sale.campaign.title}` : null,
+      `Registrada por: ${sale.createdBy.name}`,
+      `Formato do contrato: ${contract} (assinatura será obtida no Luxus Task)`,
+      '',
+      '=== LINHA / CHIP ===',
+      `Linha do chip: ${lineNumber}`,
+      `Chip virgem: ${sale.isVirginChip ? 'Sim' : 'Não'}`,
+      sale.isVirginChip || sale.chipIccid ? `ICCID: ${sale.chipIccid || '—'}` : null,
+      `Portabilidade: ${sale.isPortability ? 'Sim' : 'Não'}`,
+      sale.isPortability ? `Operadora doadora: ${donorLabels[sale.donorOperator ?? ''] ?? sale.donorOperator ?? '—'}` : null,
+      sale.isPortability ? `Número a ser portado: ${formatPhone(sale.portabilityNumber)}` : null,
+      '',
+      '=== CLIENTE ===',
+      `Nome: ${sale.client.name}`,
+      `CPF/CNPJ: ${formatDocument(sale.client.document)}`,
+      sale.client.rg ? `RG: ${sale.client.rg}` : null,
+      sale.client.email ? `E-mail: ${sale.client.email}` : null,
+      `Telefone: ${formatPhone(sale.client.phone)}`,
+      `Endereço: ${address || '—'}`,
+      sale.notes ? '' : null,
+      sale.notes ? '=== OBSERVAÇÕES DA VENDA ===' : null,
+      sale.notes ? sale.notes : null,
+    ].filter((line) => line !== null).join('\n');
+
+    return {
+      id: sale.id,
+      protocol: sale.protocol,
+      partnerName: sale.partner.name,
+      branchName: sale.branch?.name ?? null,
+      lineNumber,
+      subject: `Venda ${sale.protocol} — ${sale.partner.name} — Linha ${lineNumber}`,
+      description,
+      requesterName: sale.createdBy.name,
+      requesterEmail: sale.createdBy.email,
+    };
   }
 
   async applyCallback(dto: TaskDemandCallbackDto) {

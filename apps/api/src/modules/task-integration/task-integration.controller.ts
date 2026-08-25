@@ -65,6 +65,13 @@ export class TaskIntegrationController {
 
   @Public()
   @UseGuards(TaskIntegrationGuard)
+  @Get('integrations/luxus-task/sales/:saleId')
+  getSaleSummary(@Param('saleId') saleId: string) {
+    return this.integration.getSaleSummaryForIntegration(saleId);
+  }
+
+  @Public()
+  @UseGuards(TaskIntegrationGuard)
   @Get('integrations/luxus-task/sales/:saleId/documents')
   listSaleDocuments(@Param('saleId') saleId: string) {
     return this.integration.listSaleDocumentsForIntegration(saleId);
