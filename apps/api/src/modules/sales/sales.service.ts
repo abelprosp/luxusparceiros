@@ -971,39 +971,48 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     try {
       let task;
       try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
+      if (!task && sale.taskDemandId) {
+        try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
+      }
       if (!task) {
         const contract = sale.contractFormat === 'ZAPSIGN' ? 'ZapSign' : 'Impressão';
         // Cria a demanda sem anexos pesados; a importação acontece em seguida, 1 a 1.
-        task = await this.taskIntegration.createDemand({
-          entityType: 'sale',
-          requestId: sale.id,
-          responsibleId: sale.taskResponsibleId,
-          clientId: sale.taskClientId ?? undefined,
-          clientName: sale.taskClientName ?? sale.client.name,
-          clientDocumentType: (sale.taskClientDocumentType as 'pf' | 'pj' | null) ?? undefined,
-          clientDocument: sale.taskClientDocument ?? sale.client.document?.replace(/\D/g, '') ?? undefined,
-          deadline: sale.taskDeadline.toISOString().slice(0, 10),
-          subject: `Venda ${sale.protocol} — ${sale.partner.name}`,
-          description: [
-            'ORIGEM: LUXUS PARCEIROS — VENDA',
-            `Formato do contrato: ${contract} (assinatura será obtida no Luxus Task)`,
-            `Parceiro: ${sale.partner.name}`,
-            sale.branch?.name ? `Loja: ${sale.branch.name}` : 'Loja: Matriz',
-            `Cliente da venda: ${sale.client.name} — ${sale.client.document}`,
-            `Operadora / Plano: ${sale.operator.name} / ${sale.plan.name}`,
-            `Linha: ${sale.newNumber ?? '-'}`,
-            `ICCID: ${sale.chipIccid ?? '-'}`,
-            sale.isPortability ? `Portabilidade: ${sale.portabilityNumber ?? '-'} (${sale.donorOperator ?? '-'})` : '',
-            sale.notes ? `Observações: ${sale.notes}` : '',
-          ].filter(Boolean).join('\n'),
-          localProtocol: sale.protocol,
-          partnerName: sale.partner.name,
-          branchName: sale.branch?.name,
-          requesterName: sale.createdBy.name,
-          requesterEmail: sale.createdBy.email,
-          priority: sale.taskPriority,
-          documents: [],
-        });
+        try {
+          task = await this.taskIntegration.createDemand({
+            entityType: 'sale',
+            requestId: sale.id,
+            responsibleId: sale.taskResponsibleId,
+            clientId: sale.taskClientId ?? undefined,
+            clientName: sale.taskClientName ?? sale.client.name,
+            clientDocumentType: (sale.taskClientDocumentType as 'pf' | 'pj' | null) ?? undefined,
+            clientDocument: sale.taskClientDocument ?? sale.client.document?.replace(/\D/g, '') ?? undefined,
+            deadline: sale.taskDeadline.toISOString().slice(0, 10),
+            subject: `Venda ${sale.protocol} — ${sale.partner.name}`,
+            description: [
+              'ORIGEM: LUXUS PARCEIROS — VENDA',
+              `Formato do contrato: ${contract} (assinatura será obtida no Luxus Task)`,
+              `Parceiro: ${sale.partner.name}`,
+              sale.branch?.name ? `Loja: ${sale.branch.name}` : 'Loja: Matriz',
+              `Cliente da venda: ${sale.client.name} — ${sale.client.document}`,
+              `Operadora / Plano: ${sale.operator.name} / ${sale.plan.name}`,
+              `Linha: ${sale.newNumber ?? '-'}`,
+              `ICCID: ${sale.chipIccid ?? '-'}`,
+              sale.isPortability ? `Portabilidade: ${sale.portabilityNumber ?? '-'} (${sale.donorOperator ?? '-'})` : '',
+              sale.notes ? `Observações: ${sale.notes}` : '',
+            ].filter(Boolean).join('\n'),
+            localProtocol: sale.protocol,
+            partnerName: sale.partner.name,
+            branchName: sale.branch?.name,
+            requesterName: sale.createdBy.name,
+            requesterEmail: sale.createdBy.email,
+            priority: sale.taskPriority,
+            documents: [],
+          });
+        } catch (createError) {
+          // Corrida/protocolo duplicado no Task: a demanda pode ter sido criada — tenta recuperar o vínculo.
+          try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
+          if (!task) throw createError;
+        }
       }
       // Nunca devolve ao Task um arquivo que originalmente veio dele.
       const partnerDocuments = sale.documents.filter(
