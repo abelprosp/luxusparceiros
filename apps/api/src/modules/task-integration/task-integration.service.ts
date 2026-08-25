@@ -568,7 +568,10 @@ export class TaskIntegrationService {
     const missing: string[] = [];
 
     for (const document of documents) {
-      if (!document.url?.includes('uploads/')) continue;
+      if (!document.url?.includes('uploads/')) {
+        missing.push(`${document.type}:${document.name} (URL sem uploads/)`);
+        continue;
+      }
       const relative = document.url.includes('/uploads/')
         ? document.url.slice(document.url.indexOf('/uploads/') + '/uploads/'.length)
         : document.url.startsWith('uploads/')
@@ -602,7 +605,7 @@ export class TaskIntegrationService {
     if (missing.length) {
       console.error('[task-integration] Arquivos locais não encontrados para sync', missing);
     }
-    return payload;
+    return { documents: payload, missing };
   }
 
   private uploadDir() {
@@ -639,7 +642,7 @@ export class TaskIntegrationService {
     });
     if (!sale?.taskDemandId) return;
     try {
-      const payload = this.buildUploadDocumentsPayload([{
+      const built = this.buildUploadDocumentsPayload([{
         id: document.id,
         name: document.name,
         type: document.type,
@@ -647,10 +650,13 @@ export class TaskIntegrationService {
         size: document.size,
         url: document.url,
       }]);
-      if (!payload.length) return;
-      const result = await this.importSaleDocumentsToTask(saleId, payload);
+      if (built.missing.length) {
+        throw new Error(`Arquivo local ausente: ${built.missing.join('; ')}`);
+      }
+      if (!built.documents.length) return;
+      const result = await this.importSaleDocumentsToTask(saleId, built.documents);
       if (
-        (result.imported + result.skipped) < payload.length
+        (result.imported + result.skipped) < built.documents.length
         || result.failed.length > 0
       ) {
         throw new Error(result.failed.join('; ') || 'O Luxus Task não confirmou o anexo');

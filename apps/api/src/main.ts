@@ -10,9 +10,9 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   const configService = app.get(ConfigService);
 
-  // O callback pode carregar um anexo (máx. 10 MB) codificado em base64.
-  app.use(json({ limit: '20mb' }));
-  app.use(urlencoded({ extended: true, limit: '20mb' }));
+  // Callbacks e sync de anexos (RG/CPF/chip) em base64 — alinhar ao limite do Luxus Task (50 MB).
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
   app.use(helmet());
   app.enableCors({
     origin: configService

@@ -839,18 +839,48 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     const partnerDocuments = sale.documents.filter(
       (document) => !document.externalId?.startsWith('task:'),
     );
-    const uploadDocuments = this.taskIntegration.buildUploadDocumentsPayload(partnerDocuments);
-    if (!uploadDocuments.length) return;
+    const built = this.taskIntegration.buildUploadDocumentsPayload(partnerDocuments);
+    if (built.missing.length) {
+      console.warn(
+        `[sales] Reforço de anexos: arquivos ausentes no disco para ${sale.protocol}: ${built.missing.join('; ')}`,
+      );
+      await this.prisma.sale.update({
+        where: { id },
+        data: {
+          taskSyncStatus: SaleTaskSyncStatus.RETRY,
+          taskSyncError: `Anexos incompletos no disco: ${built.missing.join('; ')}`,
+          taskNextRetryAt: new Date(Date.now() + 30_000),
+        },
+      }).catch(() => undefined);
+      return;
+    }
+    if (!built.documents.length) return;
 
     try {
-      const imported = await this.taskIntegration.importSaleDocumentsToTask(sale.id, uploadDocuments);
-      if ((imported?.failed?.length ?? 0) > 0) {
-        console.warn(
-          `[sales] Reforço de anexos incompleto para ${sale.protocol}: ${(imported?.failed ?? []).join('; ')}`,
-        );
+      const imported = await this.taskIntegration.importSaleDocumentsToTask(sale.id, built.documents);
+      if ((imported?.failed?.length ?? 0) > 0
+        || ((imported?.imported ?? 0) + (imported?.skipped ?? 0)) < built.documents.length) {
+        const detail = (imported?.failed ?? []).join('; ') || 'confirmação incompleta do Luxus Task';
+        console.warn(`[sales] Reforço de anexos incompleto para ${sale.protocol}: ${detail}`);
+        await this.prisma.sale.update({
+          where: { id },
+          data: {
+            taskSyncStatus: SaleTaskSyncStatus.RETRY,
+            taskSyncError: `Falha ao reenviar anexos: ${detail}`,
+            taskNextRetryAt: new Date(Date.now() + 30_000),
+          },
+        }).catch(() => undefined);
       }
     } catch (error) {
       console.warn('[sales] Falha no reforço automático de anexos ao Luxus Task', error);
+      await this.prisma.sale.update({
+        where: { id },
+        data: {
+          taskSyncStatus: SaleTaskSyncStatus.RETRY,
+          taskSyncError: error instanceof Error ? error.message : 'Falha no reforço de anexos',
+          taskNextRetryAt: new Date(Date.now() + 30_000),
+        },
+      }).catch(() => undefined);
     }
   }
 
@@ -1018,13 +1048,26 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       const partnerDocuments = sale.documents.filter(
         (document) => !document.externalId?.startsWith('task:'),
       );
-      const uploadDocuments = this.taskIntegration.buildUploadDocumentsPayload(partnerDocuments);
-      const localUploadCount = partnerDocuments.filter(
-        (document) => document.url?.includes('uploads/'),
-      ).length;
-      if (localUploadCount > 0 && uploadDocuments.length === 0) {
+      const built = this.taskIntegration.buildUploadDocumentsPayload(partnerDocuments);
+      if (built.missing.length) {
         throw new Error(
-          `Os ${localUploadCount} arquivo(s) da venda não foram encontrados no disco do servidor (UPLOAD_DIR).`,
+          `Arquivos da venda ausentes no disco do servidor (UPLOAD_DIR): ${built.missing.join('; ')}`,
+        );
+      }
+      const uploadDocuments = built.documents;
+      const requiredTypes = ['CHIP_PHOTO', 'CPF', 'RG'];
+      const presentRequired = partnerDocuments
+        .filter((document) => requiredTypes.includes(document.type))
+        .map((document) => document.type);
+      const uploadedRequired = new Set(
+        uploadDocuments
+          .filter((document) => requiredTypes.includes(document.type))
+          .map((document) => document.type),
+      );
+      const missingRequired = [...new Set(presentRequired)].filter((type) => !uploadedRequired.has(type));
+      if (missingRequired.length) {
+        throw new Error(
+          `Anexos obrigatórios não preparados para o Luxus Task: ${missingRequired.join(', ')}`,
         );
       }
       if (uploadDocuments.length) {
