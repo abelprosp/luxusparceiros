@@ -561,11 +561,26 @@ export function SaleDetailDialog({
     if (!sale) return;
     setWorkflowBusy(true);
     try {
-      await api(`/sales/${sale.id}/${path}`, { method: 'POST', body });
-      toast({ title: 'Etapa atualizada', description: 'O fluxo da venda foi atualizado com sucesso.', variant: 'success' });
+      const result = await api<{ message?: string; synced?: boolean }>(`/sales/${sale.id}/${path}`, {
+        method: 'POST',
+        body,
+      });
+      const syncMessage = path === 'retry-task-sync'
+        ? (result?.message || 'Dados e anexos sincronizados com o Luxus Task. Atualize a demanda no Task para ver as mudanças.')
+        : 'O fluxo da venda foi atualizado com sucesso.';
+      toast({
+        title: path === 'retry-task-sync' ? 'Sincronização concluída' : 'Etapa atualizada',
+        description: syncMessage,
+        variant: 'success',
+      });
       await load();
     } catch (err) {
-      toast({ title: 'Não foi possível continuar', description: err instanceof Error ? err.message : 'Falha na requisição', variant: 'destructive' });
+      toast({
+        title: path === 'retry-task-sync' ? 'Falha na sincronização' : 'Não foi possível continuar',
+        description: err instanceof Error ? err.message : 'Falha na requisição',
+        variant: 'destructive',
+      });
+      await load().catch(() => undefined);
     } finally {
       setWorkflowBusy(false);
     }

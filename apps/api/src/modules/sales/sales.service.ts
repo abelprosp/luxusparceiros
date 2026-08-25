@@ -801,14 +801,28 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       data: {
         taskSyncStatus: SaleTaskSyncStatus.PENDING,
         taskSyncError: null,
+        taskSyncLockedAt: null,
         taskNextRetryAt: new Date(),
         // Garante que o CPF/nome corrigidos na venda sejam usados no reenvio.
         taskClientName: sale.taskClientName ?? sale.client.name,
         taskClientDocument: sale.taskClientDocument ?? sale.client.document?.replace(/\D/g, ''),
       },
     });
-    setImmediate(() => void this.processTaskSyncQueue());
-    return { queued: true };
+    // Executa na hora (não só enfileira) para a UI receber sucesso/erro real.
+    await this.syncSaleToTask(id);
+    const refreshed = await this.findOne(id, user);
+    if (refreshed.taskSyncStatus !== SaleTaskSyncStatus.SYNCED) {
+      throw new BadRequestException(
+        refreshed.taskSyncError
+          || 'A sincronização com o Luxus Task falhou. Verifique anexos e tente novamente.',
+      );
+    }
+    return {
+      synced: true,
+      taskProtocol: refreshed.taskProtocol,
+      taskDemandId: refreshed.taskDemandId,
+      message: 'Dados e anexos sincronizados com o Luxus Task.',
+    };
   }
 
   /** Reenvia anexos locais ao Task sem recriar a demanda (idempotente no destino). */
@@ -835,6 +849,32 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!sale?.taskDemandId || sale.taskSyncStatus !== SaleTaskSyncStatus.SYNCED) return;
+
+    const full = await this.prisma.sale.findUnique({
+      where: { id },
+      include: {
+        partner: { select: { name: true } },
+        branch: { select: { name: true } },
+        client: true,
+        operator: { select: { name: true } },
+        plan: { select: { name: true } },
+        campaign: { select: { title: true } },
+        createdBy: { select: { name: true, email: true } },
+      },
+    });
+    if (full) {
+      await this.pushSaleDetailsToTask(sale.id, {
+        subject: this.buildSaleTaskSubject(full),
+        description: this.buildSaleTaskDescription(full),
+        localProtocol: full.protocol,
+        partnerName: full.partner.name,
+        branchName: full.branch?.name ?? undefined,
+        requesterName: full.createdBy.name,
+        requesterEmail: full.createdBy.email,
+      }).catch((error) => {
+        console.warn('[sales] Reforço de detalhes da demanda falhou', error);
+      });
+    }
 
     const partnerDocuments = sale.documents.filter(
       (document) => !document.externalId?.startsWith('task:'),
@@ -1132,9 +1172,21 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         createdBy: { select: { name: true, email: true } }, documents: true,
       },
     });
-    if (!sale?.taskResponsibleId || !sale.taskDeadline) return;
+    if (!sale?.taskResponsibleId || !sale.taskDeadline) {
+      await this.prisma.sale.update({
+        where: { id },
+        data: {
+          taskSyncStatus: SaleTaskSyncStatus.RETRY,
+          taskSyncError: 'Venda sem responsável ou prazo do Luxus Task',
+          taskSyncLockedAt: null,
+          taskNextRetryAt: new Date(Date.now() + 60_000),
+        },
+      }).catch(() => undefined);
+      return;
+    }
     try {
       let task;
+      let createdNow = false;
       try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
       if (!task && sale.taskDemandId) {
         try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
@@ -1163,14 +1215,15 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
             priority: sale.taskPriority,
             documents: [],
           });
+          createdNow = true;
         } catch (createError) {
           // Corrida/protocolo duplicado no Task: a demanda pode ter sido criada — tenta recuperar o vínculo.
           try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
           if (!task) throw createError;
         }
-      } else {
-        // Sync/retry: atualiza assunto e observações com linha + dados completos da venda.
-        await this.taskIntegration.updateDemandDetails(sale.id, {
+      }
+      if (task && !createdNow) {
+        await this.pushSaleDetailsToTask(sale.id, {
           subject,
           description,
           localProtocol: sale.protocol,
@@ -1185,25 +1238,35 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         (document) => !document.externalId?.startsWith('task:'),
       );
       const built = this.taskIntegration.buildUploadDocumentsPayload(partnerDocuments);
-      if (built.missing.length) {
+      const requiredTypes = ['CHIP_PHOTO', 'CPF', 'RG'];
+      const requiredMissing = built.missing.filter((item) =>
+        requiredTypes.some((type) => item.startsWith(`${type}:`)),
+      );
+      if (requiredMissing.length) {
         throw new Error(
-          `Arquivos da venda ausentes no disco do servidor (UPLOAD_DIR): ${built.missing.join('; ')}`,
+          `Anexos obrigatórios ausentes no disco do servidor (reanexe CPF/RG/chip na venda): ${requiredMissing.join('; ')}`,
+        );
+      }
+      if (built.missing.length) {
+        console.warn(
+          `[sales] Anexos opcionais ausentes no disco para ${sale.protocol}: ${built.missing.join('; ')}`,
         );
       }
       const uploadDocuments = built.documents;
-      const requiredTypes = ['CHIP_PHOTO', 'CPF', 'RG'];
-      const presentRequired = partnerDocuments
-        .filter((document) => requiredTypes.includes(document.type))
-        .map((document) => document.type);
+      const presentRequired = [...new Set(
+        partnerDocuments
+          .filter((document) => requiredTypes.includes(document.type))
+          .map((document) => document.type),
+      )];
       const uploadedRequired = new Set(
         uploadDocuments
           .filter((document) => requiredTypes.includes(document.type))
           .map((document) => document.type),
       );
-      const missingRequired = [...new Set(presentRequired)].filter((type) => !uploadedRequired.has(type));
+      const missingRequired = presentRequired.filter((type) => !uploadedRequired.has(type));
       if (missingRequired.length) {
         throw new Error(
-          `Anexos obrigatórios não preparados para o Luxus Task: ${missingRequired.join(', ')}`,
+          `Anexos obrigatórios não preparados para o Luxus Task: ${missingRequired.join(', ')}. Reanexe os arquivos na venda.`,
         );
       }
       if (uploadDocuments.length) {
@@ -1248,6 +1311,43 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         message: `${sale.protocol} continuará tentando automaticamente. ${message}`,
         data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
       });
+    }
+  }
+
+  /** Atualiza assunto/observações; se o endpoint novo falhar, grava como comentário. */
+  private async pushSaleDetailsToTask(
+    saleId: string,
+    input: {
+      subject: string;
+      description: string;
+      localProtocol: string;
+      partnerName: string;
+      branchName?: string;
+      requesterName: string;
+      requesterEmail: string;
+    },
+  ) {
+    try {
+      await this.taskIntegration.updateDemandDetails(saleId, input);
+      return;
+    } catch (error) {
+      console.warn('[sales] Falha ao atualizar detalhes da demanda; tentando comentário', error);
+    }
+    try {
+      await this.taskIntegration.addDemandComment(
+        saleId,
+        [
+          `Assunto sugerido: ${input.subject}`,
+          '',
+          input.description,
+        ].join('\n'),
+        'LUXUSPARCEIROS',
+      );
+    } catch (commentError) {
+      throw new Error(
+        `Não foi possível atualizar assunto/observações no Luxus Task: `
+        + (commentError instanceof Error ? commentError.message : 'erro desconhecido'),
+      );
     }
   }
 

@@ -115,7 +115,7 @@ export class TaskIntegrationService {
   ) {
     return this.request(
       `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}/detalhes`,
-      { method: 'PUT', body: JSON.stringify(input) },
+      { method: 'POST', body: JSON.stringify(input) },
       60_000,
     );
   }
