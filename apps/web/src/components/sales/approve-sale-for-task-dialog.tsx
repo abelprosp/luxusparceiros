@@ -53,6 +53,13 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
   const [deadline, setDeadline] = useState('');
   const [priority, setPriority] = useState(false);
   const [notes, setNotes] = useState('');
+  const minDeadline = useMemo(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -71,7 +78,10 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
         setDocumentType(saleDocument.length > 11 ? 'pj' : 'pf');
         const suggestedDeadline = new Date();
         suggestedDeadline.setDate(suggestedDeadline.getDate() + 7);
-        setDeadline((current) => current || suggestedDeadline.toISOString().slice(0, 10));
+        const y = suggestedDeadline.getFullYear();
+        const m = String(suggestedDeadline.getMonth() + 1).padStart(2, '0');
+        const d = String(suggestedDeadline.getDate()).padStart(2, '0');
+        setDeadline((current) => current || `${y}-${m}-${d}`);
       })
       .catch((error) => toast({
         title: 'Não foi possível carregar a venda',
@@ -344,7 +354,15 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
             )}
             <div className="space-y-2">
               <Label>Prazo *</Label>
-              <Input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} />
+              <Input
+                type="date"
+                min={minDeadline}
+                value={deadline}
+                onChange={(event) => setDeadline(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Não pode ser anterior a hoje. Sugestão automática: 7 dias.
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="priority" checked={priority} onCheckedChange={(checked) => setPriority(checked === true)} />

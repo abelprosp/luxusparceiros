@@ -695,6 +695,17 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (!this.taskIntegration.isConfigured()) {
       throw new BadRequestException('Configure a integração com o Luxus Task antes de aprovar a venda');
     }
+    const deadlineDate = new Date(dto.deadline);
+    if (Number.isNaN(deadlineDate.getTime())) {
+      throw new BadRequestException('Prazo inválido');
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const deadlineDay = new Date(deadlineDate);
+    deadlineDay.setHours(0, 0, 0, 0);
+    if (deadlineDay < today) {
+      throw new BadRequestException('O prazo não pode ser anterior à data de hoje');
+    }
     const sale = await this.findOne(id, user);
     if (!([SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW] as SaleReviewStatus[]).includes(sale.reviewStatus)) {
       throw new BadRequestException('Esta venda não está disponível para aprovação');
