@@ -938,6 +938,140 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (!isAdminRole(user.role)) throw new ForbiddenException('Apenas administradores podem revisar vendas');
   }
 
+  private formatSalePhone(value?: string | null) {
+    const digits = (value ?? '').replace(/\D/g, '');
+    if (digits.length === 11) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+    }
+    if (digits.length === 10) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    }
+    return value?.trim() || '—';
+  }
+
+  private formatSaleDocument(value?: string | null) {
+    const digits = (value ?? '').replace(/\D/g, '');
+    if (digits.length === 11) {
+      return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+    }
+    if (digits.length === 14) {
+      return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+    }
+    return value?.trim() || '—';
+  }
+
+  private formatSaleCurrency(value: unknown) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '—';
+    return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+
+  private donorOperatorLabel(value?: string | null) {
+    const labels: Record<string, string> = {
+      VIVO: 'Vivo',
+      TIM: 'TIM',
+      CLARO: 'Claro',
+      SURF: 'Surf',
+      OTHER: 'Outras',
+    };
+    return value ? (labels[value] ?? value) : '—';
+  }
+
+  private buildSaleTaskSubject(sale: {
+    protocol: string;
+    partner: { name: string };
+    newNumber?: string | null;
+  }) {
+    const line = this.formatSalePhone(sale.newNumber);
+    return `Venda ${sale.protocol} — ${sale.partner.name} — Linha ${line}`;
+  }
+
+  private buildSaleTaskDescription(sale: {
+    protocol: string;
+    value: unknown;
+    commissionValue?: unknown;
+    contractFormat?: string | null;
+    notes?: string | null;
+    newNumber?: string | null;
+    chipIccid?: string | null;
+    isVirginChip?: boolean;
+    isPortability?: boolean;
+    portabilityNumber?: string | null;
+    donorOperator?: string | null;
+    partner: { name: string };
+    branch?: { name: string } | null;
+    operator: { name: string };
+    plan: { name: string };
+    campaign?: { title: string } | null;
+    createdBy: { name: string; email: string };
+    client: {
+      name: string;
+      document?: string | null;
+      rg?: string | null;
+      email?: string | null;
+      phone?: string | null;
+      address?: string | null;
+      addressNumber?: string | null;
+      complement?: string | null;
+      neighborhood?: string | null;
+      city?: string | null;
+      state?: string | null;
+      zipCode?: string | null;
+    };
+  }) {
+    const contract = sale.contractFormat === 'ZAPSIGN' ? 'ZapSign' : 'Impressão';
+    const address = [
+      sale.client.address,
+      sale.client.addressNumber,
+      sale.client.complement,
+      sale.client.neighborhood,
+      sale.client.city,
+      sale.client.state,
+      sale.client.zipCode,
+    ]
+      .filter(Boolean)
+      .join(', ');
+
+    const lines = [
+      '=== DADOS DA VENDA (Luxus Parceiros) ===',
+      `Protocolo: ${sale.protocol}`,
+      `Parceiro: ${sale.partner.name}`,
+      `Loja: ${sale.branch?.name ?? 'Matriz'}`,
+      `Operadora: ${sale.operator.name}`,
+      `Plano: ${sale.plan.name}`,
+      `Valor: ${this.formatSaleCurrency(sale.value)}`,
+      sale.commissionValue != null ? `Comissão: ${this.formatSaleCurrency(sale.commissionValue)}` : null,
+      sale.campaign?.title ? `Campanha: ${sale.campaign.title}` : null,
+      `Registrada por: ${sale.createdBy.name}`,
+      `Formato do contrato: ${contract} (assinatura será obtida no Luxus Task)`,
+      '',
+      '=== LINHA / CHIP ===',
+      `Linha do chip: ${this.formatSalePhone(sale.newNumber)}`,
+      `Chip virgem: ${sale.isVirginChip ? 'Sim' : 'Não'}`,
+      sale.isVirginChip || sale.chipIccid ? `ICCID: ${sale.chipIccid || '—'}` : null,
+      `Portabilidade: ${sale.isPortability ? 'Sim' : 'Não'}`,
+      sale.isPortability
+        ? `Operadora doadora: ${this.donorOperatorLabel(sale.donorOperator)}`
+        : null,
+      sale.isPortability
+        ? `Número a ser portado: ${this.formatSalePhone(sale.portabilityNumber)}`
+        : null,
+      '',
+      '=== CLIENTE ===',
+      `Nome: ${sale.client.name}`,
+      `CPF/CNPJ: ${this.formatSaleDocument(sale.client.document)}`,
+      sale.client.rg ? `RG: ${sale.client.rg}` : null,
+      sale.client.email ? `E-mail: ${sale.client.email}` : null,
+      `Telefone: ${this.formatSalePhone(sale.client.phone)}`,
+      `Endereço: ${address || '—'}`,
+      sale.notes ? '' : null,
+      sale.notes ? `=== OBSERVAÇÕES DA VENDA ===` : null,
+      sale.notes ? sale.notes : null,
+    ];
+
+    return lines.filter((line) => line !== null).join('\n');
+  }
+
   private retryDelayMs(attempts: number) {
     return Math.min(15 * 60_000, 30_000 * 2 ** Math.min(attempts, 5));
   }
@@ -994,6 +1128,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       include: {
         partner: { select: { name: true } }, branch: { select: { name: true } },
         client: true, operator: { select: { name: true } }, plan: { select: { name: true } },
+        campaign: { select: { title: true } },
         createdBy: { select: { name: true, email: true } }, documents: true,
       },
     });
@@ -1004,8 +1139,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       if (!task && sale.taskDemandId) {
         try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
       }
+      const subject = this.buildSaleTaskSubject(sale);
+      const description = this.buildSaleTaskDescription(sale);
       if (!task) {
-        const contract = sale.contractFormat === 'ZAPSIGN' ? 'ZapSign' : 'Impressão';
         // Cria a demanda sem anexos pesados; a importação acontece em seguida, 1 a 1.
         try {
           task = await this.taskIntegration.createDemand({
@@ -1017,19 +1153,8 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
             clientDocumentType: (sale.taskClientDocumentType as 'pf' | 'pj' | null) ?? undefined,
             clientDocument: sale.taskClientDocument ?? sale.client.document?.replace(/\D/g, '') ?? undefined,
             deadline: sale.taskDeadline.toISOString().slice(0, 10),
-            subject: `Venda ${sale.protocol} — ${sale.partner.name}`,
-            description: [
-              'ORIGEM: LUXUS PARCEIROS — VENDA',
-              `Formato do contrato: ${contract} (assinatura será obtida no Luxus Task)`,
-              `Parceiro: ${sale.partner.name}`,
-              sale.branch?.name ? `Loja: ${sale.branch.name}` : 'Loja: Matriz',
-              `Cliente da venda: ${sale.client.name} — ${sale.client.document}`,
-              `Operadora / Plano: ${sale.operator.name} / ${sale.plan.name}`,
-              `Linha: ${sale.newNumber ?? '-'}`,
-              `ICCID: ${sale.chipIccid ?? '-'}`,
-              sale.isPortability ? `Portabilidade: ${sale.portabilityNumber ?? '-'} (${sale.donorOperator ?? '-'})` : '',
-              sale.notes ? `Observações: ${sale.notes}` : '',
-            ].filter(Boolean).join('\n'),
+            subject,
+            description,
             localProtocol: sale.protocol,
             partnerName: sale.partner.name,
             branchName: sale.branch?.name,
@@ -1043,6 +1168,17 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
           if (!task) throw createError;
         }
+      } else {
+        // Sync/retry: atualiza assunto e observações com linha + dados completos da venda.
+        await this.taskIntegration.updateDemandDetails(sale.id, {
+          subject,
+          description,
+          localProtocol: sale.protocol,
+          partnerName: sale.partner.name,
+          branchName: sale.branch?.name ?? undefined,
+          requesterName: sale.createdBy.name,
+          requesterEmail: sale.createdBy.email,
+        });
       }
       // Nunca devolve ao Task um arquivo que originalmente veio dele.
       const partnerDocuments = sale.documents.filter(

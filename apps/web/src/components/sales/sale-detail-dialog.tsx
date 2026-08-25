@@ -910,10 +910,13 @@ export function SaleDetailDialog({
                     <SummaryCard label="Comissão" value={formatCurrency(Number(sale.commissionValue))} />
                   )}
 
-                  {imageDocs.length > 0 && (
+                  {(sale.documents?.filter((d) => !d.externalId?.startsWith('task:')).length ?? 0) > 0 && (
                     <Section title="Prévia dos documentos">
                       <div className="grid grid-cols-2 gap-2 py-3 sm:grid-cols-4">
-                        {imageDocs.slice(0, 4).map((doc) => (
+                        {(sale.documents ?? [])
+                          .filter((d) => !d.externalId?.startsWith('task:'))
+                          .slice(0, 6)
+                          .map((doc) => (
                           <DocumentPreview
                             key={doc.id}
                             doc={doc}
@@ -930,7 +933,7 @@ export function SaleDetailDialog({
                           />
                         ))}
                       </div>
-                      {docCount > 4 && (
+                      {docCount > 6 && (
                         <Button variant="link" className="px-0" onClick={() => setTab('photos')}>
                           Ver todos os {docCount} documentos
                         </Button>

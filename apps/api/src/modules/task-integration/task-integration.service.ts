@@ -101,6 +101,25 @@ export class TaskIntegrationService {
     );
   }
 
+  async updateDemandDetails(
+    externalRequestId: string,
+    input: {
+      subject: string;
+      description: string;
+      localProtocol?: string;
+      partnerName?: string;
+      branchName?: string;
+      requesterName?: string;
+      requesterEmail?: string;
+    },
+  ) {
+    return this.request(
+      `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}/detalhes`,
+      { method: 'PUT', body: JSON.stringify(input) },
+      60_000,
+    );
+  }
+
   async updateSaleStage(
     externalRequestId: string,
     input: {
@@ -596,7 +615,7 @@ export class TaskIntegrationService {
         id: document.id,
         name: document.name,
         type: document.type,
-        mimeType: document.mimeType || 'application/octet-stream',
+        mimeType: this.resolveDocumentMimeType(document.name, document.mimeType, path),
         size: buffer.length,
         contentBase64: buffer.toString('base64'),
       });
@@ -606,6 +625,17 @@ export class TaskIntegrationService {
       console.error('[task-integration] Arquivos locais não encontrados para sync', missing);
     }
     return { documents: payload, missing };
+  }
+
+  private resolveDocumentMimeType(name: string, mimeType: string | null | undefined, filePath: string) {
+    const fromDb = mimeType?.trim();
+    if (fromDb && fromDb !== 'application/octet-stream') return fromDb;
+    const ext = extname(name || filePath).toLowerCase();
+    if (ext === '.pdf') return 'application/pdf';
+    if (ext === '.png') return 'image/png';
+    if (ext === '.webp') return 'image/webp';
+    if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+    return fromDb || 'application/octet-stream';
   }
 
   private uploadDir() {
