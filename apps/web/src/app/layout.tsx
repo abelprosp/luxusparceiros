@@ -12,7 +12,10 @@ export const metadata: Metadata = {
   title: 'Luxus Parceiros',
   description: 'Plataforma administrativa Luxus Telefonia',
   icons: {
-    icon: [{ url: '/icon.png', type: 'image/png', sizes: '256x256' }],
+    icon: [
+      { url: '/favicon.ico', sizes: '48x48' },
+      { url: '/icon.png', type: 'image/png', sizes: '256x256' },
+    ],
     apple: [{ url: '/apple-icon.png', type: 'image/png', sizes: '180x180' }],
   },
 };
