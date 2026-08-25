@@ -186,6 +186,14 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
       toast({ title: 'Informe responsável e prazo', variant: 'destructive' });
       return;
     }
+    if (deadline < minDeadline) {
+      toast({
+        title: 'Prazo inválido',
+        description: 'O prazo não pode ser anterior à data de hoje.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (clientMode === 'task' && !clientId) {
       toast({ title: 'Selecione o cliente do Luxus Task', variant: 'destructive' });
       return;
