@@ -105,8 +105,9 @@ export class TaskIntegrationService {
   async updateDemandDetails(
     externalRequestId: string,
     input: {
-      subject: string;
-      description: string;
+      subject?: string;
+      description?: string;
+      deadline?: string;
       localProtocol?: string;
       partnerName?: string;
       branchName?: string;

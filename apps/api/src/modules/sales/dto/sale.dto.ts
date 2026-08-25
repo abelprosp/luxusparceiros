@@ -133,7 +133,12 @@ export class CreateSaleDto {
   notes?: string;
 }
 
-export class UpdateSaleDto extends PartialType(CreateSaleDto) {}
+export class UpdateSaleDto extends PartialType(CreateSaleDto) {
+  @ApiPropertyOptional({ description: 'Prazo da demanda no Luxus Task (yyyy-MM-dd ou ISO)' })
+  @IsOptional()
+  @IsDateString()
+  taskDeadline?: string;
+}
 
 export class UpdateSaleStatusDto {
   @ApiProperty({ enum: SaleStatus })

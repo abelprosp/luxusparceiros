@@ -23,8 +23,12 @@ interface TaskClient { id: string; name: string; document?: string; tradeName?: 
 interface SaleSummary {
   protocol: string;
   contractFormat?: ContractFormat | null;
-  client?: { name: string; document: string };
-  partner?: { name: string };
+  taskDeadline?: string | null;
+  partner?: { name?: string | null } | null;
+  client?: {
+    name?: string | null;
+    document?: string | null;
+  } | null;
 }
 
 type ApproveFlow = 'choose' | 'task';
@@ -81,7 +85,21 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
         const y = suggestedDeadline.getFullYear();
         const m = String(suggestedDeadline.getMonth() + 1).padStart(2, '0');
         const d = String(suggestedDeadline.getDate()).padStart(2, '0');
-        setDeadline((current) => current || `${y}-${m}-${d}`);
+        const existingDeadline = saleData.taskDeadline
+          ? (() => {
+              const date = new Date(saleData.taskDeadline);
+              if (Number.isNaN(date.getTime())) return '';
+              const ey = date.getFullYear();
+              const em = String(date.getMonth() + 1).padStart(2, '0');
+              const ed = String(date.getDate()).padStart(2, '0');
+              return `${ey}-${em}-${ed}`;
+            })()
+          : '';
+        const preferred =
+          existingDeadline && existingDeadline >= minDeadline
+            ? existingDeadline
+            : `${y}-${m}-${d}`;
+        setDeadline((current) => current || preferred);
       })
       .catch((error) => toast({
         title: 'Não foi possível carregar a venda',
@@ -89,7 +107,7 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
         variant: 'destructive',
       }))
       .finally(() => setLoading(false));
-  }, [open, saleId, toast]);
+  }, [open, saleId, toast, minDeadline]);
 
   useEffect(() => {
     if (!open || flow !== 'task' || !saleId) return;

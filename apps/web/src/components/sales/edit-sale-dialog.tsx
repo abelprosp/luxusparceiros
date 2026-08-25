@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ContractFormat, SaleReviewStatus, SaleStatus } from '@luxus/types';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,8 @@ interface SaleDetail {
   chipIccid?: string | null;
   contractFormat?: ContractFormat | null;
   notes?: string | null;
+  taskDeadline?: string | null;
+  taskDemandId?: string | null;
   client: {
     id: string;
     name: string;
@@ -47,6 +49,16 @@ interface SaleDetail {
     state?: string | null;
     zipCode?: string | null;
   };
+}
+
+function toDateInputValue(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 const emptyClient = {
@@ -82,6 +94,14 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
   const [chipIccid, setChipIccid] = useState('');
   const [contractFormat, setContractFormat] = useState<ContractFormat | ''>('');
   const [notes, setNotes] = useState('');
+  const [taskDeadline, setTaskDeadline] = useState('');
+  const minDeadline = useMemo(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }, []);
 
   useEffect(() => {
     if (!open || !saleId) return;
@@ -109,6 +129,7 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
         setChipIccid(data.chipIccid ?? '');
         setContractFormat(data.contractFormat ?? '');
         setNotes(data.notes ?? '');
+        setTaskDeadline(toDateInputValue(data.taskDeadline));
       })
       .catch((error) => {
         toast({
@@ -151,6 +172,14 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
       toast({ title: 'Informe o formato do contrato', variant: 'destructive' });
       return;
     }
+    if (taskDeadline && taskDeadline < minDeadline) {
+      toast({
+        title: 'Prazo inválido',
+        description: 'O prazo não pode ser anterior à data de hoje.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -162,6 +191,9 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
           chipIccid: chipIccid || undefined,
           contractFormat: contractFormat || undefined,
           notes,
+          ...(taskDeadline
+            ? { taskDeadline: new Date(`${taskDeadline}T23:59:59`).toISOString() }
+            : {}),
           client: {
             ...client,
             email: client.email || undefined,
@@ -170,20 +202,27 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
         },
       });
       const shouldResubmit = sale.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED;
-      const shouldRetrySync = sale.reviewStatus === SaleReviewStatus.APPROVED;
+      const deadlineChanged = taskDeadline !== toDateInputValue(sale.taskDeadline);
+      const shouldRetrySync =
+        sale.reviewStatus === SaleReviewStatus.APPROVED
+        && !deadlineChanged;
       if (shouldResubmit) await api(`/sales/${sale.id}/submit`, { method: 'POST' });
       if (shouldRetrySync) await api(`/sales/${sale.id}/retry-task-sync`, { method: 'POST' });
       toast({
         title: shouldResubmit
           ? 'Venda corrigida e reenviada'
-          : shouldRetrySync
-            ? 'Venda atualizada e reenviada ao Luxus Task'
-            : 'Venda atualizada',
+          : deadlineChanged && sale.taskDemandId
+            ? 'Prazo atualizado no Luxus Task'
+            : shouldRetrySync
+              ? 'Venda atualizada e reenviada ao Luxus Task'
+              : 'Venda atualizada',
         description: shouldResubmit
           ? 'O administrador foi avisado para analisar novamente.'
-          : shouldRetrySync
-            ? 'O sync com o Luxus Task foi reenfileirado com os dados corrigidos.'
-            : undefined,
+          : deadlineChanged && sale.taskDemandId
+            ? 'O prazo da demanda foi sincronizado.'
+            : shouldRetrySync
+              ? 'O sync com o Luxus Task foi reenfileirado com os dados corrigidos.'
+              : undefined,
         variant: 'success',
       });
       onOpenChange(false);
@@ -257,6 +296,18 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
                       <SelectItem value={ContractFormat.ZAPSIGN}>ZapSign</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Prazo Luxus Task</Label>
+                  <Input
+                    type="date"
+                    min={minDeadline}
+                    value={taskDeadline}
+                    onChange={(event) => setTaskDeadline(event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Hoje ou data futura. Se a demanda já existir, o prazo é atualizado no Luxus Task.
+                  </p>
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label>Observações</Label>

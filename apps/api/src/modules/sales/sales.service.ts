@@ -441,7 +441,13 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       chipIccid,
       contractFormat,
       notes,
+      taskDeadline,
     } = dto;
+
+    let nextTaskDeadline: Date | undefined;
+    if (taskDeadline !== undefined) {
+      nextTaskDeadline = this.parseTaskDeadlineOrThrow(taskDeadline);
+    }
 
     if (clientId !== undefined && clientId !== existing.clientId) {
       throw new BadRequestException('Não é permitido trocar o cliente da venda');
@@ -537,6 +543,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         ...(chipIccid !== undefined && { chipIccid }),
         ...(contractFormat !== undefined && { contractFormat }),
         ...(notes !== undefined && { notes }),
+        ...(nextTaskDeadline !== undefined && { taskDeadline: nextTaskDeadline }),
         ...(clientChanges && existing.reviewStatus === SaleReviewStatus.APPROVED && {
           taskClientName: clientChanges.name ?? existing.taskClientName,
           taskClientDocument: clientChanges.document
@@ -563,7 +570,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         actorName: user.name,
         action: shouldRequeueTaskSync
           ? 'Dados da venda atualizados — sync com Luxus Task reenfileirado'
-          : 'Dados da venda atualizados',
+          : nextTaskDeadline !== undefined
+            ? 'Prazo do Luxus Task atualizado'
+            : 'Dados da venda atualizados',
         details: this.buildSaleEditDetails(existing, dto),
         changes: Object.keys(dto) as Prisma.InputJsonValue,
       },
@@ -579,6 +588,17 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
 
     if (shouldRequeueTaskSync) {
       setImmediate(() => void this.processTaskSyncQueue());
+    } else if (
+      nextTaskDeadline !== undefined
+      && existing.taskDemandId
+      && this.taskIntegration.isConfigured()
+    ) {
+      const deadlineDay = nextTaskDeadline.toISOString().slice(0, 10);
+      setImmediate(() => {
+        void this.taskIntegration.updateDemandDetails(id, { deadline: deadlineDay }).catch((error) => {
+          console.warn('[sales] Falha ao atualizar prazo no Luxus Task', error);
+        });
+      });
     }
 
     return sale;
@@ -695,17 +715,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (!this.taskIntegration.isConfigured()) {
       throw new BadRequestException('Configure a integração com o Luxus Task antes de aprovar a venda');
     }
-    const deadlineDate = new Date(dto.deadline);
-    if (Number.isNaN(deadlineDate.getTime())) {
-      throw new BadRequestException('Prazo inválido');
-    }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const deadlineDay = new Date(deadlineDate);
-    deadlineDay.setHours(0, 0, 0, 0);
-    if (deadlineDay < today) {
-      throw new BadRequestException('O prazo não pode ser anterior à data de hoje');
-    }
+    const deadlineDate = this.parseTaskDeadlineOrThrow(dto.deadline);
     const sale = await this.findOne(id, user);
     if (!([SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW] as SaleReviewStatus[]).includes(sale.reviewStatus)) {
       throw new BadRequestException('Esta venda não está disponível para aprovação');
@@ -725,7 +735,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         taskClientName: dto.clientName?.trim(),
         taskClientDocumentType: dto.clientDocumentType,
         taskClientDocument: dto.clientDocument?.replace(/\D/g, ''),
-        taskDeadline: new Date(dto.deadline),
+        taskDeadline: deadlineDate,
         taskPriority: dto.priority ?? false,
         taskSyncStatus: SaleTaskSyncStatus.PENDING,
         contractStage: SaleContractStage.TASK_PROCESSING,
@@ -942,6 +952,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       chipIccid?: string | null;
       notes?: string | null;
       contractFormat?: string | null;
+      taskDeadline?: Date | string | null;
       client?: {
         name?: string | null;
         document?: string | null;
@@ -969,6 +980,13 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (dto.chipIccid !== undefined) pushChange('ICCID', existing.chipIccid, dto.chipIccid);
     if (dto.contractFormat !== undefined) pushChange('Formato do contrato', existing.contractFormat, dto.contractFormat);
     if (dto.notes !== undefined) pushChange('Observações', existing.notes, dto.notes);
+    if (dto.taskDeadline !== undefined) {
+      const before = existing.taskDeadline
+        ? new Date(existing.taskDeadline).toISOString().slice(0, 10)
+        : null;
+      const after = new Date(dto.taskDeadline).toISOString().slice(0, 10);
+      pushChange('Prazo Luxus Task', before, after);
+    }
 
     if (dto.client) {
       pushChange('Cliente', existing.client?.name, dto.client.name);
@@ -983,6 +1001,21 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     }
 
     return lines.length ? lines.join('\n') : undefined;
+  }
+
+  private parseTaskDeadlineOrThrow(value: string) {
+    const deadlineDate = new Date(value);
+    if (Number.isNaN(deadlineDate.getTime())) {
+      throw new BadRequestException('Prazo inválido');
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const deadlineDay = new Date(deadlineDate);
+    deadlineDay.setHours(0, 0, 0, 0);
+    if (deadlineDay < today) {
+      throw new BadRequestException('O prazo não pode ser anterior à data de hoje');
+    }
+    return deadlineDate;
   }
 
   private assertAdmin(user: AuthUser) {
