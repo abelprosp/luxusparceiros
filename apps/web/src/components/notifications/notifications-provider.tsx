@@ -44,6 +44,7 @@ interface NotificationsContextValue {
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   markSaleRemindersRead: (saleId: string) => Promise<void>;
+  markRequestRemindersRead: (requestId: string) => Promise<void>;
 }
 
 const ALERT_EVENTS = new Set(['TASK_REMINDER', 'SALE_COMPLETED_BY_TASK']);
@@ -55,10 +56,18 @@ function isAlertEvent(data?: Record<string, unknown> | null): boolean {
   return typeof event === 'string' && ALERT_EVENTS.has(event);
 }
 
-export function isTaskReminderNotification(notification: NotificationItem, saleId?: string): boolean {
+export function isTaskReminderNotification(
+  notification: NotificationItem,
+  target?: string | { saleId?: string; requestId?: string },
+): boolean {
   if (notification.data?.event !== 'TASK_REMINDER') return false;
-  if (!saleId) return true;
-  return String(notification.data?.saleId ?? '') === saleId;
+  if (!target) return true;
+  if (typeof target === 'string') {
+    return String(notification.data?.saleId ?? '') === target;
+  }
+  if (target.saleId) return String(notification.data?.saleId ?? '') === target.saleId;
+  if (target.requestId) return String(notification.data?.requestId ?? '') === target.requestId;
+  return true;
 }
 
 export function taskReminderText(notification: NotificationItem): string {
@@ -153,6 +162,14 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     await Promise.all(unread.map((item) => markAsRead(item.id)));
   }, [markAsRead, notifications]);
 
+  const markRequestRemindersRead = useCallback(async (requestId: string) => {
+    const unread = notifications.filter(
+      (item) => !item.isRead && isTaskReminderNotification(item, { requestId }),
+    );
+    if (!unread.length) return;
+    await Promise.all(unread.map((item) => markAsRead(item.id)));
+  }, [markAsRead, notifications]);
+
   useEffect(() => {
     initialAlertsCheckedRef.current = false;
     shownAlertIdsRef.current = new Set();
@@ -223,8 +240,18 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       markAsRead,
       markAllAsRead,
       markSaleRemindersRead,
+      markRequestRemindersRead,
     }),
-    [notifications, unreadCount, loading, refresh, markAsRead, markAllAsRead, markSaleRemindersRead],
+    [
+      notifications,
+      unreadCount,
+      loading,
+      refresh,
+      markAsRead,
+      markAllAsRead,
+      markSaleRemindersRead,
+      markRequestRemindersRead,
+    ],
   );
 
   return (

@@ -397,6 +397,9 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
             </p>
           ) : (
             <>
+          <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+            Depois do envio, o andamento fica no Luxus Task. O Parceiros só mostra status, anexos e avisos.
+          </p>
           <div className="space-y-2">
             <Label>Responsável no Luxus Task *</Label>
             <Select

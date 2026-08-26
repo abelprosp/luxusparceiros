@@ -9,6 +9,7 @@ import {
   LayoutGrid,
   List,
   MessageSquare,
+  AlertTriangle,
   Plus,
   RotateCcw,
   Search,
@@ -41,7 +42,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { isPartnerScopedUser } from '@/lib/rbac';
 import { cn } from '@/lib/utils';
 import { requestStatusBadge } from '@/lib/status-badge';
-import { useNotifications } from '@/components/notifications/notifications-provider';
+import { useNotifications, isTaskReminderNotification, type NotificationItem } from '@/components/notifications/notifications-provider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
@@ -59,6 +60,29 @@ interface Request {
 
 type ViewMode = 'kanban' | 'list';
 type KanbanResponse = Record<RequestStatus, Request[]>;
+
+function hasUnreadTaskMessage(requestId: string, notifications: NotificationItem[]) {
+  return notifications.some((item) => !item.isRead && isTaskReminderNotification(item, { requestId }));
+}
+
+function TaskMessageBadge({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      title="Há uma mensagem do Luxus Task. Clique para ver."
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      className="task-reminder-pulse inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20 text-amber-400"
+    >
+      <span className="relative inline-flex">
+        <MessageSquare className="h-4 w-4" />
+        <AlertTriangle className="absolute -right-1.5 -top-1.5 h-3 w-3 fill-amber-400 text-amber-200" />
+      </span>
+    </button>
+  );
+}
 
 const columns: { status: RequestStatus; color: string }[] = [
   { status: RequestStatus.OPEN, color: 'border-t-primary' },
@@ -480,9 +504,14 @@ export default function SolicitacoesPage() {
                                 />}
                                 <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" />
                                 <div className="min-w-0 flex-1 space-y-2">
-                                  <span className="block truncate font-mono text-xs text-muted-foreground">
-                                    {request.protocol}
-                                  </span>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <span className="block truncate font-mono text-xs text-muted-foreground">
+                                      {request.protocol}
+                                    </span>
+                                    {hasUnreadTaskMessage(request.id, notifications) && (
+                                      <TaskMessageBadge onClick={() => openDetail(request.id)} />
+                                    )}
+                                  </div>
                                   <Badge variant="outline" className="max-w-full">
                                     {REQUEST_TYPE_LABELS[request.type]}
                                   </Badge>
@@ -554,7 +583,14 @@ export default function SolicitacoesPage() {
                           : selectedIds.filter((id) => id !== r.id))}
                       />
                     </TableCell>}
-                    <TableCell className="font-mono text-sm">{r.protocol}</TableCell>
+                    <TableCell className="font-mono text-sm">
+                      <div className="flex items-center gap-2">
+                        <span>{r.protocol}</span>
+                        {hasUnreadTaskMessage(r.id, notifications) && (
+                          <TaskMessageBadge onClick={() => openDetail(r.id)} />
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline">{REQUEST_TYPE_LABELS[r.type]}</Badge>
                     </TableCell>

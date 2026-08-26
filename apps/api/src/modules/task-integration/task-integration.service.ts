@@ -350,13 +350,15 @@ export class TaskIntegrationService {
     }
 
     const status = this.mapTaskStatus(dto.status);
-    const resolution =
-      dto.resolution?.trim() ||
-      dto.observations?.filter(Boolean).at(-1)?.trim() ||
-      undefined;
-    const resolutionChanged = Boolean(
-      resolution && resolution !== existing.resolution,
-    );
+    const reminderMessage = dto.reminderMessage?.trim() || null;
+    const terminal = status === 'COMPLETED' || status === 'REJECTED';
+    const resolution = reminderMessage
+      || (terminal ? dto.resolution?.trim() : undefined)
+      || undefined;
+    const statusChanged = status !== existing.status;
+    const resolutionChanged = Boolean(resolution && resolution !== existing.resolution);
+    const incomingFiles = (dto.attachments ?? []).some((item) => item.contentBase64);
+    await this.ingestRequestAttachments(existing.id, dto);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.request.update({
@@ -378,21 +380,25 @@ export class TaskIntegrationService {
             : {}),
         },
       });
-      if (status !== existing.status || resolutionChanged) {
+      if (statusChanged || resolutionChanged || reminderMessage || incomingFiles) {
         await tx.requestTimeline.create({
           data: {
             requestId: existing.id,
-            action: status !== existing.status
-              ? 'Status sincronizado pelo Luxus Task'
-              : 'Resposta sincronizada pelo Luxus Task',
+            action: reminderMessage
+              ? 'Cobrança recebida do Luxus Task'
+              : statusChanged
+                ? 'Status sincronizado pelo Luxus Task'
+                : incomingFiles
+                  ? `Anexos recebidos do Luxus Task (${dto.attachments?.length})`
+                  : 'Resposta sincronizada pelo Luxus Task',
             fromStatus: existing.status,
             toStatus: status,
-            details: resolution,
+            details: reminderMessage || resolution,
           },
         });
       }
     });
-    if (status !== existing.status || resolutionChanged) {
+    if (statusChanged || resolutionChanged || reminderMessage || incomingFiles) {
       const statusLabels: Record<string, string> = {
         OPEN: 'aberta',
         IN_ANALYSIS: 'em análise',
@@ -400,26 +406,39 @@ export class TaskIntegrationService {
         COMPLETED: 'concluída',
         REJECTED: 'rejeitada',
       };
-      const notification = {
-        type: 'REQUEST' as const,
-        title: status !== existing.status
-          ? 'Atualização do Luxus Task'
-          : 'Nova resposta do Luxus Task',
-        message: status !== existing.status
-          ? `A solicitação ${existing.protocol} agora está ${statusLabels[status] ?? 'atualizada'}.`
-          : `A solicitação ${existing.protocol} recebeu uma nova resposta.`,
-        data: { requestId: existing.id },
-      };
+      const path = `/solicitacoes?request=${existing.id}`;
+      const notification = reminderMessage
+        ? {
+            type: 'SYSTEM' as const,
+            title: 'Aviso do Luxus Task',
+            message: `${existing.protocol}: ${reminderMessage}`,
+            data: {
+              requestId: existing.id,
+              path: `${path}&message=1`,
+              event: 'TASK_REMINDER',
+              reminderMessage,
+            },
+          }
+        : {
+            type: 'REQUEST' as const,
+            title: statusChanged
+              ? 'Atualização do Luxus Task'
+              : 'Nova resposta do Luxus Task',
+            message: statusChanged
+              ? `A solicitação ${existing.protocol} agora está ${statusLabels[status] ?? 'atualizada'}.`
+              : `A solicitação ${existing.protocol} recebeu uma nova resposta.`,
+            data: { requestId: existing.id, path },
+          };
+      await this.notifications.createForAdminUsers(notification);
+      await this.notifications.create({
+        userId: existing.createdById,
+        ...notification,
+      }).catch(() => undefined);
       await this.notifications.createForPartnerUsers(
         existing.partnerId,
         notification,
-      );
-      if (!existing.createdBy.partnerId) {
-        await this.notifications.create({
-          userId: existing.createdById,
-          ...notification,
-        });
-      }
+        [existing.createdById],
+      ).catch(() => undefined);
     }
     return { accepted: true };
   }
@@ -851,6 +870,58 @@ export class TaskIntegrationService {
       }).catch(() => undefined);
       // Não bloqueia o upload local; a fila fará uma nova tentativa.
       console.warn('[task-integration] Falha ao enviar anexo ao Luxus Task', error);
+    }
+  }
+
+  private async ingestRequestAttachments(requestId: string, dto: TaskDemandCallbackDto) {
+    for (const attachment of dto.attachments ?? []) {
+      if (!attachment.id || !attachment.name) continue;
+      const externalId = `task:${dto.demandId}:${attachment.id}`;
+      let storedUrl = `/task-integration/sales/${requestId}/attachments/${attachment.id}`;
+      let storedSize = attachment.size || 0;
+      let storedMime = attachment.mimeType || 'application/octet-stream';
+      let materialized = false;
+      try {
+        const file = attachment.contentBase64
+          ? {
+              buffer: this.decodeAttachmentBase64(attachment.contentBase64),
+              mimeType: storedMime,
+              name: attachment.name,
+            }
+          : await this.downloadTaskAttachment(dto.externalRequestId, attachment.id);
+        const uploadDir = this.uploadDir();
+        if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
+        const extension = extname(file.name || attachment.name) || '.bin';
+        const filename = `${Date.now()}-${randomUUID()}${extension}`;
+        writeFileSync(join(uploadDir, filename), file.buffer);
+        storedUrl = `/uploads/${filename}`;
+        storedSize = file.buffer.length;
+        storedMime = file.mimeType || storedMime;
+        materialized = true;
+      } catch (error) {
+        console.warn('[task-integration] Não foi possível materializar anexo da demanda', attachment.id, error);
+      }
+      await this.prisma.document.upsert({
+        where: { externalId },
+        create: {
+          requestId,
+          externalId,
+          name: attachment.name,
+          type: 'OTHER',
+          purpose: 'GENERAL',
+          url: storedUrl,
+          mimeType: storedMime,
+          size: storedSize,
+        },
+        update: {
+          name: attachment.name,
+          ...(materialized ? {
+            url: storedUrl,
+            mimeType: storedMime,
+            size: storedSize,
+          } : {}),
+        },
+      });
     }
   }
 

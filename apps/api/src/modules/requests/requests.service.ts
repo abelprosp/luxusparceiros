@@ -57,6 +57,14 @@ interface TaskSyncSource {
   taskDeadline?: string | null;
   taskPriority?: boolean;
   taskSyncAttempts?: number;
+  documents?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    mimeType: string;
+    size: number;
+    url: string;
+  }>;
 }
 
 @Injectable()
@@ -97,7 +105,6 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     },
   ) {
     const where = this.buildWhere(user, params);
-    await this.syncLinkedTaskStatuses(where);
 
     const [data, total] = await Promise.all([
       this.prisma.request.findMany({
@@ -131,7 +138,6 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     },
   ) {
     const where = this.buildWhere(user, params);
-    await this.syncLinkedTaskStatuses(where);
     const data = await this.prisma.request.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -184,7 +190,6 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
           protocol: taskDemand.protocol,
           status: taskDemand.status,
           resolution: taskDemand.resolution,
-          observations: taskDemand.observations,
           responsibleId: taskDemand.responsible?.id,
           responsibleName: taskDemand.responsible?.name,
           updatedAt: taskDemand.updatedAt,
@@ -431,8 +436,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         userId: user.id,
         content: dto.content,
         isInternal: dto.isInternal ?? false,
-        taskNextRetryAt:
-          request.taskDemandId && !dto.isInternal ? new Date() : null,
+        taskNextRetryAt: null,
       },
       include: { user: { select: { id: true, name: true } } },
     });
@@ -456,9 +460,6 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         }, [user.id]);
       }
       this.eventsGateway.emitToPartner(request.partnerId, 'request:comment', comment);
-      if (request.taskDemandId) {
-        setImmediate(() => void this.processTaskCommentQueue());
-      }
     }
 
     return comment;
@@ -609,51 +610,6 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     return where;
   }
 
-  private async syncLinkedTaskStatuses(where: Prisma.RequestWhereInput) {
-    if (!this.taskIntegration.isConfigured()) return;
-
-    const linked = await this.prisma.request.findMany({
-      where: {
-        AND: [
-          where,
-          { taskDemandId: { not: null } },
-          { status: { notIn: [RequestStatus.COMPLETED, RequestStatus.REJECTED] } },
-        ],
-      },
-      select: { id: true },
-      orderBy: { taskLastSyncAt: 'asc' },
-      take: 30,
-    });
-
-    await Promise.allSettled(
-      linked.map(async ({ id }) => {
-        try {
-          const taskDemand = await this.taskIntegration.getDemand(id);
-          await this.taskIntegration.applyCallback({
-            externalRequestId: id,
-            demandId: taskDemand.id,
-            protocol: taskDemand.protocol,
-            status: taskDemand.status,
-            resolution: taskDemand.resolution,
-            observations: taskDemand.observations,
-            responsibleId: taskDemand.responsible?.id,
-            responsibleName: taskDemand.responsible?.name,
-            updatedAt: taskDemand.updatedAt,
-          });
-        } catch (error) {
-          await this.prisma.request.update({
-            where: { id },
-            data: {
-              taskLastSyncAt: new Date(),
-              taskSyncError:
-                error instanceof Error ? error.message : 'Falha ao consultar o Luxus Task',
-            },
-          });
-        }
-      }),
-    );
-  }
-
   private async addTimeline(
     requestId: string,
     action: string,
@@ -719,8 +675,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
             userId: user.id,
             content,
             isInternal,
-            taskNextRetryAt:
-              request.taskDemandId && !isInternal ? new Date() : null,
+            taskNextRetryAt: null,
           },
         });
         await tx.requestTimeline.create({
@@ -750,9 +705,6 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
           data: { requestId: id },
         }, [user.id]);
       }
-    }
-    if (content && request.taskDemandId && !isInternal) {
-      setImmediate(() => void this.processTaskCommentQueue());
     }
     this.eventsGateway.emitToPartner(request.partnerId, 'request:updated', { id });
     return this.findOne(id, user);
@@ -804,6 +756,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     };
     try {
       const task = await this.taskIntegration.createDemand({
+        entityType: 'request',
         requestId: request.id,
         responsibleId,
         clientId: clientId ?? undefined,
@@ -822,6 +775,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         requesterName: request.createdBy.name,
         requesterEmail: request.createdBy.email,
         priority,
+        documents: this.taskIntegration.buildUploadDocumentsPayload(request.documents ?? []).documents,
       });
       return this.saveTaskLink(request, responsibleId, task);
     } catch (error) {
@@ -947,6 +901,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
             branch: { select: { name: true } },
             client: { select: { name: true } },
             createdBy: { select: { name: true, email: true } },
+            documents: true,
           },
         });
         if (

@@ -155,12 +155,17 @@ export class UploadsService {
     if (relations?.requestId) {
       const request = await this.prisma.request.findUnique({
         where: { id: relations.requestId },
-        select: { partnerId: true, branchId: true },
+        select: { partnerId: true, branchId: true, taskDemandId: true },
       });
       if (!request) throw new BadRequestException('Solicitação não encontrada');
       assertPartnerAccess(user, request.partnerId);
       if (user.branchId && request.branchId && user.branchId !== request.branchId) {
         throw new ForbiddenException(MESSAGES.FORBIDDEN);
+      }
+      if (request.taskDemandId) {
+        throw new BadRequestException(
+          'Anexos desta demanda são tratados no Luxus Task. No Parceiros só é possível baixar os arquivos sincronizados.',
+        );
       }
     }
     if (relations?.ticketId) {

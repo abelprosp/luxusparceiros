@@ -18,7 +18,19 @@ import { useToast } from '@/components/ui/toaster';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ActivityLog, type ActivityEntry } from '@/components/ActivityLog';
 import { requestStatusBadge } from '@/lib/status-badge';
-import { FileText, Paperclip } from 'lucide-react';
+import {
+  isTaskReminderNotification,
+  useNotifications,
+} from '@/components/notifications/notifications-provider';
+import { Check, FileText, Paperclip } from 'lucide-react';
+
+const TASK_STATUS_LABELS: Record<string, string> = {
+  em_aberto: 'Em aberto',
+  em_andamento: 'Em andamento',
+  concluido: 'Concluída',
+  standby: 'Em espera',
+  cancelado: 'Cancelada',
+};
 
 interface RequestComment {
   id: string;
@@ -61,6 +73,7 @@ interface RequestDetailDialogProps {
 export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }: RequestDetailDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { notifications, markRequestRemindersRead } = useNotifications();
   const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.SUPERVISOR;
   const [loading, setLoading] = useState(false);
   const [request, setRequest] = useState<RequestDetail | null>(null);
@@ -101,10 +114,27 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
     }
   }, [open, requestId, load]);
 
+  useEffect(() => {
+    if (!open || !requestId) return;
+    const reminder = notifications.find((item) => isTaskReminderNotification(item, { requestId }));
+    const text = String(reminder?.data?.reminderMessage ?? '').trim();
+    if (!text) return;
+    setRequest((current) => {
+      if (!current || current.id !== requestId || current.resolution === text) return current;
+      return { ...current, resolution: text };
+    });
+  }, [notifications, open, requestId]);
+
+  const linkedToTask = Boolean(request?.taskDemandId || request?.taskProtocol);
+  const reminderUnread = Boolean(
+    request
+    && notifications.some((item) => !item.isRead && isTaskReminderNotification(item, { requestId: request.id })),
+  );
+
   const statusChanged = Boolean(
     isAdmin
       && request
-      && !request.taskDemandId
+      && !linkedToTask
       && status
       && (
         status !== request.status
@@ -113,7 +143,7 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
   );
 
   const handleSubmit = async () => {
-    if (!requestId || !request || (!comment.trim() && !statusChanged)) return;
+    if (!requestId || !request || linkedToTask || (!comment.trim() && !statusChanged)) return;
     setSending(true);
     try {
       await api(`/requests/${requestId}/respond`, {
@@ -143,7 +173,7 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
   };
 
   const handleStatus = async () => {
-    if (!requestId || !status) return;
+    if (!requestId || !status || linkedToTask) return;
     setSending(true);
     try {
       await api(`/requests/${requestId}/status`, {
@@ -180,7 +210,7 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
   };
 
   const handleAttachment = async () => {
-    if (!requestId || !attachment) return;
+    if (!requestId || !attachment || linkedToTask) return;
     setSending(true);
     try {
       await uploadFile(attachment, 'OTHER', { requestId });
@@ -219,19 +249,22 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
               {request.partner && <span>Parceiro: {request.partner.name}</span>}
               {request.client && <span>Cliente: {request.client.name}</span>}
             </div>
-            {(request.taskProtocol || request.taskSyncError || request.taskClientName) && (
-              <div className="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm">
-                <p className="text-xs font-medium text-muted-foreground">Integração Luxus Task</p>
+            {(linkedToTask || request.taskSyncError) && (
+              <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm">
+                <p className="text-xs font-medium text-muted-foreground">Luxus Task</p>
                 {!request.taskProtocol && !request.taskSyncError && (
                   <p className="text-primary">Sincronização em processamento...</p>
                 )}
-                {request.taskProtocol && <p>Protocolo: <strong>{request.taskProtocol}</strong></p>}
+                {request.taskProtocol && (
+                  <p>Protocolo: <span className="font-mono">{request.taskProtocol}</span></p>
+                )}
+                {request.taskStatus && (
+                  <p>Status: {TASK_STATUS_LABELS[request.taskStatus] ?? request.taskStatus}</p>
+                )}
                 {request.taskResponsibleName && <p>Responsável: {request.taskResponsibleName}</p>}
-                {request.taskClientName && <p>Cliente: {request.taskClientName}</p>}
                 {request.taskDeadline && (
                   <p>Prazo: {new Date(`${request.taskDeadline}T12:00:00`).toLocaleDateString('pt-BR')}</p>
                 )}
-                {request.taskStatus && <p>Status de origem: {request.taskStatus}</p>}
                 {request.taskSyncError && (
                   <>
                     <p className="text-destructive">{request.taskSyncError}</p>
@@ -240,15 +273,34 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
                     </Button>
                   </>
                 )}
+                {request.resolution && (
+                  <div className={`rounded-md border p-3 ${reminderUnread ? 'border-amber-500/40 bg-amber-500/10' : 'border-border bg-background/60'}`}>
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold">Mensagem do Luxus Task</p>
+                      {reminderUnread && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => void markRequestRemindersRead(request.id)}
+                        >
+                          <Check className="mr-1 h-3.5 w-3.5" />
+                          Marcar como lida
+                        </Button>
+                      )}
+                    </div>
+                    <p className="whitespace-pre-wrap">{request.resolution}</p>
+                  </div>
+                )}
               </div>
             )}
-            {request.resolution && (
+            {request.resolution && !linkedToTask && (
               <div className="rounded-lg border bg-muted/30 p-3 text-sm">
                 <p className="font-medium text-xs text-muted-foreground mb-1">Resolução</p>
                 {request.resolution}
               </div>
             )}
-            {isAdmin && !request.taskDemandId && (
+            {isAdmin && !linkedToTask && (
               <div className="space-y-2 rounded-lg border p-3">
                 <Label>Alterar status</Label>
                 <Select value={status} onValueChange={(v) => setStatus(v as RequestStatus)}>
@@ -287,76 +339,84 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
                   </Button>
                 ))
               )}
-              <div className="flex gap-2">
-                <Input
-                  type="file"
-                  accept=".jpg,.jpeg,.png,.webp,.pdf"
-                  onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
-                  disabled={sending}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  title="Anexar arquivo"
-                  disabled={!attachment || sending}
-                  onClick={handleAttachment}
-                >
-                  <Paperclip className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="shrink-0">
-              <Label className="mb-2 block">Comentários</Label>
-              <ScrollArea className="h-40 rounded-lg border p-3">
-                <div className="space-y-3">
-                  {request.comments.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">Nenhum comentário</p>
-                  ) : (
-                    request.comments.map((c) => (
-                      <div key={c.id} className="text-sm">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium">{c.user?.name ?? 'Usuário'}</span>
-                          <span className="text-[10px] text-muted-foreground">{formatDateTime(c.createdAt)}</span>
-                        </div>
-                        <p className="text-muted-foreground">{c.content}</p>
-                      </div>
-                    ))
-                  )}
+              {!linkedToTask && (
+                <div className="flex gap-2">
+                  <Input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,.pdf"
+                    onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+                    disabled={sending}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="Anexar arquivo"
+                    disabled={!attachment || sending}
+                    onClick={handleAttachment}
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
                 </div>
-              </ScrollArea>
-            </div>
-            <div className="relative z-10 shrink-0 space-y-2 rounded-lg border border-primary/30 bg-background p-3 shadow-sm">
-              <Label htmlFor="request-comment">
-                {isPartner ? 'Mensagem para o administrador' : 'Mensagem para o parceiro'}
-              </Label>
-              <Textarea
-                id="request-comment"
-                placeholder="Novo comentário..."
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                rows={3}
-                disabled={sending}
-                className="pointer-events-auto bg-background"
-              />
-              {isAdmin && !request.taskDemandId && (
-                <p className="text-xs text-muted-foreground">
-                  Ao enviar, alterações de status e resolução também serão salvas.
-                </p>
               )}
             </div>
+            {!linkedToTask && (
+              <>
+                <div className="shrink-0">
+                  <Label className="mb-2 block">Comentários</Label>
+                  <ScrollArea className="h-40 rounded-lg border p-3">
+                    <div className="space-y-3">
+                      {request.comments.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">Nenhum comentário</p>
+                      ) : (
+                        request.comments.map((c) => (
+                          <div key={c.id} className="text-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium">{c.user?.name ?? 'Usuário'}</span>
+                              <span className="text-[10px] text-muted-foreground">{formatDateTime(c.createdAt)}</span>
+                            </div>
+                            <p className="text-muted-foreground">{c.content}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
+                <div className="relative z-10 shrink-0 space-y-2 rounded-lg border border-primary/30 bg-background p-3 shadow-sm">
+                  <Label htmlFor="request-comment">
+                    {isPartner ? 'Mensagem para o administrador' : 'Mensagem para o parceiro'}
+                  </Label>
+                  <Textarea
+                    id="request-comment"
+                    placeholder="Novo comentário..."
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    rows={3}
+                    disabled={sending}
+                    className="pointer-events-auto bg-background"
+                  />
+                  {isAdmin && (
+                    <p className="text-xs text-muted-foreground">
+                      Ao enviar, alterações de status e resolução também serão salvas.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Solicitação não encontrada.</p>
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => handleOpenChange(false)}>Fechar</Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={sending || (!comment.trim() && !statusChanged)}
-          >
-            {isAdmin && !request?.taskDemandId ? 'Salvar e enviar' : 'Enviar comentário'}
-          </Button>
+          {!request?.taskDemandId && !request?.taskProtocol && (
+            <Button
+              onClick={handleSubmit}
+              disabled={sending || (!comment.trim() && !statusChanged)}
+            >
+              {isAdmin ? 'Salvar e enviar' : 'Enviar comentário'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

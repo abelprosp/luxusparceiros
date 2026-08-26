@@ -85,8 +85,8 @@ const adminSections: GuideSection[] = [
     icon: FileText,
     steps: [
       'Crie a demanda, selecione parceiro, cliente, responsável e prazo.',
-      'O envio ao Luxus Task continua em segundo plano.',
-      'Mudanças de andamento e conclusão retornam ao quadro e ao sino.',
+      'Depois do envio, o andamento fica 100% no Luxus Task.',
+      'O Parceiros só espelha status, anexos e avisos. Concluir no Task fecha a demanda aqui.',
     ],
   },
 ];
