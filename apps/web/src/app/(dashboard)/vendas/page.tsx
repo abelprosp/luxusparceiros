@@ -27,6 +27,12 @@ import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-di
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { useAuth } from '@/hooks/useAuth';
 import { hasPermission, isPartnerUser } from '@/lib/rbac';
+import {
+  isTaskReminderNotification,
+  taskReminderText,
+  useNotifications,
+  type NotificationItem,
+} from '@/components/notifications/notifications-provider';
 
 interface Sale {
   id: string;
@@ -69,6 +75,10 @@ const DOC_OPTIONS = [
 
 function hasTaskMessage(sale: { contractCorrectionReason?: string | null }) {
   return Boolean(sale.contractCorrectionReason?.trim());
+}
+
+function hasUnreadTaskMessage(saleId: string, notifications: NotificationItem[]) {
+  return notifications.some((item) => !item.isRead && isTaskReminderNotification(item, saleId));
 }
 
 function TaskMessageBadge({ onClick }: { onClick: () => void }) {
@@ -116,6 +126,7 @@ export default function VendasPage() {
   const openedFromQueryRef = useRef(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { notifications, markSaleRemindersRead } = useNotifications();
   const isPartner = isPartnerUser(user);
   const canDeleteSales = hasPermission(user, PERMISSIONS.SALES_DELETE);
   const canDelete = (sale: Sale) =>
@@ -157,6 +168,22 @@ export default function VendasPage() {
   }, [search, statusFilter, syncErrorOnly, page, toast]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    setItems((prev) => prev.map((sale) => {
+      const reminder = notifications.find((item) => isTaskReminderNotification(item, sale.id));
+      const text = reminder ? taskReminderText(reminder) : '';
+      if (!text || text === sale.contractCorrectionReason) return sale;
+      return { ...sale, contractCorrectionReason: text };
+    }));
+    setMessageSale((current) => {
+      if (!current) return current;
+      const reminder = notifications.find((item) => isTaskReminderNotification(item, current.id));
+      const text = reminder ? taskReminderText(reminder) : '';
+      if (!text || text === current.contractCorrectionReason) return current;
+      return { ...current, contractCorrectionReason: text };
+    });
+  }, [notifications]);
 
   useEffect(() => {
     if (openedFromQueryRef.current) return;
@@ -363,7 +390,7 @@ export default function VendasPage() {
                       <TableCell className="font-mono text-sm">
                         <div className="flex items-center gap-2">
                           <span>{s.protocol}</span>
-                          {hasTaskMessage(s) && <TaskMessageBadge onClick={() => setMessageSale(s)} />}
+                          {hasUnreadTaskMessage(s.id, notifications) && <TaskMessageBadge onClick={() => setMessageSale(s)} />}
                         </div>
                       </TableCell>
                       {!isPartner && <TableCell>{s.partner?.name || '-'}</TableCell>}
@@ -475,7 +502,7 @@ export default function VendasPage() {
                     {(s.taskSyncError || s.taskSyncStatus === 'RETRY') && (
                       <Badge variant="destructive">Sync com falha</Badge>
                     )}
-                    {hasTaskMessage(s) && (
+                    {hasUnreadTaskMessage(s.id, notifications) && (
                       <Badge variant="warning" className="cursor-pointer" onClick={() => setMessageSale(s)}>
                         Mensagem do Task
                       </Badge>
@@ -641,7 +668,15 @@ export default function VendasPage() {
             <p className="text-xs text-muted-foreground">{messageSale?.protocol}</p>
             <p className="whitespace-pre-wrap text-sm">{messageSale?.contractCorrectionReason}</p>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            {messageSale && hasUnreadTaskMessage(messageSale.id, notifications) && (
+              <Button
+                variant="secondary"
+                onClick={() => void markSaleRemindersRead(messageSale.id)}
+              >
+                Marcar como lida
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setMessageSale(null)}>Fechar</Button>
             {messageSale && (
               <Button

@@ -39,6 +39,11 @@ import {
 } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerScopedUser } from '@/lib/rbac';
+import {
+  isTaskReminderNotification,
+  taskReminderText,
+  useNotifications,
+} from '@/components/notifications/notifications-provider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -70,14 +75,6 @@ const DONOR_OPERATOR_LABELS: Record<DonorOperator, string> = {
   [DonorOperator.CLARO]: 'Claro',
   [DonorOperator.SURF]: 'Surf',
   [DonorOperator.OTHER]: 'Outras',
-};
-
-const TASK_STATUS_LABELS: Record<string, string> = {
-  em_aberto: 'Aguardando início no Luxus Task',
-  standby: 'Em espera no Luxus Task',
-  em_andamento: 'Em andamento no Luxus Task',
-  concluido: 'Concluída no Luxus Task',
-  cancelado: 'Recusada/cancelada no Luxus Task',
 };
 
 const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|bmp|heic)$/i;
@@ -481,6 +478,7 @@ export function SaleDetailDialog({
 }: SaleDetailDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { notifications, markSaleRemindersRead } = useNotifications();
   const isPartnerScoped = isPartnerScopedUser(user);
   const [loading, setLoading] = useState(false);
   const [sale, setSale] = useState<SaleDetail | null>(null);
@@ -545,6 +543,18 @@ export function SaleDetailDialog({
     const timer = window.setInterval(() => void refresh(), 10_000);
     return () => { stopped = true; window.clearInterval(timer); };
   }, [open, saleId, sale?.taskProtocol]);
+
+  useEffect(() => {
+    if (!open || !saleId) return;
+    const reminder = notifications.find((item) => isTaskReminderNotification(item, saleId));
+    if (!reminder) return;
+    const text = taskReminderText(reminder);
+    if (!text) return;
+    setSale((current) => {
+      if (!current || current.contractCorrectionReason === text) return current;
+      return { ...current, contractCorrectionReason: text };
+    });
+  }, [notifications, open, saleId]);
 
   const handleOpenDocument = async (doc: SaleDocument) => {
     try {
@@ -685,6 +695,10 @@ export function SaleDetailDialog({
     && (sale.taskSyncStatus ?? 'NOT_READY') === 'NOT_READY'
     && !sale.taskProtocol,
   );
+  const reminderUnread = Boolean(
+    sale?.id
+    && notifications.some((item) => !item.isRead && isTaskReminderNotification(item, sale.id)),
+  );
 
   const lineNumber = sale?.newNumber
     ? formatPhone(sale.newNumber)
@@ -747,79 +761,50 @@ export function SaleDetailDialog({
               <TabsContent value="overview" className={TAB_PANEL_CLASS}>
                 <div className="space-y-4 pb-4">
                   <Section title="Luxus Task" className="border-primary/40 bg-primary/5">
-                    <DetailRow
-                      label="Formato do contrato"
-                      value={sale.contractFormat ? CONTRACT_FORMAT_LABELS[sale.contractFormat] : 'Não informado'}
-                    />
                     <DetailRow label="Status" value={saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))} />
-                    {sale.taskDemandId || sale.taskProtocol ? (
-                      <div className="my-3 rounded-md border border-primary/20 bg-background/60 p-3 text-sm text-muted-foreground">
-                        Após o envio ao Luxus Task, a demanda fica sob responsabilidade do Task.
-                        Parceiros e administradores apenas acompanham o andamento; a conclusão da venda chega pelo Task.
-                      </div>
-                    ) : (
-                      <div className="my-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                        Esta venda ainda não foi enviada ao Luxus Task. Após a aprovação e o sync, o Task assume o fluxo completo.
-                      </div>
+                    <DetailRow label="Protocolo" value={sale.taskProtocol} mono />
+                    <DetailRow
+                      label="Contrato"
+                      value={sale.contractFormat ? CONTRACT_FORMAT_LABELS[sale.contractFormat] : undefined}
+                    />
+                    {!sale.taskDemandId && !sale.taskProtocol && (
+                      <p className="py-2 text-sm text-muted-foreground">Ainda não enviada ao Luxus Task.</p>
+                    )}
+                    {sale.taskSyncError && (
+                      <p className="my-2 text-sm text-red-500">{sale.taskSyncError}</p>
                     )}
                     {sale.contractCorrectionReason && (
-                      <div className="my-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
-                        <p className="font-semibold">Mensagem do Luxus Task</p>
-                        <p className="whitespace-pre-wrap">{sale.contractCorrectionReason}</p>
-                      </div>
-                    )}
-                    <div className="my-3">
-                      <Button size="sm" variant="outline" onClick={() => setTab('photos')}>
-                        <FileText className="mr-2 h-4 w-4" />
-                        Abrir documentos
-                      </Button>
-                    </div>
-                    {sale.correctionReason && (
-                      <div className="my-3 rounded-md bg-amber-500/10 p-3 text-sm text-amber-600">
-                        <p className="font-semibold">Correção solicitada</p>
-                        <p>{sale.correctionReason}</p>
-                      </div>
-                    )}
-                  </Section>
-
-                  {(sale.taskProtocol || sale.taskSyncStatus === 'PENDING' || sale.taskSyncError) && (
-                    <Section title="Integração com o Luxus Task">
-                      <DetailRow label="Envio" value={sale.taskSyncStatus === 'SYNCED' ? 'Sincronizado' : sale.taskSyncStatus === 'PENDING' || sale.taskSyncStatus === 'PROCESSING' ? 'Processando em segundo plano' : sale.taskSyncStatus} />
-                      <DetailRow label="Protocolo" value={sale.taskProtocol} mono />
-                      <DetailRow label="Status Task" value={sale.taskStatus ? TASK_STATUS_LABELS[sale.taskStatus] ?? sale.taskStatus : undefined} />
-                      <DetailRow label="Responsável" value={sale.taskResponsibleName} />
-                      <DetailRow label="Último retorno" value={sale.taskLastMessage} />
-                      <DetailRow label="Atendimento agora" value={sale.taskIsBeingEdited
-                        ? `${sale.taskEditorName || sale.taskResponsibleName || 'Responsável'} está editando esta demanda`
-                        : 'Nenhum responsável está editando esta demanda neste momento'} />
-                      {sale.taskIsBeingEdited && <DetailRow label="Atividade" value={sale.taskEditorActivity} />}
-                      {!sale.taskIsBeingEdited && sale.taskEditorLastSeenAt && <DetailRow label="Última presença" value={formatDateTime(sale.taskEditorLastSeenAt)} />}
-                      <DetailRow label="Cliente Task" value={sale.taskClientName} />
-                      <DetailRow
-                        label="Prazo"
-                        value={sale.taskDeadline ? formatDate(sale.taskDeadline) : undefined}
-                      />
-                      {sale.taskSyncError && (
-                        <div className="my-3 space-y-2 rounded-md bg-red-500/10 p-3 text-sm text-red-500">
-                          <p>{sale.taskSyncError}</p>
-                          {canEditSale && (
+                      <div className={`my-2 rounded-md border p-3 text-sm ${reminderUnread ? 'border-amber-500/40 bg-amber-500/10 text-amber-200' : 'border-border bg-background/60 text-foreground'}`}>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <p className="font-semibold">Mensagem do Luxus Task</p>
+                          {reminderUnread && (
                             <Button
                               size="sm"
                               variant="outline"
-                              disabled={workflowBusy}
-                              onClick={() => {
-                                onOpenChange(false);
-                                onEdit?.(sale.id);
-                              }}
+                              className="h-7 px-2 text-xs"
+                              onClick={() => void markSaleRemindersRead(sale.id)}
                             >
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Editar dados e CPF
+                              <Check className="mr-1 h-3.5 w-3.5" />
+                              Marcar como lida
                             </Button>
                           )}
                         </div>
-                      )}
-                    </Section>
-                  )}
+                        <p className="whitespace-pre-wrap">{sale.contractCorrectionReason}</p>
+                      </div>
+                    )}
+                    {sale.correctionReason && (
+                      <p className="my-2 text-sm text-amber-600">Correção: {sale.correctionReason}</p>
+                    )}
+                    <div className="py-2">
+                      <button
+                        type="button"
+                        className="text-sm font-medium text-primary hover:underline"
+                        onClick={() => setTab('photos')}
+                      >
+                        Ver documentos
+                      </button>
+                    </div>
+                  </Section>
                   {sale.status === SaleStatus.DOCUMENTS_PENDING &&
                     sale.requiredDocuments &&
                     sale.requiredDocuments.length > 0 && (

@@ -43,6 +43,7 @@ interface NotificationsContextValue {
   refresh: () => Promise<void>;
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
+  markSaleRemindersRead: (saleId: string) => Promise<void>;
 }
 
 const ALERT_EVENTS = new Set(['TASK_REMINDER', 'SALE_COMPLETED_BY_TASK']);
@@ -52,6 +53,16 @@ const NotificationsContext = createContext<NotificationsContextValue | null>(nul
 function isAlertEvent(data?: Record<string, unknown> | null): boolean {
   const event = data?.event;
   return typeof event === 'string' && ALERT_EVENTS.has(event);
+}
+
+export function isTaskReminderNotification(notification: NotificationItem, saleId?: string): boolean {
+  if (notification.data?.event !== 'TASK_REMINDER') return false;
+  if (!saleId) return true;
+  return String(notification.data?.saleId ?? '') === saleId;
+}
+
+export function taskReminderText(notification: NotificationItem): string {
+  return String(notification.data?.reminderMessage ?? '').trim();
 }
 
 export function getNotificationPath(data?: Record<string, unknown> | null): string | null {
@@ -136,6 +147,12 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setUnreadCount(0);
   }, []);
 
+  const markSaleRemindersRead = useCallback(async (saleId: string) => {
+    const unread = notifications.filter((item) => !item.isRead && isTaskReminderNotification(item, saleId));
+    if (!unread.length) return;
+    await Promise.all(unread.map((item) => markAsRead(item.id)));
+  }, [markAsRead, notifications]);
+
   useEffect(() => {
     initialAlertsCheckedRef.current = false;
     shownAlertIdsRef.current = new Set();
@@ -205,8 +222,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       refresh,
       markAsRead,
       markAllAsRead,
+      markSaleRemindersRead,
     }),
-    [notifications, unreadCount, loading, refresh, markAsRead, markAllAsRead],
+    [notifications, unreadCount, loading, refresh, markAsRead, markAllAsRead, markSaleRemindersRead],
   );
 
   return (
@@ -216,9 +234,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         alert={alert}
         onClose={() => setAlert(null)}
         onOpenSale={(path) => {
-          const alertId = alert?.id;
           setAlert(null);
-          if (alertId) void markAsRead(alertId).catch(() => undefined);
           router.push(path);
         }}
       />
