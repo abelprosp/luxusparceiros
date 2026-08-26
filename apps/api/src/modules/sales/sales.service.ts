@@ -593,7 +593,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       && existing.taskDemandId
       && this.taskIntegration.isConfigured()
     ) {
-      const deadlineDay = nextTaskDeadline.toISOString().slice(0, 10);
+      const deadlineDay = this.formatTaskDeadlineDate(nextTaskDeadline);
       setImmediate(() => {
         void this.taskIntegration.updateDemandDetails(id, { deadline: deadlineDay }).catch((error) => {
           console.warn('[sales] Falha ao atualizar prazo no Luxus Task', error);
@@ -982,9 +982,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (dto.notes !== undefined) pushChange('Observações', existing.notes, dto.notes);
     if (dto.taskDeadline !== undefined) {
       const before = existing.taskDeadline
-        ? new Date(existing.taskDeadline).toISOString().slice(0, 10)
+        ? this.formatTaskDeadlineDate(existing.taskDeadline)
         : null;
-      const after = new Date(dto.taskDeadline).toISOString().slice(0, 10);
+      const after = this.formatTaskDeadlineDate(dto.taskDeadline);
       pushChange('Prazo Luxus Task', before, after);
     }
 
@@ -1004,18 +1004,41 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
   }
 
   private parseTaskDeadlineOrThrow(value: string) {
-    const deadlineDate = new Date(value);
-    if (Number.isNaN(deadlineDate.getTime())) {
+    const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) {
       throw new BadRequestException('Prazo inválido');
     }
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!year || month < 1 || month > 12 || day < 1 || day > 31) {
+      throw new BadRequestException('Prazo inválido');
+    }
+    // Meio-dia UTC evita o dia "virar" por fuso ao gravar/ler só a data.
+    const deadlineDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const deadlineDay = new Date(deadlineDate);
-    deadlineDay.setHours(0, 0, 0, 0);
-    if (deadlineDay < today) {
+    const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const deadlineUtc = Date.UTC(year, month - 1, day);
+    if (deadlineUtc < todayUtc) {
       throw new BadRequestException('O prazo não pode ser anterior à data de hoje');
     }
     return deadlineDate;
+  }
+
+  /** Extrai yyyy-MM-dd sem deslocar o dia por timezone. */
+  private formatTaskDeadlineDate(value: Date | string) {
+    if (typeof value === 'string') {
+      const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('Prazo inválido');
+    }
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(date.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
   private assertAdmin(user: AuthUser) {
@@ -1248,7 +1271,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
             clientName: sale.taskClientName ?? sale.client.name,
             clientDocumentType: (sale.taskClientDocumentType as 'pf' | 'pj' | null) ?? undefined,
             clientDocument: sale.taskClientDocument ?? sale.client.document?.replace(/\D/g, '') ?? undefined,
-            deadline: sale.taskDeadline.toISOString().slice(0, 10),
+            deadline: this.formatTaskDeadlineDate(sale.taskDeadline),
             subject,
             description,
             localProtocol: sale.protocol,

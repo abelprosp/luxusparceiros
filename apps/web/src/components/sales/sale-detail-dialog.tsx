@@ -28,7 +28,7 @@ import {
   saleWorkflowTurn,
   saleWorkflowTurnLabel,
 } from '@luxus/types';
-import { formatCurrency, formatDateTime, formatDocument, formatPhone } from '@luxus/utils';
+import { formatCurrency, formatDate, formatDateTime, formatDocument, formatPhone } from '@luxus/utils';
 import {
   api,
   checkAuthenticatedFile,
@@ -839,7 +839,10 @@ export function SaleDetailDialog({
                       {sale.taskIsBeingEdited && <DetailRow label="Atividade" value={sale.taskEditorActivity} />}
                       {!sale.taskIsBeingEdited && sale.taskEditorLastSeenAt && <DetailRow label="Última presença" value={formatDateTime(sale.taskEditorLastSeenAt)} />}
                       <DetailRow label="Cliente Task" value={sale.taskClientName} />
-                      <DetailRow label="Prazo" value={sale.taskDeadline ? formatDateTime(sale.taskDeadline) : undefined} />
+                      <DetailRow
+                        label="Prazo"
+                        value={sale.taskDeadline ? formatDate(sale.taskDeadline) : undefined}
+                      />
                       {sale.taskSyncError && (
                         <div className="my-3 space-y-2 rounded-md bg-red-500/10 p-3 text-sm text-red-500">
                           <p>{sale.taskSyncError}</p>

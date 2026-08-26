@@ -53,11 +53,13 @@ interface SaleDetail {
 
 function toDateInputValue(value?: string | null) {
   if (!value) return '';
+  const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
 
@@ -191,9 +193,7 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
           chipIccid: chipIccid || undefined,
           contractFormat: contractFormat || undefined,
           notes,
-          ...(taskDeadline
-            ? { taskDeadline: new Date(`${taskDeadline}T23:59:59`).toISOString() }
-            : {}),
+          ...(taskDeadline ? { taskDeadline } : {}),
           client: {
             ...client,
             email: client.email || undefined,

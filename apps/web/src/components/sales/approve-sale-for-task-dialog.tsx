@@ -87,11 +87,14 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
         const d = String(suggestedDeadline.getDate()).padStart(2, '0');
         const existingDeadline = saleData.taskDeadline
           ? (() => {
-              const date = new Date(saleData.taskDeadline);
+              const raw = String(saleData.taskDeadline);
+              const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+              if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+              const date = new Date(raw);
               if (Number.isNaN(date.getTime())) return '';
-              const ey = date.getFullYear();
-              const em = String(date.getMonth() + 1).padStart(2, '0');
-              const ed = String(date.getDate()).padStart(2, '0');
+              const ey = date.getUTCFullYear();
+              const em = String(date.getUTCMonth() + 1).padStart(2, '0');
+              const ed = String(date.getUTCDate()).padStart(2, '0');
               return `${ey}-${em}-${ed}`;
             })()
           : '';
@@ -230,7 +233,7 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
           clientName: clientMode === 'task' ? selectedClient?.name : clientName,
           clientDocumentType: clientMode === 'manual' ? documentType : undefined,
           clientDocument: clientMode === 'manual' ? document : undefined,
-          deadline: new Date(`${deadline}T23:59:59`).toISOString(),
+          deadline,
           priority,
           notes: notes || undefined,
         },
