@@ -643,9 +643,8 @@ export class TaskIntegrationService {
     if (dto.status === 'cancelado') {
       return SaleContractStage.TASK_PROCESSING;
     }
-    return current === SaleContractStage.PRE_REVIEW
-      ? SaleContractStage.TASK_PROCESSING
-      : (current === SaleContractStage.COMPLETED ? current : SaleContractStage.TASK_PROCESSING);
+    // Após o envio, a demanda fica com o Task até FINALIZAR VENDA no Parceiros.
+    return SaleContractStage.TASK_PROCESSING;
   }
 
   private resolveIncomingAttachmentMeta(
