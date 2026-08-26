@@ -6,9 +6,11 @@ import {
   Download,
   ExternalLink,
   FileText,
+  HelpCircle,
   ImageIcon,
   Loader2,
   Pencil,
+  RefreshCw,
   Upload,
   UploadCloud,
   X,
@@ -175,6 +177,7 @@ interface SaleDetailDialogProps {
   onOpenChange: (open: boolean) => void;
   onResubmitDocuments?: (saleId: string) => void;
   onEdit?: (saleId: string) => void;
+  initialTab?: 'overview' | 'photos' | 'details';
 }
 
 const TAB_PANEL_CLASS = 'mt-0 h-[calc(90vh-13.5rem)] overflow-y-auto px-5 py-4 focus-visible:outline-none sm:px-6';
@@ -196,14 +199,52 @@ function DetailRow({ label, value, mono }: { label: string; value?: React.ReactN
   );
 }
 
-function Section({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
+function Section({
+  title,
+  children,
+  className,
+  actions,
+}: {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+  actions?: React.ReactNode;
+}) {
   return (
     <section className={cn('rounded-xl border bg-card/50', className)}>
-      <div className="border-b px-4 py-3">
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
         <h3 className="text-sm font-semibold">{title}</h3>
+        {actions ? <div className="flex items-center gap-0.5">{actions}</div> : null}
       </div>
       <div className="px-4 py-1">{children}</div>
     </section>
+  );
+}
+
+function HeaderIconButton({
+  label,
+  disabled,
+  busy,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  busy?: boolean;
+  onClick?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
+    >
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : children}
+    </button>
   );
 }
 
@@ -436,6 +477,7 @@ export function SaleDetailDialog({
   onOpenChange,
   onResubmitDocuments,
   onEdit,
+  initialTab = 'overview',
 }: SaleDetailDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -459,8 +501,6 @@ export function SaleDetailDialog({
     try {
       const data = await api<SaleDetail>(`/sales/${saleId}`);
       setSale(data);
-      const docCount = data.documents?.length ?? 0;
-      setTab(docCount > 0 ? 'photos' : 'overview');
     } catch (err) {
       setSale(null);
       toast({
@@ -474,13 +514,16 @@ export function SaleDetailDialog({
   }, [saleId, toast]);
 
   useEffect(() => {
-    if (open && saleId) load();
+    if (open && saleId) {
+      setTab(initialTab);
+      load();
+    }
     if (!open) {
       setSale(null);
       setLightbox(null);
       setTab('overview');
     }
-  }, [open, saleId, load]);
+  }, [open, saleId, initialTab, load]);
 
   useEffect(() => {
     if (!open || !saleId || !sale?.taskProtocol) return;
@@ -575,6 +618,48 @@ export function SaleDetailDialog({
     }
   };
 
+  const linkedToTask = Boolean(sale?.taskDemandId || sale?.taskProtocol);
+
+  const pullTaskAttachments = async () => {
+    if (!sale?.id || !linkedToTask) return;
+    setWorkflowBusy(true);
+    try {
+      const updated = await api<SaleDetail>(`/sales/${sale.id}/refresh-task-status`, { method: 'POST' });
+      setSale(updated);
+      toast({
+        title: 'Arquivos atualizados',
+        description: 'Os anexos do Luxus Task foram sincronizados nesta venda.',
+        variant: 'success',
+      });
+    } catch (err) {
+      toast({
+        title: 'Não foi possível atualizar os arquivos',
+        description: err instanceof Error ? err.message : 'Falha na requisição',
+        variant: 'destructive',
+      });
+    } finally {
+      setWorkflowBusy(false);
+    }
+  };
+
+  const taskFilesHeaderActions = linkedToTask ? (
+    <>
+      <HeaderIconButton
+        label="Ajuda: o Luxus Task anexa o contrato e os arquivos na demanda. Eles aparecem nesta tela. Use a seta para puxar a versão mais recente."
+      >
+        <HelpCircle className="h-4 w-4" />
+      </HeaderIconButton>
+      <HeaderIconButton
+        label="Atualizar arquivos anexados no Luxus Task"
+        disabled={workflowBusy}
+        busy={workflowBusy}
+        onClick={() => void pullTaskAttachments()}
+      >
+        <RefreshCw className="h-4 w-4" />
+      </HeaderIconButton>
+    </>
+  ) : null;
+
   const clientAddress = useMemo(() => {
     if (!sale?.client) return '';
     return [
@@ -593,12 +678,6 @@ export function SaleDetailDialog({
   const imageDocs = sale?.documents?.filter(isImageDocument) ?? [];
   const otherDocs = sale?.documents?.filter((d) => !isImageDocument(d)) ?? [];
   const docCount = sale?.documents?.length ?? 0;
-  const blankContract = sale?.documents
-    ?.filter((document) => document.purpose === DocumentPurpose.BLANK_CONTRACT)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-  const signedContract = sale?.documents
-    ?.filter((document) => document.purpose === DocumentPurpose.SIGNED_CONTRACT)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
   /** Contrato assinado é tratado no Luxus Task — parceiros não anexam por aqui. */
   const neverSentToTask = Boolean(
     sale
@@ -684,9 +763,9 @@ export function SaleDetailDialog({
                       </div>
                     )}
                     {sale.contractCorrectionReason && (
-                      <div className="my-3 rounded-md bg-red-500/10 p-3 text-sm text-red-500">
-                        <p className="font-semibold">Aviso do Task</p>
-                        <p>{sale.contractCorrectionReason}</p>
+                      <div className="my-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+                        <p className="font-semibold">Mensagem do Luxus Task</p>
+                        <p className="whitespace-pre-wrap">{sale.contractCorrectionReason}</p>
                       </div>
                     )}
                     <div className="my-3">
@@ -723,47 +802,20 @@ export function SaleDetailDialog({
                       {sale.taskSyncError && (
                         <div className="my-3 space-y-2 rounded-md bg-red-500/10 p-3 text-sm text-red-500">
                           <p>{sale.taskSyncError}</p>
-                          <div className="flex flex-wrap gap-2">
-                            {canEditSale && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={workflowBusy}
-                                onClick={() => {
-                                  onOpenChange(false);
-                                  onEdit?.(sale.id);
-                                }}
-                              >
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Editar dados e CPF
-                              </Button>
-                            )}
+                          {canEditSale && (
                             <Button
                               size="sm"
                               variant="outline"
                               disabled={workflowBusy}
-                              onClick={() => void runWorkflowAction('retry-task-sync')}
+                              onClick={() => {
+                                onOpenChange(false);
+                                onEdit?.(sale.id);
+                              }}
                             >
-                              Sincronizar arquivos
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Editar dados e CPF
                             </Button>
-                          </div>
-                        </div>
-                      )}
-                      {!sale.taskSyncError && sale.taskProtocol && (
-                        <div className="my-3 space-y-2 rounded-md border border-primary/25 bg-primary/5 p-3">
-                          <p className="text-sm text-muted-foreground">
-                            Após a aprovação, o sistema reenvia os anexos automaticamente.
-                            Se algum arquivo não aparecer no Luxus Task, sincronize os arquivos aqui.
-                          </p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={workflowBusy}
-                            onClick={() => void runWorkflowAction('retry-task-sync')}
-                          >
-                            {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            Sincronizar arquivos
-                          </Button>
+                          )}
                         </div>
                       )}
                     </Section>
@@ -805,13 +857,10 @@ export function SaleDetailDialog({
                     <SummaryCard label="Comissão" value={formatCurrency(Number(sale.commissionValue))} />
                   )}
 
-                  {(sale.documents?.filter((d) => !d.externalId?.startsWith('task:')).length ?? 0) > 0 && (
-                    <Section title="Prévia dos documentos">
+                  {docCount > 0 && (
+                    <Section title="Prévia dos documentos" actions={taskFilesHeaderActions}>
                       <div className="grid grid-cols-2 gap-2 py-3 sm:grid-cols-4">
-                        {(sale.documents ?? [])
-                          .filter((d) => !d.externalId?.startsWith('task:'))
-                          .slice(0, 6)
-                          .map((doc) => (
+                        {(sale.documents ?? []).slice(0, 6).map((doc) => (
                           <DocumentPreview
                             key={doc.id}
                             doc={doc}
@@ -888,49 +937,13 @@ export function SaleDetailDialog({
 
               <TabsContent value="photos" className={TAB_PANEL_CLASS}>
                 <div className="space-y-4 pb-4">
-                  {(sale.taskProtocol || sale.taskSyncError) && (
-                    <div className="space-y-2 rounded-md border border-primary/25 bg-primary/5 p-3">
-                      <p className="text-sm font-medium">Sincronizar documentos com o Luxus Task</p>
-                      <p className="text-xs text-muted-foreground">
-                        Sincroniza a venda e os anexos desta aba com a demanda correspondente no Luxus Task.
-                      </p>
-                      {sale.taskSyncError && (
-                        <p className="text-sm text-red-500">{sale.taskSyncError}</p>
-                      )}
-                      <div className="flex flex-wrap gap-2">
-                        {canEditSale && sale.taskSyncError && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={workflowBusy}
-                            onClick={() => {
-                              onOpenChange(false);
-                              onEdit?.(sale.id);
-                            }}
-                          >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Editar dados e CPF
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={workflowBusy}
-                          onClick={() => void runWorkflowAction('retry-task-sync')}
-                        >
-                          {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                          Sincronizar arquivos
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                  <Section title="Luxus Task" className="border-primary/40 bg-primary/5">
+                  <Section title="Luxus Task" className="border-primary/40 bg-primary/5" actions={taskFilesHeaderActions}>
                     <DetailRow label="Status" value={saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))} />
-                    <div className="my-3 rounded-md border border-primary/20 bg-background/60 p-3 text-sm text-muted-foreground">
-                      {sale.taskDemandId || sale.taskProtocol
-                        ? 'O Luxus Task é o dono desta demanda. Aqui você acompanha o status e baixa anexos sincronizados; a conclusão da venda vem do Task.'
-                        : 'Enquanto a venda não for enviada ao Task, o administrador pode finalizar apenas no Luxus Parceiros. Depois do envio, o Task assume tudo.'}
-                    </div>
+                    {sale.taskSyncError && (
+                      <div className="my-3 rounded-md bg-red-500/10 p-3 text-sm text-red-500">
+                        <p>{sale.taskSyncError}</p>
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-2 py-3">
                       {!isPartnerScoped
                         && neverSentToTask
@@ -977,44 +990,6 @@ export function SaleDetailDialog({
                         </Button>
                       )}
                     </div>
-
-                    {(blankContract || signedContract) && (
-                      <div className="mt-2 space-y-3 rounded-md border border-dashed border-primary/40 bg-background/60 p-3">
-                        <p className="text-sm font-medium">Anexos sincronizados do Task</p>
-                        <p className="text-xs text-muted-foreground">
-                          Contratos e assinaturas são tratados no Luxus Task. Aqui você só baixa os arquivos já sincronizados.
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {blankContract && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={workflowBusy}
-                              onClick={() => void downloadAuthenticatedUpload(blankContract.url, blankContract.name)}
-                            >
-                              <Download className="mr-2 h-4 w-4" />
-                              Baixar contrato
-                            </Button>
-                          )}
-                          {signedContract && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={workflowBusy}
-                              onClick={() => void downloadAuthenticatedUpload(signedContract.url, signedContract.name)}
-                            >
-                              <Download className="mr-2 h-4 w-4" />
-                              Baixar contrato assinado
-                            </Button>
-                          )}
-                        </div>
-                        {signedContract && (
-                          <p className="text-xs text-muted-foreground">
-                            Último contrato assinado: <span className="font-medium text-foreground">{signedContract.name}</span>
-                          </p>
-                        )}
-                      </div>
-                    )}
                   </Section>
 
                   {docCount === 0 ? (

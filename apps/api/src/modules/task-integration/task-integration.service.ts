@@ -533,12 +533,13 @@ export class TaskIntegrationService {
         taskEditorName: dto.editorName || null,
         taskEditorActivity: dto.editorActivity || null,
         taskEditorLastSeenAt: dto.editorLastSeenAt ? new Date(dto.editorLastSeenAt) : null,
-        taskLastMessage: resolution || null,
+        taskLastMessage: reminderMessage || resolution || sale.taskLastMessage,
         contractStage: finalStage,
         contractStageUpdatedAt: stageChanged ? new Date() : undefined,
         turnRequestFrom: null,
         turnRequestReason: null,
         turnRequestAt: null,
+        ...(reminderMessage ? { contractCorrectionReason: reminderMessage } : {}),
         ...(shouldComplete ? {
           status: SaleStatus.ACTIVATED,
           approvedAt: sale.approvedAt ?? new Date(),
@@ -604,7 +605,7 @@ export class TaskIntegrationService {
               message: `${sale.protocol}: ${reminderMessage}`,
               data: {
                 saleId: sale.id,
-                path: `/vendas?sale=${sale.id}`,
+                path: `/vendas?sale=${sale.id}&message=1`,
                 event: 'TASK_REMINDER',
                 reminderMessage,
               },

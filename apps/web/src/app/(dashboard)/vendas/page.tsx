@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Search, Download, ShoppingCart, Check, X, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Search, Download, ShoppingCart, Check, X, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2, MessageSquare, AlertTriangle, ImageIcon } from 'lucide-react';
 import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS, saleContractStageLabel, saleTaskUserName } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
@@ -34,6 +34,7 @@ interface Sale {
   status: SaleStatus;
   reviewStatus: SaleReviewStatus;
   correctionReason?: string;
+  contractCorrectionReason?: string | null;
   taskProtocol?: string;
   taskStatus?: string;
   taskSyncStatus?: string;
@@ -66,6 +67,29 @@ const DOC_OPTIONS = [
   { type: DocumentType.SIGNATURE, label: 'Assinatura' },
 ];
 
+function hasTaskMessage(sale: { contractCorrectionReason?: string | null }) {
+  return Boolean(sale.contractCorrectionReason?.trim());
+}
+
+function TaskMessageBadge({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      title="Há uma mensagem do Luxus Task. Clique para ver."
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      className="task-reminder-pulse inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20 text-amber-400"
+    >
+      <span className="relative inline-flex">
+        <MessageSquare className="h-4 w-4" />
+        <AlertTriangle className="absolute -right-1.5 -top-1.5 h-3 w-3 fill-amber-400 text-amber-200" />
+      </span>
+    </button>
+  );
+}
+
 export default function VendasPage() {
   const [items, setItems] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,12 +105,15 @@ export default function VendasPage() {
   const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
   const [resubmitSaleId, setResubmitSaleId] = useState<string | null>(null);
   const [detailSaleId, setDetailSaleId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<'overview' | 'photos' | 'details'>('overview');
+  const [messageSale, setMessageSale] = useState<Sale | null>(null);
   const [editSaleId, setEditSaleId] = useState<string | null>(null);
   const [approveSaleId, setApproveSaleId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Sale | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const openedFromQueryRef = useRef(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const isPartner = isPartnerUser(user);
@@ -102,6 +129,10 @@ export default function VendasPage() {
     && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus);
   const canReview = (sale: Sale) =>
     [SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW].includes(sale.reviewStatus);
+  const openDetail = (saleId: string, tab: 'overview' | 'photos' = 'overview') => {
+    setDetailTab(tab);
+    setDetailSaleId(saleId);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -128,9 +159,24 @@ export default function VendasPage() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    const saleId = new URLSearchParams(window.location.search).get('sale');
-    if (saleId) setDetailSaleId(saleId);
-  }, []);
+    if (openedFromQueryRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const saleId = params.get('sale');
+    if (!saleId) return;
+    if (params.get('message') === '1') {
+      if (!items.length) return;
+      openedFromQueryRef.current = true;
+      const match = items.find((item) => item.id === saleId);
+      if (match && hasTaskMessage(match)) {
+        setMessageSale(match);
+        return;
+      }
+    } else {
+      openedFromQueryRef.current = true;
+    }
+    setDetailTab('overview');
+    setDetailSaleId(saleId);
+  }, [items]);
 
   const handleApprove = async (sale: Sale) => {
     setApproveSaleId(sale.id);
@@ -303,7 +349,7 @@ export default function VendasPage() {
                     <TableRow
                       key={s.id}
                       className="cursor-pointer"
-                      onClick={() => setDetailSaleId(s.id)}
+                      onClick={() => openDetail(s.id)}
                     >
                       {!isPartner && canDeleteSales && <TableCell onClick={(event) => event.stopPropagation()}>
                         <Checkbox
@@ -314,7 +360,12 @@ export default function VendasPage() {
                             : selectedIds.filter((id) => id !== s.id))}
                         />
                       </TableCell>}
-                      <TableCell className="font-mono text-sm">{s.protocol}</TableCell>
+                      <TableCell className="font-mono text-sm">
+                        <div className="flex items-center gap-2">
+                          <span>{s.protocol}</span>
+                          {hasTaskMessage(s) && <TaskMessageBadge onClick={() => setMessageSale(s)} />}
+                        </div>
+                      </TableCell>
                       {!isPartner && <TableCell>{s.partner?.name || '-'}</TableCell>}
                       <TableCell>{s.branch?.name || 'Matriz'}</TableCell>
                       <TableCell>{s.client?.name || '-'}</TableCell>
@@ -342,9 +393,14 @@ export default function VendasPage() {
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         {isPartner ? (
                           <div className="flex justify-end gap-2">
-                            <Button size="sm" variant="ghost" onClick={() => setDetailSaleId(s.id)}>
+                            <Button size="sm" variant="ghost" onClick={() => openDetail(s.id)}>
                               <Eye className="mr-2 h-4 w-4" /> Ver
                             </Button>
+                            {hasTaskMessage(s) && (
+                              <Button size="sm" variant="outline" onClick={() => setMessageSale(s)}>
+                                <MessageSquare className="mr-2 h-4 w-4" /> Ver mensagem
+                              </Button>
+                            )}
                             {canEdit(s) && (
                               <Button size="sm" variant="outline" onClick={() => setEditSaleId(s.id)}>
                                 <Pencil className="mr-2 h-4 w-4" /> Editar
@@ -362,9 +418,17 @@ export default function VendasPage() {
                               <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => setDetailSaleId(s.id)}>
+                              <DropdownMenuItem onClick={() => openDetail(s.id)}>
                                 <Eye className="mr-2 h-4 w-4" /> Ver detalhes
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => openDetail(s.id, 'photos')}>
+                                <ImageIcon className="mr-2 h-4 w-4" /> Documentos
+                              </DropdownMenuItem>
+                              {hasTaskMessage(s) && (
+                                <DropdownMenuItem onClick={() => setMessageSale(s)}>
+                                  <MessageSquare className="mr-2 h-4 w-4" /> Ver mensagem
+                                </DropdownMenuItem>
+                              )}
                               {canEdit(s) && (
                                 <DropdownMenuItem onClick={() => setEditSaleId(s.id)}>
                                   <Pencil className="mr-2 h-4 w-4" /> Editar venda
@@ -411,16 +475,26 @@ export default function VendasPage() {
                     {(s.taskSyncError || s.taskSyncStatus === 'RETRY') && (
                       <Badge variant="destructive">Sync com falha</Badge>
                     )}
+                    {hasTaskMessage(s) && (
+                      <Badge variant="warning" className="cursor-pointer" onClick={() => setMessageSale(s)}>
+                        Mensagem do Task
+                      </Badge>
+                    )}
                     {!isPartner && s.partner?.name ? (
                       <Badge variant="outline">{s.partner.name}</Badge>
                     ) : null}
                     <Badge variant="outline">{s.branch?.name || 'Matriz'}</Badge>
                   </>
                 }
-                onClick={() => setDetailSaleId(s.id)}
+                onClick={() => openDetail(s.id)}
                 actions={
                   isPartner ? (
                     <div className="flex flex-col gap-1">
+                      {hasTaskMessage(s) && (
+                        <Button size="sm" variant="outline" onClick={() => setMessageSale(s)}>
+                          <MessageSquare className="h-4 w-4" />
+                        </Button>
+                      )}
                       {s.status === SaleStatus.DOCUMENTS_PENDING && (
                         <Button size="sm" variant="outline" onClick={() => setResubmitSaleId(s.id)}>
                           <Upload className="h-4 w-4" />
@@ -438,9 +512,17 @@ export default function VendasPage() {
                         <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setDetailSaleId(s.id)}>
+                        <DropdownMenuItem onClick={() => openDetail(s.id)}>
                           <Eye className="mr-2 h-4 w-4" /> Ver detalhes
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openDetail(s.id, 'photos')}>
+                          <ImageIcon className="mr-2 h-4 w-4" /> Documentos
+                        </DropdownMenuItem>
+                        {hasTaskMessage(s) && (
+                          <DropdownMenuItem onClick={() => setMessageSale(s)}>
+                            <MessageSquare className="mr-2 h-4 w-4" /> Ver mensagem
+                          </DropdownMenuItem>
+                        )}
                         {canEdit(s) && (
                           <DropdownMenuItem onClick={() => setEditSaleId(s.id)}>
                             <Pencil className="mr-2 h-4 w-4" /> Editar venda
@@ -538,6 +620,7 @@ export default function VendasPage() {
       <SaleDetailDialog
         saleId={detailSaleId}
         open={!!detailSaleId}
+        initialTab={detailTab}
         onOpenChange={(open) => { if (!open) setDetailSaleId(null); }}
         onEdit={(saleId) => {
           setDetailSaleId(null);
@@ -548,6 +631,32 @@ export default function VendasPage() {
           setResubmitSaleId(saleId);
         }}
       />
+
+      <Dialog open={!!messageSale} onOpenChange={(open) => { if (!open) setMessageSale(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mensagem do Luxus Task</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <p className="text-xs text-muted-foreground">{messageSale?.protocol}</p>
+            <p className="whitespace-pre-wrap text-sm">{messageSale?.contractCorrectionReason}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMessageSale(null)}>Fechar</Button>
+            {messageSale && (
+              <Button
+                onClick={() => {
+                  const id = messageSale.id;
+                  setMessageSale(null);
+                  openDetail(id);
+                }}
+              >
+                Abrir venda
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <EditSaleDialog
         saleId={editSaleId}
