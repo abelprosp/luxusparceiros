@@ -149,16 +149,9 @@ export class SalesController {
     return this.salesService.refreshTaskStatus(id, user);
   }
 
-  @Post(':id/finalize-after-task-approval')
-  @RequirePermissions(PERMISSIONS.SALES_WRITE)
-  @ApiOperation({ summary: 'Finalizar venda após aprovação do contrato no Luxus Task' })
-  finalizeAfterTaskApproval(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.salesService.finalizeAfterTaskApproval(id, user);
-  }
-
   @Post(':id/force-finalize')
   @RequirePermissions(PERMISSIONS.SALES_WRITE)
-  @ApiOperation({ summary: 'Finalizar venda no Luxus Parceiros mesmo com demanda parada no Luxus Task' })
+  @ApiOperation({ summary: 'Finalizar venda local que nunca foi enviada ao Luxus Task' })
   forceFinalize(
     @Param('id') id: string,
     @Body() dto: ForceFinalizeSaleDto,
@@ -176,71 +169,6 @@ export class SalesController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.salesService.reopen(id, user, dto.reason);
-  }
-
-  @Post(':id/release-blank-contract')
-  @RequirePermissions(PERMISSIONS.SALES_WRITE)
-  @ApiOperation({ summary: 'Administrador libera contrato em branco para assinatura' })
-  releaseBlankContract(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.salesService.releaseBlankContract(id, user);
-  }
-
-  @Post(':id/workflow-turn')
-  @RequirePermissions(PERMISSIONS.SALES_WRITE)
-  @ApiOperation({ summary: 'Altera a vez do fluxo entre Luxus Task, Parceiros e Parceiro' })
-  setWorkflowTurn(
-    @Param('id') id: string,
-    @Body() body: { turn: 'luxus_task' | 'luxus_parceiros' | 'parceiro' },
-    @CurrentUser() user: AuthUser,
-  ) {
-    return this.salesService.setWorkflowTurn(id, body.turn, user);
-  }
-
-  @Post(':id/request-workflow-turn')
-  @RequirePermissions(PERMISSIONS.SALES_WRITE)
-  @ApiOperation({ summary: 'Solicita a vez do fluxo com justificativa' })
-  requestWorkflowTurn(
-    @Param('id') id: string,
-    @Body() body: { reason?: string },
-    @CurrentUser() user: AuthUser,
-  ) {
-    return this.salesService.requestWorkflowTurn(id, body.reason || '', user);
-  }
-
-  @Post(':id/respond-workflow-turn')
-  @RequirePermissions(PERMISSIONS.SALES_WRITE)
-  @ApiOperation({ summary: 'Aceita ou recusa um pedido de vez' })
-  respondWorkflowTurn(
-    @Param('id') id: string,
-    @Body() body: { accept?: boolean },
-    @CurrentUser() user: AuthUser,
-  ) {
-    return this.salesService.respondWorkflowTurn(id, Boolean(body.accept), user);
-  }
-
-  @Post(':id/submit-signed-contract')
-  @RequirePermissions(PERMISSIONS.SALES_WRITE)
-  @ApiOperation({ summary: 'Parceiro envia o contrato assinado para conferência' })
-  submitSignedContract(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.salesService.submitSignedContract(id, user);
-  }
-
-  @Post(':id/approve-signed-contract')
-  @RequirePermissions(PERMISSIONS.SALES_WRITE)
-  @ApiOperation({ summary: 'Administrador aprova o contrato assinado e o devolve ao Luxus Task' })
-  approveSignedContract(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.salesService.approveSignedContract(id, user);
-  }
-
-  @Post(':id/request-contract-correction')
-  @RequirePermissions(PERMISSIONS.SALES_WRITE)
-  @ApiOperation({ summary: 'Administrador devolve o contrato assinado para correção' })
-  requestContractCorrection(
-    @Param('id') id: string,
-    @Body() dto: RequestContractCorrectionDto,
-    @CurrentUser() user: AuthUser,
-  ) {
-    return this.salesService.requestContractCorrection(id, dto, user);
   }
 
   @Post(':id/reject')

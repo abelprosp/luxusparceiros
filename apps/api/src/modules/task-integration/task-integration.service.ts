@@ -8,9 +8,10 @@ import { ConfigService } from '@nestjs/config';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, extname, join } from 'path';
 import { randomUUID } from 'crypto';
-import { SaleContractStage, SaleTaskSyncStatus } from '@prisma/client';
+import { SaleContractStage, SaleReviewStatus, SaleStatus, SaleTaskSyncStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { CommissionsService } from '@/modules/commissions/commissions.service';
 import { TaskDemandCallbackDto, CreateTaskDemandInput } from './dto/task-integration.dto';
 
 export interface TaskResponsible {
@@ -50,6 +51,7 @@ export class TaskIntegrationService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly commissions: CommissionsService,
   ) {}
 
   isConfigured(): boolean {
@@ -276,46 +278,53 @@ export class TaskIntegrationService {
     const lineNumber = formatPhone(sale.newNumber);
 
     const description = [
-      '=== DADOS DA VENDA (Luxus Parceiros) ===',
-      `Protocolo: ${sale.protocol}`,
-      `Parceiro: ${sale.partner.name}`,
-      `Loja: ${sale.branch?.name ?? 'Matriz'}`,
-      `Operadora: ${sale.operator.name}`,
-      `Plano: ${sale.plan.name}`,
-      `Valor: ${formatCurrency(sale.value)}`,
-      sale.commissionValue != null ? `Comissão: ${formatCurrency(sale.commissionValue)}` : null,
-      sale.campaign?.title ? `Campanha: ${sale.campaign.title}` : null,
-      `Registrada por: ${sale.createdBy.name}`,
-      `Formato do contrato: ${contract} (assinatura será obtida no Luxus Task)`,
+      'DADOS DA VENDA Luxus Parceiros',
+      `Protocolo ${sale.protocol}`,
+      `Parceiro ${sale.partner.name}`,
+      `Loja ${sale.branch?.name ?? 'Matriz'}`,
+      `Operadora ${sale.operator.name}`,
+      `Plano ${sale.plan.name}`,
+      `Valor ${formatCurrency(sale.value)}`,
+      sale.commissionValue != null ? `Comissao ${formatCurrency(sale.commissionValue)}` : null,
+      sale.campaign?.title ? `Campanha ${sale.campaign.title}` : null,
+      `Registrada por ${sale.createdBy.name}`,
+      `Formato do contrato ${contract}`,
       '',
-      '=== LINHA / CHIP ===',
-      `Linha do chip: ${lineNumber}`,
-      `Chip virgem: ${sale.isVirginChip ? 'Sim' : 'Não'}`,
-      sale.isVirginChip || sale.chipIccid ? `ICCID: ${sale.chipIccid || '—'}` : null,
-      `Portabilidade: ${sale.isPortability ? 'Sim' : 'Não'}`,
-      sale.isPortability ? `Operadora doadora: ${donorLabels[sale.donorOperator ?? ''] ?? sale.donorOperator ?? '—'}` : null,
-      sale.isPortability ? `Número a ser portado: ${formatPhone(sale.portabilityNumber)}` : null,
+      'LINHA CHIP',
+      `Linha do chip ${lineNumber}`,
+      `Chip virgem ${sale.isVirginChip ? 'Sim' : 'Nao'}`,
+      sale.isVirginChip || sale.chipIccid ? `ICCID ${sale.chipIccid || 'sem ICCID'}` : null,
+      `Portabilidade ${sale.isPortability ? 'Sim' : 'Nao'}`,
+      sale.isPortability ? `Operadora doadora ${donorLabels[sale.donorOperator ?? ''] ?? sale.donorOperator ?? 'sem doadora'}` : null,
+      sale.isPortability ? `Numero a ser portado ${formatPhone(sale.portabilityNumber)}` : null,
       '',
-      '=== CLIENTE ===',
-      `Nome: ${sale.client.name}`,
-      `CPF/CNPJ: ${formatDocument(sale.client.document)}`,
-      sale.client.rg ? `RG: ${sale.client.rg}` : null,
-      sale.client.email ? `E-mail: ${sale.client.email}` : null,
-      `Telefone: ${formatPhone(sale.client.phone)}`,
-      `Endereço: ${address || '—'}`,
+      'CLIENTE',
+      `Nome ${sale.client.name}`,
+      `CPF CNPJ ${formatDocument(sale.client.document)}`,
+      sale.client.rg ? `RG ${sale.client.rg}` : null,
+      sale.client.email ? `Email ${sale.client.email}` : null,
+      `Telefone ${formatPhone(sale.client.phone)}`,
+      `Endereco ${address || 'sem endereco'}`,
       sale.notes ? '' : null,
-      sale.notes ? '=== OBSERVAÇÕES DA VENDA ===' : null,
+      sale.notes ? 'OBSERVACOES DA VENDA' : null,
       sale.notes ? sale.notes : null,
     ].filter((line) => line !== null).join('\n');
 
+    const sanitize = (value: string) => value
+      .replace(/[^0-9A-Za-zÀ-ÖØ-öø-ÿ\s]/g, ' ')
+      .replace(/[^\S\n]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    const lineDigits = String(sale.newNumber || '').replace(/\D/g, '') || 'semlinha';
     return {
       id: sale.id,
       protocol: sale.protocol,
       partnerName: sale.partner.name,
       branchName: sale.branch?.name ?? null,
       lineNumber,
-      subject: `Venda ${sale.protocol} — ${sale.partner.name} — Linha ${lineNumber}`,
-      description,
+      subject: sanitize(`Venda ${sale.protocol} ${sale.partner.name} Linha ${lineDigits}`),
+      description: sanitize(description),
       requesterName: sale.createdBy.name,
       requesterEmail: sale.createdBy.email,
     };
@@ -422,9 +431,11 @@ export class TaskIntegrationService {
         id: true, protocol: true, partnerId: true, createdById: true,
         createdBy: { select: { partnerId: true } }, taskDemandId: true,
         taskStatus: true, contractStage: true, status: true,
+        reviewStatus: true, approvedAt: true, reviewedAt: true, reviewedById: true,
         taskIsBeingEdited: true, taskEditorName: true,
         taskEditorActivity: true, taskEditorLastSeenAt: true, taskLastMessage: true,
         turnRequestFrom: true, turnRequestReason: true,
+        commissionRate: true, commissionValue: true,
       },
     });
     if (!sale) return { accepted: true };
@@ -434,28 +445,16 @@ export class TaskIntegrationService {
     const resolution = dto.resolution?.trim()
       || dto.observations?.filter(Boolean).at(-1)?.trim()
       || undefined;
-    const callbackStage = this.resolveSaleContractStage(dto, sale.contractStage);
+    const reminderMessage = dto.reminderMessage?.trim() || null;
     const saleLocked = sale.contractStage === SaleContractStage.COMPLETED
-      || sale.status === 'ACTIVATED'
-      || sale.status === 'CANCELLED'
-      || sale.status === 'REJECTED';
+      || sale.status === SaleStatus.ACTIVATED
+      || sale.status === SaleStatus.CANCELLED
+      || sale.status === SaleStatus.REJECTED;
+    const callbackStage = this.resolveSaleContractStage(dto, sale.contractStage);
     const nextStage = saleLocked ? sale.contractStage : callbackStage;
-    const incomingTurnRequest = saleLocked
-      ? {}
-      : dto.clearTurnRequest
-      ? { turnRequestFrom: null, turnRequestReason: null, turnRequestAt: null }
-      : dto.turnRequestFrom
-        ? {
-            turnRequestFrom: dto.turnRequestFrom,
-            turnRequestReason: dto.turnRequestReason?.trim() || null,
-            turnRequestAt: new Date(),
-          }
-        : {};
-    const workflowChanged = sale.taskStatus !== dto.status
-      || nextStage !== sale.contractStage
-      || sale.taskLastMessage !== (resolution ?? null)
-      || Boolean(dto.turnRequestFrom)
-      || Boolean(dto.clearTurnRequest);
+    const shouldComplete = !saleLocked
+      && nextStage === SaleContractStage.COMPLETED;
+
     for (const attachment of dto.attachments ?? []) {
       if (!attachment.id || !attachment.name) continue;
       const externalId = `task:${dto.demandId}:${attachment.id}`;
@@ -484,12 +483,16 @@ export class TaskIntegrationService {
       } catch (error) {
         console.warn('[task-integration] Não foi possível materializar anexo do Task', attachment.id, error);
       }
+      const cleanName = attachment.name
+        .replace(/^CONTRATO EM BRANCO\s*[—\-]\s*/i, '')
+        .replace(/^CONTRATO ASSINADO\s*[—\-]\s*/i, '')
+        .trim() || attachment.name;
       await this.prisma.document.upsert({
         where: { externalId },
         create: {
           saleId: sale.id,
           externalId,
-          name: attachment.name.replace(/^CONTRATO EM BRANCO\s*[—-]\s*/i, '').trim() || attachment.name,
+          name: cleanName,
           type: meta.type,
           purpose: meta.purpose,
           url: storedUrl,
@@ -497,7 +500,7 @@ export class TaskIntegrationService {
           size: storedSize,
         },
         update: {
-          name: attachment.name.replace(/^CONTRATO EM BRANCO\s*[—-]\s*/i, '').trim() || attachment.name,
+          name: cleanName,
           type: meta.type,
           purpose: meta.purpose,
           ...(materialized ? {
@@ -508,8 +511,13 @@ export class TaskIntegrationService {
         },
       });
     }
-    const isAwaitingFinalAdmin = nextStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING;
-    const isRejectedByTask = nextStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING;
+
+    const finalStage = shouldComplete ? SaleContractStage.COMPLETED : nextStage;
+    const stageChanged = finalStage !== sale.contractStage;
+    const statusChanged = sale.taskStatus !== dto.status;
+    const messageChanged = sale.taskLastMessage !== (resolution ?? null);
+    const workflowChanged = statusChanged || stageChanged || messageChanged || Boolean(reminderMessage);
+
     await this.prisma.sale.update({
       where: { id: sale.id },
       data: {
@@ -519,63 +527,96 @@ export class TaskIntegrationService {
         taskResponsibleId: dto.responsibleId,
         taskResponsibleName: dto.responsibleName,
         taskSyncError: null,
-        taskSyncStatus: 'SYNCED',
+        taskSyncStatus: SaleTaskSyncStatus.SYNCED,
         taskLastSyncAt: dto.updatedAt ? new Date(dto.updatedAt) : new Date(),
         taskIsBeingEdited: Boolean(dto.isBeingEdited),
         taskEditorName: dto.editorName || null,
         taskEditorActivity: dto.editorActivity || null,
         taskEditorLastSeenAt: dto.editorLastSeenAt ? new Date(dto.editorLastSeenAt) : null,
         taskLastMessage: resolution || null,
-        contractStage: nextStage,
-        contractStageUpdatedAt: nextStage !== sale.contractStage ? new Date() : undefined,
-        ...incomingTurnRequest,
-        ...(workflowChanged ? { timeline: { create: {
-          action: dto.turnRequestFrom
-            ? `Luxus Task solicitou a vez de volta${dto.turnRequestReason ? `: ${dto.turnRequestReason}` : ''}`
-            : nextStage !== sale.contractStage
-            ? `Chegou do Luxus Task — vez de ${
-                nextStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
-                  || nextStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
-                  || nextStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING
-                  || nextStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING
-                  ? 'Luxus Parceiros'
-                  : nextStage === SaleContractStage.AWAITING_PARTNER_SIGNATURE
-                    || nextStage === SaleContractStage.CHANGES_REQUESTED
-                    ? 'Parceiro'
-                    : 'Luxus Task'
-              }`
-            : (dto.attachments?.length
-              ? `Anexos recebidos do Luxus Task (${dto.attachments.length})`
-              : 'Atualização recebida do Luxus Task'),
-          details: [
-            `Status Task: ${dto.status}`,
-            `Etapa do contrato: ${nextStage}`,
-            dto.attachments?.length ? `Anexos: ${dto.attachments.map((item) => item.name).join(', ')}` : '',
-            dto.turnRequestReason ? `Pedido de vez: ${dto.turnRequestReason}` : '',
-            resolution ? `Retorno: ${resolution}` : '',
-          ].filter(Boolean).join('\n'),
-        } } } : {}),
+        contractStage: finalStage,
+        contractStageUpdatedAt: stageChanged ? new Date() : undefined,
+        turnRequestFrom: null,
+        turnRequestReason: null,
+        turnRequestAt: null,
+        ...(shouldComplete ? {
+          status: SaleStatus.ACTIVATED,
+          approvedAt: sale.approvedAt ?? new Date(),
+          activatedAt: new Date(),
+          reviewStatus: SaleReviewStatus.APPROVED,
+          reviewedAt: sale.reviewedAt ?? new Date(),
+        } : {}),
+        ...(workflowChanged ? {
+          timeline: {
+            create: {
+              action: shouldComplete
+                ? 'Venda concluída pelo Luxus Task'
+                : reminderMessage
+                  ? 'Cobrança recebida do Luxus Task'
+                  : (dto.attachments?.length
+                    ? `Anexos recebidos do Luxus Task (${dto.attachments.length})`
+                    : 'Atualização recebida do Luxus Task'),
+              details: [
+                `Status Task: ${dto.status}`,
+                `Etapa: ${finalStage}`,
+                dto.attachments?.length
+                  ? `Anexos: ${dto.attachments.map((item) => item.name).join(', ')}`
+                  : '',
+                reminderMessage ? `Cobrança: ${reminderMessage}` : '',
+                resolution ? `Retorno: ${resolution}` : '',
+              ].filter(Boolean).join('\n'),
+            },
+          },
+        } : {}),
       },
     });
-    if (workflowChanged) {
-      const notification = {
-        type: 'SYSTEM' as const,
-        title: dto.turnRequestFrom
-          ? 'Luxus Task solicitou a vez'
-          : isAwaitingFinalAdmin
-          ? 'Contrato aprovado no Luxus Task'
-          : isRejectedByTask
-            ? 'Contrato recusado no Luxus Task'
-          : nextStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
-            ? 'Contrato em branco recebido'
-            : nextStage === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
-              ? 'Contrato assinado enviado para conferência no Luxus Task'
-            : 'Venda atualizada no Luxus Task',
-        message: `${sale.protocol}: ${dto.turnRequestReason || resolution || `status ${dto.status}`}`,
-        data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-      };
+
+    if (shouldComplete) {
+      await this.commissions.createFromSale(
+        {
+          id: sale.id,
+          partnerId: sale.partnerId,
+          commissionRate: sale.commissionRate,
+          commissionValue: sale.commissionValue,
+        } as Parameters<CommissionsService['createFromSale']>[0],
+        sale.createdById,
+      ).catch((error) => {
+        console.warn('[task-integration] Falha ao criar comissão na conclusão pelo Task', error);
+      });
+    }
+
+    if (workflowChanged || shouldComplete || reminderMessage) {
+      const notification = shouldComplete
+        ? {
+            type: 'SALE_APPROVED' as const,
+            title: 'Venda concluída',
+            message: `${sale.protocol}: o Luxus Task concluiu a demanda. A venda foi finalizada e os anexos estão disponíveis.`,
+            data: {
+              saleId: sale.id,
+              path: `/vendas?sale=${sale.id}`,
+              event: 'SALE_COMPLETED_BY_TASK',
+            },
+          }
+        : reminderMessage
+          ? {
+              type: 'SYSTEM' as const,
+              title: 'Aviso do Luxus Task',
+              message: `${sale.protocol}: ${reminderMessage}`,
+              data: {
+                saleId: sale.id,
+                path: `/vendas?sale=${sale.id}`,
+                event: 'TASK_REMINDER',
+                reminderMessage,
+              },
+            }
+          : {
+              type: 'SYSTEM' as const,
+              title: 'Venda atualizada no Luxus Task',
+              message: `${sale.protocol}: ${resolution || `status ${dto.status}`}`,
+              data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+            };
+
       await this.notifications.createForAdminUsers(notification);
-      // Quem abriu a venda e o time do parceiro também precisam acompanhar cada etapa.
       await this.notifications.create({
         userId: sale.createdById,
         ...notification,
@@ -594,15 +635,17 @@ export class TaskIntegrationService {
   private resolveSaleContractStage(dto: TaskDemandCallbackDto, current: SaleContractStage): SaleContractStage {
     if (current === SaleContractStage.COMPLETED) return current;
     const explicit = dto.workflowStage as SaleContractStage | undefined;
-    if (explicit && Object.values(SaleContractStage).includes(explicit)) {
-      if (explicit === SaleContractStage.COMPLETED) return current;
-      return explicit;
+    // Só finaliza a venda no Parceiros quando o Task envia COMPLETED explicitamente.
+    // Concluir a demanda no Task (status concluido) é independente e não fecha a venda sozinho.
+    if (explicit === SaleContractStage.COMPLETED) {
+      return SaleContractStage.COMPLETED;
     }
-    if (dto.status !== 'concluido' && dto.status !== 'cancelado') return current;
-    if (dto.status === 'cancelado') return SaleContractStage.TASK_REJECTED_REVIEW_PENDING;
-    return current === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
-      ? SaleContractStage.TASK_APPROVED_REVIEW_PENDING
-      : SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN;
+    if (dto.status === 'cancelado') {
+      return SaleContractStage.TASK_PROCESSING;
+    }
+    return current === SaleContractStage.PRE_REVIEW
+      ? SaleContractStage.TASK_PROCESSING
+      : (current === SaleContractStage.COMPLETED ? current : SaleContractStage.TASK_PROCESSING);
   }
 
   private resolveIncomingAttachmentMeta(
@@ -617,15 +660,13 @@ export class TaskIntegrationService {
       normalized.includes('contrato em branco')
       || (normalized.includes('contrato') && !normalized.includes('assinado'))
     ) {
-      return { type: 'CONTRACT', purpose: 'BLANK_CONTRACT' };
+      // Contrato anexado pelo Task no novo fluxo = assinado / final.
+      return { type: 'CONTRACT', purpose: stage === SaleContractStage.COMPLETED ? 'SIGNED_CONTRACT' : 'SIGNED_CONTRACT' };
     }
-    // Na etapa de contrato em branco, o anexo novo do Task costuma ser o contrato,
-    // mesmo sem "contrato" no nome do arquivo.
-    if (stage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN) {
-      return { type: 'CONTRACT', purpose: 'BLANK_CONTRACT' };
-    }
-    if (stage === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT) {
-      return { type: 'CONTRACT', purpose: 'SIGNED_CONTRACT' };
+    if (stage === SaleContractStage.COMPLETED || stage === SaleContractStage.TASK_PROCESSING) {
+      if (normalized.includes('contrato')) {
+        return { type: 'CONTRACT', purpose: 'SIGNED_CONTRACT' };
+      }
     }
     return { type: 'OTHER', purpose: 'GENERAL' };
   }

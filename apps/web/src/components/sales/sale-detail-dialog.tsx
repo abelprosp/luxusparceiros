@@ -25,8 +25,6 @@ import {
   SALE_REVIEW_STATUS_LABELS,
   saleContractStageLabel,
   saleTaskUserName,
-  saleWorkflowTurn,
-  saleWorkflowTurnLabel,
 } from '@luxus/types';
 import { formatCurrency, formatDate, formatDateTime, formatDocument, formatPhone } from '@luxus/utils';
 import {
@@ -36,7 +34,6 @@ import {
   fetchAuthenticatedFile,
   openAuthenticatedFile,
   replaceUploadedDocument,
-  uploadFile,
 } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerScopedUser } from '@/lib/rbac';
@@ -45,7 +42,6 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
 
@@ -449,10 +445,6 @@ export function SaleDetailDialog({
   const [tab, setTab] = useState('overview');
   const [lightbox, setLightbox] = useState<{ src: string; label: string } | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
-  const [pendingTurn, setPendingTurn] = useState<'luxus_task' | 'luxus_parceiros' | 'parceiro' | null>(null);
-  const [pendingRespond, setPendingRespond] = useState<boolean | null>(null);
-  const [turnRequestReason, setTurnRequestReason] = useState('');
-  const signedContractInput = useRef<HTMLInputElement>(null);
   const canEditSale = Boolean(
     sale
     && sale.contractStage !== SaleContractStage.COMPLETED
@@ -487,9 +479,6 @@ export function SaleDetailDialog({
       setSale(null);
       setLightbox(null);
       setTab('overview');
-      setPendingTurn(null);
-      setPendingRespond(null);
-      setTurnRequestReason('');
     }
   }, [open, saleId, load]);
 
@@ -586,75 +575,6 @@ export function SaleDetailDialog({
     }
   };
 
-  const confirmPendingTurn = async () => {
-    if (!pendingTurn) return;
-    const turn = pendingTurn;
-    setPendingTurn(null);
-    await runWorkflowAction('workflow-turn', { turn });
-  };
-
-  const confirmPendingRespond = async () => {
-    if (pendingRespond === null) return;
-    const accept = pendingRespond;
-    setPendingRespond(null);
-    await runWorkflowAction('respond-workflow-turn', { accept });
-  };
-
-  const submitTurnRequest = async () => {
-    const reason = turnRequestReason.trim();
-    if (reason.length < 3) {
-      toast({ title: 'Informe a justificativa', description: 'Explique por que precisa da vez.', variant: 'destructive' });
-      return;
-    }
-    await runWorkflowAction('request-workflow-turn', { reason });
-    setTurnRequestReason('');
-  };
-
-  const uploadSignedContract = async (file?: File) => {
-    if (!sale || !file) return;
-    setWorkflowBusy(true);
-    try {
-      await uploadFile(file, DocumentType.CONTRACT, { saleId: sale.id, clientId: sale.client?.id }, DocumentPurpose.SIGNED_CONTRACT);
-      await api(`/sales/${sale.id}/submit-signed-contract`, { method: 'POST' });
-      toast({
-        title: 'Contrato assinado anexado',
-        description: isPartnerScoped
-          ? 'O administrador foi avisado para conferir e enviar ao Luxus Task.'
-          : 'Agora aprove o contrato assinado para sincronizar e passar a vez ao Luxus Task.',
-        variant: 'success',
-      });
-      await load();
-    } catch (err) {
-      toast({ title: 'Erro ao enviar contrato', description: err instanceof Error ? err.message : 'Falha na requisição', variant: 'destructive' });
-    } finally {
-      setWorkflowBusy(false);
-      if (signedContractInput.current) signedContractInput.current.value = '';
-    }
-  };
-
-  const sendExistingSignedContractToTask = async () => {
-    if (!sale) return;
-    setWorkflowBusy(true);
-    try {
-      if (sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN) {
-        await api(`/sales/${sale.id}/approve-signed-contract`, { method: 'POST' });
-      } else {
-        await api(`/sales/${sale.id}/submit-signed-contract`, { method: 'POST' });
-        await api(`/sales/${sale.id}/approve-signed-contract`, { method: 'POST' });
-      }
-      toast({
-        title: 'Contrato enviado ao Luxus Task',
-        description: 'O contrato assinado foi sincronizado e a vez voltou para o Luxus Task.',
-        variant: 'success',
-      });
-      await load();
-    } catch (err) {
-      toast({ title: 'Não foi possível enviar', description: err instanceof Error ? err.message : 'Falha na requisição', variant: 'destructive' });
-    } finally {
-      setWorkflowBusy(false);
-    }
-  };
-
   const clientAddress = useMemo(() => {
     if (!sale?.client) return '';
     return [
@@ -679,52 +599,13 @@ export function SaleDetailDialog({
   const signedContract = sale?.documents
     ?.filter((document) => document.purpose === DocumentPurpose.SIGNED_CONTRACT)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-  const canAttachSignedContract = sale
-    ? (
-        isPartnerScoped
-          ? [SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED].includes(sale.contractStage)
-          : [
-              SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN,
-              SaleContractStage.AWAITING_PARTNER_SIGNATURE,
-              SaleContractStage.CHANGES_REQUESTED,
-              SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
-            ].includes(sale.contractStage)
-      )
-    : false;
-  const currentWorkflowTurn = sale ? saleWorkflowTurn(sale.contractStage) : null;
-  const turnLocked = Boolean(
+  /** Contrato assinado é tratado no Luxus Task — parceiros não anexam por aqui. */
+  const neverSentToTask = Boolean(
     sale
-    && (
-      sale.contractStage === SaleContractStage.COMPLETED
-      || [SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
-    ),
+    && !sale.taskDemandId
+    && (sale.taskSyncStatus ?? 'NOT_READY') === 'NOT_READY'
+    && !sale.taskProtocol,
   );
-  const iHaveWorkflowTurn = Boolean(
-    currentWorkflowTurn
-    && currentWorkflowTurn !== 'concluido'
-    && (isPartnerScoped ? currentWorkflowTurn === 'parceiro' : currentWorkflowTurn === 'luxus_parceiros'),
-  );
-  const pendingTurnRequester = sale?.turnRequestFrom || null;
-  const pendingTurnRequesterLabel = pendingTurnRequester === 'luxus_task'
-    ? 'Luxus Task'
-    : pendingTurnRequester === 'parceiro'
-      ? 'Parceiro'
-      : pendingTurnRequester === 'luxus_parceiros'
-        ? 'Luxus Parceiros'
-        : null;
-  const myTurnSide = isPartnerScoped ? 'parceiro' : 'luxus_parceiros';
-  const canRespondTurnRequest = Boolean(
-    iHaveWorkflowTurn
-    && pendingTurnRequester
-    && pendingTurnRequester !== myTurnSide,
-  );
-  const pendingTurnLabel = pendingTurn === 'luxus_task'
-    ? 'Luxus Task'
-    : pendingTurn === 'parceiro'
-      ? 'Parceiro'
-      : pendingTurn === 'luxus_parceiros'
-        ? 'Luxus Parceiros'
-        : '';
 
   const lineNumber = sale?.newNumber
     ? formatPhone(sale.newNumber)
@@ -786,36 +667,32 @@ export function SaleDetailDialog({
 
               <TabsContent value="overview" className={TAB_PANEL_CLASS}>
                 <div className="space-y-4 pb-4">
-                  <Section title="Contrato e continuidade da venda" className="border-primary/40 bg-primary/5">
+                  <Section title="Luxus Task" className="border-primary/40 bg-primary/5">
                     <DetailRow
-                      label="Formato"
+                      label="Formato do contrato"
                       value={sale.contractFormat ? CONTRACT_FORMAT_LABELS[sale.contractFormat] : 'Não informado'}
                     />
-                    <DetailRow label="Etapa atual" value={saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))} />
-                    <DetailRow label="Aguardando ação de" value={
-                      sale.contractStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
-                        || sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
-                        || sale.contractStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING
-                        || sale.contractStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING
-                        ? 'Administrador'
-                        : [SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED].includes(sale.contractStage)
-                          ? 'Parceiro / Administrador'
-                          : sale.contractStage === SaleContractStage.TASK_PROCESSING
-                            || sale.contractStage === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT
-                            || sale.contractStage === SaleContractStage.PRE_REVIEW
-                            ? (saleTaskUserName(sale) || 'Luxus Task')
-                            : undefined
-                    } />
+                    <DetailRow label="Status" value={saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))} />
+                    {sale.taskDemandId || sale.taskProtocol ? (
+                      <div className="my-3 rounded-md border border-primary/20 bg-background/60 p-3 text-sm text-muted-foreground">
+                        Após o envio ao Luxus Task, a demanda fica sob responsabilidade do Task.
+                        Parceiros e administradores apenas acompanham o andamento; a conclusão da venda chega pelo Task.
+                      </div>
+                    ) : (
+                      <div className="my-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                        Esta venda ainda não foi enviada ao Luxus Task. Após a aprovação e o sync, o Task assume o fluxo completo.
+                      </div>
+                    )}
                     {sale.contractCorrectionReason && (
                       <div className="my-3 rounded-md bg-red-500/10 p-3 text-sm text-red-500">
-                        <p className="font-semibold">Correção solicitada no contrato</p>
+                        <p className="font-semibold">Aviso do Task</p>
                         <p>{sale.contractCorrectionReason}</p>
                       </div>
                     )}
                     <div className="my-3">
                       <Button size="sm" variant="outline" onClick={() => setTab('photos')}>
                         <FileText className="mr-2 h-4 w-4" />
-                        Abrir documentos e ações do contrato
+                        Abrir documentos
                       </Button>
                     </div>
                     {sale.correctionReason && (
@@ -1047,39 +924,17 @@ export function SaleDetailDialog({
                       </div>
                     </div>
                   )}
-                  <Section title="Contrato e continuidade da venda" className="border-primary/40 bg-primary/5">
-                    <DetailRow label="Etapa atual" value={saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))} />
+                  <Section title="Luxus Task" className="border-primary/40 bg-primary/5">
+                    <DetailRow label="Status" value={saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))} />
+                    <div className="my-3 rounded-md border border-primary/20 bg-background/60 p-3 text-sm text-muted-foreground">
+                      {sale.taskDemandId || sale.taskProtocol
+                        ? 'O Luxus Task é o dono desta demanda. Aqui você acompanha o status e baixa anexos sincronizados; a conclusão da venda vem do Task.'
+                        : 'Enquanto a venda não for enviada ao Task, o administrador pode finalizar apenas no Luxus Parceiros. Depois do envio, o Task assume tudo.'}
+                    </div>
                     <div className="flex flex-wrap gap-2 py-3">
-                      {!isPartnerScoped && sale.contractStage === SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN && (
-                        <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('release-blank-contract')}>
-                          {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Liberar contrato ao parceiro
-                        </Button>
-                      )}
-                      {!isPartnerScoped && sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN && (
-                        <>
-                          <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('approve-signed-contract')}>
-                            {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Aprovar e enviar ao Luxus Task
-                          </Button>
-                          <Button variant="destructive" disabled={workflowBusy} onClick={() => {
-                            const reason = window.prompt('Explique o que o parceiro precisa corrigir no contrato:');
-                            if (reason?.trim()) void runWorkflowAction('request-contract-correction', { reason: reason.trim() });
-                          }}>Solicitar correção</Button>
-                        </>
-                      )}
-                      {!isPartnerScoped && sale.contractStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING && (
-                        <Button disabled={workflowBusy} onClick={() => void runWorkflowAction('finalize-after-task-approval')}>
-                          {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Finalizar venda
-                        </Button>
-                      )}
-                      {!isPartnerScoped && sale.contractStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING && (
-                        <Button variant="destructive" disabled={workflowBusy} onClick={() => {
-                          const reason = window.prompt('Informe ao parceiro o que deve ser corrigido:');
-                          if (reason?.trim()) void runWorkflowAction('request-contract-correction', { reason: reason.trim() });
-                        }}>Devolver para correção</Button>
-                      )}
                       {!isPartnerScoped
+                        && neverSentToTask
                         && sale.contractStage !== SaleContractStage.COMPLETED
-                        && sale.contractStage !== SaleContractStage.TASK_APPROVED_REVIEW_PENDING
                         && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
                         && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED, SaleReviewStatus.DRAFT].includes(sale.reviewStatus) && (
                         <Button
@@ -1087,7 +942,7 @@ export function SaleDetailDialog({
                           disabled={workflowBusy}
                           onClick={() => {
                             const reason = window.prompt(
-                              'Finalizar esta venda agora no Luxus Parceiros? (mesmo se estiver parada no Luxus Task)\n\nMotivo opcional:',
+                              'Finalizar esta venda agora no Luxus Parceiros?\n\nSó é permitido se a venda nunca foi enviada ao Luxus Task.\n\nMotivo opcional:',
                             );
                             if (reason === null) return;
                             void runWorkflowAction('force-finalize', { reason: reason.trim() || undefined });
@@ -1123,12 +978,11 @@ export function SaleDetailDialog({
                       )}
                     </div>
 
-                    {(canAttachSignedContract || blankContract) && (
+                    {(blankContract || signedContract) && (
                       <div className="mt-2 space-y-3 rounded-md border border-dashed border-primary/40 bg-background/60 p-3">
-                        <p className="text-sm font-medium">Contrato em branco e assinatura</p>
+                        <p className="text-sm font-medium">Anexos sincronizados do Task</p>
                         <p className="text-xs text-muted-foreground">
-                          Baixe o contrato em branco, colete as assinaturas e anexe o arquivo assinado.
-                          Depois o administrador aprova e sincroniza a vez de volta ao Luxus Task.
+                          Contratos e assinaturas são tratados no Luxus Task. Aqui você só baixa os arquivos já sincronizados.
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {blankContract && (
@@ -1139,176 +993,26 @@ export function SaleDetailDialog({
                               onClick={() => void downloadAuthenticatedUpload(blankContract.url, blankContract.name)}
                             >
                               <Download className="mr-2 h-4 w-4" />
-                              Baixar contrato em branco
+                              Baixar contrato
                             </Button>
                           )}
-                          {canAttachSignedContract && (
-                            <>
-                              <input
-                                ref={signedContractInput}
-                                type="file"
-                                className="hidden"
-                                accept=".pdf,.jpg,.jpeg,.png,.webp"
-                                onChange={(event) => void uploadSignedContract(event.target.files?.[0])}
-                              />
-                              <Button
-                                size="sm"
-                                disabled={workflowBusy}
-                                onClick={() => signedContractInput.current?.click()}
-                              >
-                                {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                                Anexar contrato assinado
-                              </Button>
-                            </>
-                          )}
-                          {!isPartnerScoped && signedContract && sale.contractStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN && (
+                          {signedContract && (
                             <Button
                               size="sm"
-                              variant="secondary"
+                              variant="outline"
                               disabled={workflowBusy}
-                              onClick={() => void sendExistingSignedContractToTask()}
+                              onClick={() => void downloadAuthenticatedUpload(signedContract.url, signedContract.name)}
                             >
-                              {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                              Sincronizar e passar a vez ao Luxus Task
+                              <Download className="mr-2 h-4 w-4" />
+                              Baixar contrato assinado
                             </Button>
                           )}
                         </div>
                         {signedContract && (
                           <p className="text-xs text-muted-foreground">
-                            Último contrato assinado anexado: <span className="font-medium text-foreground">{signedContract.name}</span>
+                            Último contrato assinado: <span className="font-medium text-foreground">{signedContract.name}</span>
                           </p>
                         )}
-                      </div>
-                    )}
-
-                    {!turnLocked ? (
-                      iHaveWorkflowTurn ? (
-                        <div className="mt-2 space-y-3 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
-                          {canRespondTurnRequest && (
-                            <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
-                              <p className="text-xs font-medium text-amber-700 dark:text-amber-200">Pedido de vez pendente</p>
-                              <p className="text-sm text-muted-foreground">
-                                {pendingTurnRequesterLabel} pediu a vez
-                                {sale.turnRequestReason ? `: ${sale.turnRequestReason}` : '.'}
-                              </p>
-                              {pendingRespond !== null ? (
-                                <div className="space-y-2">
-                                  <p className="text-sm font-medium">
-                                    {pendingRespond
-                                      ? `Tem certeza de que deseja passar a vez para ${pendingTurnRequesterLabel}?`
-                                      : `Tem certeza de que deseja recusar o pedido de ${pendingTurnRequesterLabel}?`}
-                                  </p>
-                                  <div className="flex flex-wrap gap-2">
-                                    <Button size="sm" disabled={workflowBusy} onClick={() => void confirmPendingRespond()}>
-                                      {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                      {pendingRespond ? 'Sim, passar a vez' : 'Sim, recusar'}
-                                    </Button>
-                                    <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingRespond(null)}>
-                                      Cancelar
-                                    </Button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="flex flex-wrap gap-2">
-                                  <Button
-                                    size="sm"
-                                    disabled={workflowBusy}
-                                    onClick={() => setPendingRespond(true)}
-                                  >
-                                    Aceitar e passar a vez
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={workflowBusy}
-                                    onClick={() => setPendingRespond(false)}
-                                  >
-                                    Recusar
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {pendingTurn ? (
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium">Tem certeza de que deseja passar a vez para {pendingTurnLabel}?</p>
-                              <p className="text-xs text-muted-foreground">Essa ação atualiza o status nos dois sistemas.</p>
-                              <div className="flex flex-wrap gap-2">
-                                <Button size="sm" disabled={workflowBusy} onClick={() => void confirmPendingTurn()}>
-                                  {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                  Sim, passar a vez
-                                </Button>
-                                <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingTurn(null)}>
-                                  Cancelar
-                                </Button>
-                              </div>
-                            </div>
-                          ) : !isPartnerScoped ? (
-                            <>
-                              <p className="text-xs font-medium text-muted-foreground">
-                                Passar a vez — quem está com a vez transfere agora, com confirmação.
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingTurn('luxus_task')}>
-                                  Vez do Luxus Task
-                                </Button>
-                                <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingTurn('luxus_parceiros')}>
-                                  Vez do Luxus Parceiros
-                                </Button>
-                                <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingTurn('parceiro')}>
-                                  Vez do Parceiro
-                                </Button>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <p className="text-xs font-medium text-muted-foreground">
-                                O parceiro só pode devolver a vez ao Luxus Parceiros.
-                              </p>
-                              <Button size="sm" variant="outline" disabled={workflowBusy} onClick={() => setPendingTurn('luxus_parceiros')}>
-                                Passar a vez ao Luxus Parceiros
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="mt-2 space-y-2 rounded-md border border-dashed border-primary/30 bg-background/50 p-3">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            Vez de {saleWorkflowTurnLabel(sale.contractStage, saleTaskUserName(sale)) || 'outro sistema'}
-                          </p>
-                          {pendingTurnRequester === myTurnSide ? (
-                            <p className="text-sm text-muted-foreground">
-                              Pedido enviado. Aguarde a outra parte aceitar ou recusar.
-                            </p>
-                          ) : (
-                            <>
-                              <p className="text-sm text-muted-foreground">
-                                Para agir nesta venda, solicite a vez e explique o motivo.
-                              </p>
-                              <Textarea
-                                value={turnRequestReason}
-                                onChange={(event) => setTurnRequestReason(event.target.value)}
-                                placeholder="Justificativa para solicitar a vez"
-                                disabled={workflowBusy}
-                              />
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={workflowBusy || turnRequestReason.trim().length < 3}
-                                onClick={() => void submitTurnRequest()}
-                              >
-                                {workflowBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                Solicitar vez
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      )
-                    ) : (
-                      <div className="mt-2 rounded-md border border-dashed border-muted p-3">
-                        <p className="text-sm text-muted-foreground">
-                          Esta venda já foi concluída. A vez não pode mais ser alterada.
-                        </p>
                       </div>
                     )}
                   </Section>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Search, Download, ShoppingCart, Check, X, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2 } from 'lucide-react';
-import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS, saleContractStageLabel, saleTaskUserName, saleWorkflowTurnLabel } from '@luxus/types';
+import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS, saleContractStageLabel, saleTaskUserName } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -71,7 +71,6 @@ export default function VendasPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [turnFilter, setTurnFilter] = useState('all');
   const [syncErrorOnly, setSyncErrorOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -110,7 +109,6 @@ export default function VendasPage() {
       const res = await getPaginated<Sale>('/sales', {
         search: search || undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
-        turn: turnFilter !== 'all' ? turnFilter : undefined,
         syncError: syncErrorOnly || undefined,
         page,
         limit: 15,
@@ -125,7 +123,7 @@ export default function VendasPage() {
         variant: 'destructive',
       });
     } finally { setLoading(false); }
-  }, [search, statusFilter, turnFilter, syncErrorOnly, page, toast]);
+  }, [search, statusFilter, syncErrorOnly, page, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -220,9 +218,6 @@ export default function VendasPage() {
     return SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus;
   };
 
-  const turnLabel = (sale: Sale) =>
-    saleWorkflowTurnLabel(sale.contractStage, saleTaskUserName(sale));
-
   const statusBadge = (status: SaleStatus) => {
     if ([SaleStatus.APPROVED, SaleStatus.ACTIVATED].includes(status)) return 'success';
     if ([SaleStatus.REJECTED, SaleStatus.CANCELLED].includes(status)) return 'destructive';
@@ -244,15 +239,6 @@ export default function VendasPage() {
               {Object.values(SaleStatus).map((s) => (
                 <SelectItem key={s} value={s}>{SALE_STATUS_LABELS[s] ?? s}</SelectItem>
               ))}
-            </SelectContent>
-          </Select>
-          <Select value={turnFilter} onValueChange={(v) => { setTurnFilter(v); setPage(1); }}>
-            <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="Da vez" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as vezes</SelectItem>
-              <SelectItem value="luxus_task">Vez do Luxus Task</SelectItem>
-              <SelectItem value="luxus_parceiros">Vez do Luxus Parceiros</SelectItem>
-              <SelectItem value="parceiro">Vez do Parceiro</SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -340,9 +326,6 @@ export default function VendasPage() {
                           <Badge variant={s.reviewStatus === SaleReviewStatus.APPROVED ? 'success' : s.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'destructive' : 'outline'}>
                             {workflowLabel(s)}
                           </Badge>
-                          {s.reviewStatus === SaleReviewStatus.APPROVED && turnLabel(s) && (
-                            <Badge variant="outline">Da vez: {turnLabel(s)}</Badge>
-                          )}
                           {(s.taskSyncError || s.taskSyncStatus === 'RETRY') && (
                             <span className="text-xs font-medium text-red-600">Sync com falha — reenvie no detalhe</span>
                           )}
@@ -425,9 +408,6 @@ export default function VendasPage() {
                 badges={
                   <>
                     <Badge variant={s.reviewStatus === SaleReviewStatus.APPROVED ? 'success' : s.reviewStatus === SaleReviewStatus.CHANGES_REQUESTED ? 'destructive' : 'outline'}>{workflowLabel(s)}</Badge>
-                    {s.reviewStatus === SaleReviewStatus.APPROVED && turnLabel(s) && (
-                      <Badge variant="outline">Da vez: {turnLabel(s)}</Badge>
-                    )}
                     {(s.taskSyncError || s.taskSyncStatus === 'RETRY') && (
                       <Badge variant="destructive">Sync com falha</Badge>
                     )}

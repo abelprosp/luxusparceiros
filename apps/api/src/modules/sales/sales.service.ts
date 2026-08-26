@@ -144,20 +144,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (branchId) where.branchId = branchId;
     if (params.campaignId) where.campaignId = params.campaignId;
     if (params.status) where.status = params.status;
-    if (params.turn === 'luxus_task') {
-      where.contractStage = { in: ['PRE_REVIEW', 'TASK_PROCESSING', 'TASK_VALIDATING_SIGNED_CONTRACT'] };
-    } else if (params.turn === 'luxus_parceiros') {
-      where.contractStage = {
-        in: [
-          'BLANK_CONTRACT_READY_FOR_ADMIN',
-          'SIGNED_CONTRACT_READY_FOR_ADMIN',
-          'TASK_APPROVED_REVIEW_PENDING',
-          'TASK_REJECTED_REVIEW_PENDING',
-        ],
-      };
-    } else if (params.turn === 'parceiro') {
-      where.contractStage = { in: ['AWAITING_PARTNER_SIGNATURE', 'CHANGES_REQUESTED'] };
-    }
+    // Filtro "turn" legado ignorado — após envio a demanda fica com o Luxus Task.
     if (params.syncError) {
       where.AND = [
         ...((where.AND as Prisma.SaleWhereInput[]) || []),
@@ -1089,8 +1076,18 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     partner: { name: string };
     newNumber?: string | null;
   }) {
-    const line = this.formatSalePhone(sale.newNumber);
-    return `Venda ${sale.protocol} — ${sale.partner.name} — Linha ${line}`;
+    const line = this.formatSalePhone(sale.newNumber).replace(/\D/g, '') || 'semlinha';
+    const raw = `Venda ${sale.protocol} ${sale.partner.name} Linha ${line}`;
+    return this.sanitizeTaskPlainText(raw);
+  }
+
+  /** Texto enviado ao Task: só letras, números e espaços (sem traços/barras/especiais). */
+  private sanitizeTaskPlainText(value: string) {
+    return String(value || '')
+      .replace(/[^0-9A-Za-zÀ-ÖØ-öø-ÿ\s]/g, ' ')
+      .replace(/[^\S\n]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   private buildSaleTaskDescription(sale: {
@@ -1140,43 +1137,43 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       .join(', ');
 
     const lines = [
-      '=== DADOS DA VENDA (Luxus Parceiros) ===',
-      `Protocolo: ${sale.protocol}`,
-      `Parceiro: ${sale.partner.name}`,
-      `Loja: ${sale.branch?.name ?? 'Matriz'}`,
-      `Operadora: ${sale.operator.name}`,
-      `Plano: ${sale.plan.name}`,
-      `Valor: ${this.formatSaleCurrency(sale.value)}`,
-      sale.commissionValue != null ? `Comissão: ${this.formatSaleCurrency(sale.commissionValue)}` : null,
-      sale.campaign?.title ? `Campanha: ${sale.campaign.title}` : null,
-      `Registrada por: ${sale.createdBy.name}`,
-      `Formato do contrato: ${contract} (assinatura será obtida no Luxus Task)`,
+      'DADOS DA VENDA Luxus Parceiros',
+      `Protocolo ${sale.protocol}`,
+      `Parceiro ${sale.partner.name}`,
+      `Loja ${sale.branch?.name ?? 'Matriz'}`,
+      `Operadora ${sale.operator.name}`,
+      `Plano ${sale.plan.name}`,
+      `Valor ${this.formatSaleCurrency(sale.value)}`,
+      sale.commissionValue != null ? `Comissao ${this.formatSaleCurrency(sale.commissionValue)}` : null,
+      sale.campaign?.title ? `Campanha ${sale.campaign.title}` : null,
+      `Registrada por ${sale.createdBy.name}`,
+      `Formato do contrato ${contract}`,
       '',
-      '=== LINHA / CHIP ===',
-      `Linha do chip: ${this.formatSalePhone(sale.newNumber)}`,
-      `Chip virgem: ${sale.isVirginChip ? 'Sim' : 'Não'}`,
-      sale.isVirginChip || sale.chipIccid ? `ICCID: ${sale.chipIccid || '—'}` : null,
-      `Portabilidade: ${sale.isPortability ? 'Sim' : 'Não'}`,
+      'LINHA CHIP',
+      `Linha do chip ${this.formatSalePhone(sale.newNumber)}`,
+      `Chip virgem ${sale.isVirginChip ? 'Sim' : 'Nao'}`,
+      sale.isVirginChip || sale.chipIccid ? `ICCID ${sale.chipIccid || 'sem ICCID'}` : null,
+      `Portabilidade ${sale.isPortability ? 'Sim' : 'Nao'}`,
       sale.isPortability
-        ? `Operadora doadora: ${this.donorOperatorLabel(sale.donorOperator)}`
+        ? `Operadora doadora ${this.donorOperatorLabel(sale.donorOperator)}`
         : null,
       sale.isPortability
-        ? `Número a ser portado: ${this.formatSalePhone(sale.portabilityNumber)}`
+        ? `Numero a ser portado ${this.formatSalePhone(sale.portabilityNumber)}`
         : null,
       '',
-      '=== CLIENTE ===',
-      `Nome: ${sale.client.name}`,
-      `CPF/CNPJ: ${this.formatSaleDocument(sale.client.document)}`,
-      sale.client.rg ? `RG: ${sale.client.rg}` : null,
-      sale.client.email ? `E-mail: ${sale.client.email}` : null,
-      `Telefone: ${this.formatSalePhone(sale.client.phone)}`,
-      `Endereço: ${address || '—'}`,
+      'CLIENTE',
+      `Nome ${sale.client.name}`,
+      `CPF CNPJ ${this.formatSaleDocument(sale.client.document)}`,
+      sale.client.rg ? `RG ${sale.client.rg}` : null,
+      sale.client.email ? `Email ${sale.client.email}` : null,
+      `Telefone ${this.formatSalePhone(sale.client.phone)}`,
+      `Endereco ${address || 'sem endereco'}`,
       sale.notes ? '' : null,
-      sale.notes ? `=== OBSERVAÇÕES DA VENDA ===` : null,
+      sale.notes ? 'OBSERVACOES DA VENDA' : null,
       sale.notes ? sale.notes : null,
     ];
 
-    return lines.filter((line) => line !== null).join('\n');
+    return this.sanitizeTaskPlainText(lines.filter((line) => line !== null).join('\n'));
   }
 
   private retryDelayMs(attempts: number) {
@@ -1471,389 +1468,47 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async releaseBlankContract(id: string, user: AuthUser) {
-    this.assertAdmin(user);
-    const sale = await this.findOne(id, user);
-    if (sale.contractStage !== SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN) {
-      throw new BadRequestException('O contrato em branco ainda não está aguardando liberação');
-    }
-    if (!sale.documents.some((document) => document.purpose === DocumentPurpose.BLANK_CONTRACT)) {
-      throw new BadRequestException('O Luxus Task não enviou um arquivo de contrato em branco');
-    }
-    await this.taskIntegration.updateSaleStage(id, {
-      stage: SaleContractStage.AWAITING_PARTNER_SIGNATURE,
-      note: `Contrato em branco liberado por ${user.name}.`,
-    });
-    const updated = await this.prisma.sale.update({
-      where: { id },
-      data: {
-        contractStage: SaleContractStage.AWAITING_PARTNER_SIGNATURE,
-        contractStageUpdatedAt: new Date(),
-        contractCorrectionReason: null,
-        timeline: { create: { actorId: user.id, actorName: user.name, action: 'Contrato em branco liberado para assinatura' } },
-      },
-    });
-    await this.notificationsService.createForPartnerUsers(sale.partnerId, {
-      type: 'DOCUMENTS_REQUESTED',
-      title: 'Contrato disponível para assinatura',
-      message: `${sale.protocol}: baixe o contrato, colete as assinaturas e anexe o documento assinado.`,
-      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-    });
-    await this.notificationsService.create({
-      userId: sale.createdById,
-      type: 'DOCUMENTS_REQUESTED',
-      title: 'Contrato disponível para assinatura',
-      message: `${sale.protocol}: baixe o contrato, colete as assinaturas e anexe o documento assinado.`,
-      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-    }).catch(() => undefined);
-    return updated;
+  /** Fluxo antigo (vez / contrato em branco / aprovação intermediária) descontinuado. */
+  private assertLegacyContractFlowDisabled(): never {
+    throw new BadRequestException(
+      'Este fluxo foi descontinuado. Após o envio ao Luxus Task, a demanda fica com o Task até finalizar a venda no Parceiros.',
+    );
   }
 
-  private assertWorkflowTurnOpen(sale: { contractStage: SaleContractStage; status: SaleStatus }) {
-    if (
-      sale.contractStage === SaleContractStage.COMPLETED
-      || sale.status === SaleStatus.ACTIVATED
-      || sale.status === SaleStatus.CANCELLED
-      || sale.status === SaleStatus.REJECTED
-    ) {
-      throw new BadRequestException('Esta venda já foi concluída e não pode mais ter a vez alterada.');
-    }
-  }
-
-  private stageForWorkflowTurn(
-    turn: 'luxus_task' | 'luxus_parceiros' | 'parceiro',
-    currentStage: SaleContractStage,
-  ) {
-    if (turn === 'luxus_task') return SaleContractStage.TASK_PROCESSING;
-    if (turn === 'parceiro') return SaleContractStage.AWAITING_PARTNER_SIGNATURE;
-    if (
-      currentStage === SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN
-      || currentStage === SaleContractStage.TASK_APPROVED_REVIEW_PENDING
-      || currentStage === SaleContractStage.TASK_REJECTED_REVIEW_PENDING
-    ) {
-      return currentStage;
-    }
-    return SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN;
-  }
-
-  private workflowTurnLabel(turn: 'luxus_task' | 'luxus_parceiros' | 'parceiro') {
-    return turn === 'luxus_task' ? 'Luxus Task' : turn === 'parceiro' ? 'Parceiro' : 'Luxus Parceiros';
+  async releaseBlankContract(_id: string, _user: AuthUser) {
+    this.assertLegacyContractFlowDisabled();
   }
 
   async setWorkflowTurn(
-    id: string,
-    turn: 'luxus_task' | 'luxus_parceiros' | 'parceiro',
-    user: AuthUser,
+    _id: string,
+    _turn: 'luxus_task' | 'luxus_parceiros' | 'parceiro',
+    _user: AuthUser,
   ) {
-    const adminActing = isAdminRole(user.role);
-    if (!adminActing && turn !== 'luxus_parceiros') {
-      throw new ForbiddenException('O parceiro só pode devolver a vez ao Luxus Parceiros');
-    }
-    if (adminActing) {
-      this.assertAdmin(user);
-    }
-    const sale = await this.findOne(id, user);
-    this.assertWorkflowTurnOpen(sale);
-    if (!sale.taskDemandId && sale.taskSyncStatus !== 'SYNCED') {
-      throw new BadRequestException('Esta venda ainda não está sincronizada com o Luxus Task');
-    }
-    const stage = this.stageForWorkflowTurn(turn, sale.contractStage);
-    const label = this.workflowTurnLabel(turn);
-    await this.taskIntegration.updateSaleStage(id, {
-      stage,
-      note: `Vez alterada para ${label} por ${user.name}.`,
-      clearTurnRequest: true,
-    }).catch(() => undefined);
-    const updated = await this.prisma.sale.update({
-      where: { id },
-      data: {
-        contractStage: stage,
-        contractStageUpdatedAt: new Date(),
-        turnRequestFrom: null,
-        turnRequestReason: null,
-        turnRequestAt: null,
-        timeline: {
-          create: {
-            actorId: user.id,
-            actorName: user.name,
-            action: `Vez do fluxo alterada para ${label}`,
-            details: `Quem deve agir agora: ${label}`,
-          },
-        },
-      },
-    });
-    const notification = {
-      type: 'SYSTEM' as const,
-      title: `Vez do fluxo: ${label}`,
-      message: `${sale.protocol}: agora é a vez de ${label}.`,
-      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-    };
-    await this.notificationsService.createForAdminUsers(notification).catch(() => undefined);
-    await this.notificationsService.create({
-      userId: sale.createdById,
-      ...notification,
-    }).catch(() => undefined);
-    if (sale.partnerId) {
-      await this.notificationsService.createForPartnerUsers(
-        sale.partnerId,
-        notification,
-        [sale.createdById],
-      ).catch(() => undefined);
-    }
-    return updated;
+    this.assertLegacyContractFlowDisabled();
   }
 
-  async requestWorkflowTurn(id: string, reason: string, user: AuthUser) {
-    const sale = await this.findOne(id, user);
-    this.assertWorkflowTurnOpen(sale);
-    const requester = isAdminRole(user.role) ? 'luxus_parceiros' : 'parceiro';
-    const currentTurn = saleWorkflowTurn(sale.contractStage);
-    if (!currentTurn || currentTurn === 'concluido') {
-      throw new BadRequestException('Não há vez para solicitar nesta venda');
-    }
-    if (currentTurn === requester) {
-      throw new BadRequestException('Você já está com a vez deste fluxo');
-    }
-    const trimmed = reason.trim();
-    if (trimmed.length < 3) {
-      throw new BadRequestException('Informe a justificativa para solicitar a vez');
-    }
-    const requesterLabel = this.workflowTurnLabel(requester);
-    await this.taskIntegration.updateSaleStage(id, {
-      stage: sale.contractStage,
-      note: `${requesterLabel} solicitou a vez: ${trimmed}`,
-      turnRequestFrom: requester,
-      turnRequestReason: trimmed,
-    }).catch(() => undefined);
-    const updated = await this.prisma.sale.update({
-      where: { id },
-      data: {
-        turnRequestFrom: requester,
-        turnRequestReason: trimmed,
-        turnRequestAt: new Date(),
-        timeline: {
-          create: {
-            actorId: user.id,
-            actorName: user.name,
-            action: `${requesterLabel} solicitou a vez`,
-            details: trimmed,
-          },
-        },
-      },
-    });
-    const notification = {
-      type: 'SYSTEM' as const,
-      title: `${requesterLabel} solicitou a vez`,
-      message: `${sale.protocol}: ${trimmed}`,
-      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-    };
-    await this.notificationsService.createForAdminUsers(notification).catch(() => undefined);
-    await this.notificationsService.create({
-      userId: sale.createdById,
-      ...notification,
-    }).catch(() => undefined);
-    return updated;
+  async requestWorkflowTurn(_id: string, _reason: string, _user: AuthUser) {
+    this.assertLegacyContractFlowDisabled();
   }
 
-  async respondWorkflowTurn(id: string, accept: boolean, user: AuthUser) {
-    const sale = await this.findOne(id, user);
-    this.assertWorkflowTurnOpen(sale);
-    const requester = sale.turnRequestFrom as 'luxus_task' | 'luxus_parceiros' | 'parceiro' | null;
-    if (!requester) {
-      throw new BadRequestException('Não há pedido de vez pendente nesta venda');
-    }
-    const currentTurn = saleWorkflowTurn(sale.contractStage);
-    const adminActing = isAdminRole(user.role);
-    if (currentTurn === 'luxus_task') {
-      throw new ForbiddenException('Quem está com a vez no Luxus Task precisa responder o pedido por lá');
-    }
-    if (currentTurn === 'luxus_parceiros' && !adminActing) {
-      throw new ForbiddenException('Apenas o Luxus Parceiros pode responder este pedido');
-    }
-    if (currentTurn === 'parceiro' && !adminActing && requester !== 'luxus_parceiros' && requester !== 'luxus_task') {
-      throw new ForbiddenException('Você não pode responder este pedido');
-    }
-    const requesterLabel = this.workflowTurnLabel(requester);
-    if (!accept) {
-      await this.taskIntegration.updateSaleStage(id, {
-        stage: sale.contractStage,
-        note: `Pedido de vez recusado por ${user.name}.`,
-        clearTurnRequest: true,
-      }).catch(() => undefined);
-      return this.prisma.sale.update({
-        where: { id },
-        data: {
-          turnRequestFrom: null,
-          turnRequestReason: null,
-          turnRequestAt: null,
-          timeline: {
-            create: {
-              actorId: user.id,
-              actorName: user.name,
-              action: 'Pedido de vez recusado',
-              details: `Pedido de ${requesterLabel} recusado.`,
-            },
-          },
-        },
-      });
-    }
-    const stage = this.stageForWorkflowTurn(requester, sale.contractStage);
-    await this.taskIntegration.updateSaleStage(id, {
-      stage,
-      note: `Pedido de vez aceito por ${user.name}. Vez de ${requesterLabel}.`,
-      clearTurnRequest: true,
-    }).catch(() => undefined);
-    const updated = await this.prisma.sale.update({
-      where: { id },
-      data: {
-        contractStage: stage,
-        contractStageUpdatedAt: new Date(),
-        turnRequestFrom: null,
-        turnRequestReason: null,
-        turnRequestAt: null,
-        timeline: {
-          create: {
-            actorId: user.id,
-            actorName: user.name,
-            action: `Pedido de vez aceito — agora é a vez de ${requesterLabel}`,
-            details: sale.turnRequestReason || `Quem deve agir agora: ${requesterLabel}`,
-          },
-        },
-      },
-    });
-    const notification = {
-      type: 'SYSTEM' as const,
-      title: `Vez do fluxo: ${requesterLabel}`,
-      message: `${sale.protocol}: o pedido de vez foi aceito.`,
-      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-    };
-    await this.notificationsService.createForAdminUsers(notification).catch(() => undefined);
-    await this.notificationsService.create({
-      userId: sale.createdById,
-      ...notification,
-    }).catch(() => undefined);
-    return updated;
+  async respondWorkflowTurn(_id: string, _accept: boolean, _user: AuthUser) {
+    this.assertLegacyContractFlowDisabled();
   }
 
-  async submitSignedContract(id: string, user: AuthUser) {
-    const sale = await this.findOne(id, user);
-    const adminActing = isAdminRole(user.role);
-    const allowedStages = adminActing
-      ? [
-          SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN,
-          SaleContractStage.AWAITING_PARTNER_SIGNATURE,
-          SaleContractStage.CHANGES_REQUESTED,
-          SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
-        ]
-      : [SaleContractStage.AWAITING_PARTNER_SIGNATURE, SaleContractStage.CHANGES_REQUESTED];
-    if (!(allowedStages as SaleContractStage[]).includes(sale.contractStage)) {
-      throw new BadRequestException('Esta venda não está aguardando o contrato assinado');
-    }
-    const signed = sale.documents
-      .filter((document) => document.purpose === DocumentPurpose.SIGNED_CONTRACT)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
-    if (!signed) throw new BadRequestException('Anexe o contrato assinado antes de enviar');
-
-    // Admin anexa o assinado e deixa pronto para a própria conferência/aprovação.
-    if (adminActing) {
-      const updated = await this.prisma.sale.update({
-        where: { id },
-        data: {
-          contractStage: SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
-          contractStageUpdatedAt: new Date(),
-          contractCorrectionReason: null,
-          timeline: {
-            create: {
-              actorId: user.id,
-              actorName: user.name,
-              action: 'Contrato assinado anexado pelo administrador',
-            },
-          },
-        },
-      });
-      await this.taskIntegration.updateSaleStage(id, {
-        stage: SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
-        note: `Contrato assinado anexado por ${user.name}. Aguardando aprovação do administrador.`,
-      }).catch(() => undefined);
-      return updated;
-    }
-
-    const updated = await this.prisma.sale.update({
-      where: { id },
-      data: {
-        contractStage: SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
-        contractStageUpdatedAt: new Date(),
-        contractCorrectionReason: null,
-        timeline: { create: { actorId: user.id, actorName: user.name, action: 'Contrato assinado enviado para conferência do administrador' } },
-      },
-    });
-    await this.notificationsService.createForAdminUsers({
-      type: 'SYSTEM',
-      title: 'Contrato assinado pelo parceiro',
-      message: `${sale.protocol}: o parceiro anexou o contrato assinado.`,
-      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-    });
-    await this.notificationsService.create({
-      userId: sale.createdById,
-      type: 'SYSTEM',
-      title: 'Contrato assinado pelo parceiro',
-      message: `${sale.protocol}: seu contrato assinado foi enviado para conferência.`,
-      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-    }).catch(() => undefined);
-    return updated;
+  async submitSignedContract(_id: string, _user: AuthUser) {
+    this.assertLegacyContractFlowDisabled();
   }
 
-  async approveSignedContract(id: string, user: AuthUser) {
-    this.assertAdmin(user);
-    const sale = await this.findOne(id, user);
-    if (sale.contractStage !== SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN) {
-      throw new BadRequestException('O contrato assinado não está aguardando conferência');
-    }
-    const updated = await this.prisma.sale.update({
-      where: { id },
-      data: {
-        contractStage: SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
-        contractStageUpdatedAt: new Date(),
-        signedContractSyncStatus: SaleTaskSyncStatus.PENDING,
-        signedContractSyncError: null,
-        signedContractNextRetryAt: new Date(),
-        timeline: { create: { actorId: user.id, actorName: user.name, action: 'Contrato assinado aprovado e enfileirado para o Luxus Task' } },
-      },
-    });
-    await this.notificationsService.create({
-      userId: sale.createdById,
-      type: 'SYSTEM',
-      title: 'Contrato assinado enviado para conferência no Luxus Task',
-      message: `${sale.protocol}: o contrato assinado foi enviado ao Luxus Task.`,
-      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-    }).catch(() => undefined);
-    setImmediate(() => void this.processTaskSyncQueue());
-    return updated;
+  async approveSignedContract(_id: string, _user: AuthUser) {
+    this.assertLegacyContractFlowDisabled();
   }
 
-  async requestContractCorrection(id: string, dto: RequestContractCorrectionDto, user: AuthUser) {
-    this.assertAdmin(user);
-    const sale = await this.findOne(id, user);
-    if (!([SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN, SaleContractStage.TASK_REJECTED_REVIEW_PENDING] as SaleContractStage[]).includes(sale.contractStage)) {
-      throw new BadRequestException('O contrato assinado não está aguardando conferência');
-    }
-    const reason = dto.reason.trim();
-    const updated = await this.prisma.sale.update({
-      where: { id },
-      data: {
-        contractStage: SaleContractStage.CHANGES_REQUESTED,
-        contractStageUpdatedAt: new Date(),
-        contractCorrectionReason: reason,
-        timeline: { create: { actorId: user.id, actorName: user.name, action: 'Correção do contrato assinado solicitada', details: reason } },
-      },
-    });
-    await this.notificationsService.createForPartnerUsers(sale.partnerId, {
-      type: 'DOCUMENTS_REQUESTED',
-      title: 'Corrija o contrato assinado',
-      message: `${sale.protocol}: ${reason}`,
-      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-    });
-    return updated;
+  async finalizeAfterTaskApproval(_id: string, _user: AuthUser) {
+    this.assertLegacyContractFlowDisabled();
+  }
+
+  async requestContractCorrection(_id: string, _dto: RequestContractCorrectionDto, _user: AuthUser) {
+    this.assertLegacyContractFlowDisabled();
   }
 
   async refreshTaskStatus(id: string, user: AuthUser) {
@@ -1880,23 +1535,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     return this.findOne(id, user);
   }
 
-  async finalizeAfterTaskApproval(id: string, user: AuthUser) {
-    this.assertAdmin(user);
-    const sale = await this.findOne(id, user);
-    if (sale.contractStage !== SaleContractStage.TASK_APPROVED_REVIEW_PENDING) {
-      throw new BadRequestException('O Luxus Task ainda não aprovou o contrato assinado');
-    }
-    return this.completeSaleAsActivated(sale, user, {
-      timelineAction: 'Venda finalizada após aprovação do contrato pelo Luxus Task',
-      notifyTask: true,
-      notificationTitle: 'Venda concluída',
-      notificationMessage: `${sale.protocol}: contrato aprovado e venda concluída.`,
-    });
-  }
-
   /**
-   * Finaliza a venda no Luxus Parceiros independentemente do estágio no Luxus Task.
-   * Usado quando a demanda está parada/travada no Task ou o admin decide concluir aqui.
+   * Finaliza venda que NÃO foi encaminhada ao Luxus Task.
+   * Vendas já no Task só são concluídas pelo próprio Task.
    */
   async forceFinalize(id: string, user: AuthUser, reason?: string) {
     this.assertAdmin(user);
@@ -1913,14 +1554,22 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     ) {
       throw new BadRequestException('Venda rejeitada ou cancelada na revisão não pode ser finalizada');
     }
+    if (sale.taskDemandId || sale.taskSyncStatus === SaleTaskSyncStatus.SYNCED
+      || sale.taskSyncStatus === SaleTaskSyncStatus.PENDING
+      || sale.taskSyncStatus === SaleTaskSyncStatus.PROCESSING
+      || sale.taskSyncStatus === SaleTaskSyncStatus.RETRY) {
+      throw new BadRequestException(
+        'Esta venda já foi encaminhada ao Luxus Task. A conclusão deve ser feita lá.',
+      );
+    }
 
     const note = reason?.trim();
     return this.completeSaleAsActivated(sale, user, {
-      timelineAction: 'Venda finalizada pelo Luxus Parceiros (controle total)',
+      timelineAction: 'Venda finalizada no Luxus Parceiros (sem envio ao Task)',
       timelineDetails: note
-        ? `Finalização forçada sem depender do Luxus Task. Motivo: ${note}`
-        : 'Finalização forçada sem depender do estágio atual no Luxus Task.',
-      notifyTask: Boolean(sale.taskDemandId),
+        ? `Finalização local. Motivo: ${note}`
+        : 'Venda concluída sem encaminhamento ao Luxus Task.',
+      notifyTask: false,
       notificationTitle: 'Venda concluída no Luxus Parceiros',
       notificationMessage: `${sale.protocol} foi finalizada pelo administrador no Luxus Parceiros.`,
       ensureApprovedReview: true,
@@ -2114,7 +1763,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (!isAdminRole(user.role)) {
       throw new ForbiddenException('Apenas administradores podem aprovar vendas');
     }
-    throw new BadRequestException('A aprovação direta foi substituída por Aprovar e enviar ao Luxus Task');
+    throw new BadRequestException('Use a aprovação para o Luxus Task (responsável, cliente e prazo)');
   }
 
   async reject(id: string, dto: RejectSaleDto, user: AuthUser) {

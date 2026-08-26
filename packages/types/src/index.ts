@@ -77,19 +77,19 @@ export enum DocumentPurpose {
 }
 
 export const SALE_CONTRACT_STAGE_LABELS: Record<SaleContractStage, string> = {
-  [SaleContractStage.PRE_REVIEW]: 'Aguardando responsável no Luxus Task',
-  [SaleContractStage.TASK_PROCESSING]: 'Aguardando responsável no Luxus Task',
-  [SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN]: 'Contrato em branco recebido',
-  [SaleContractStage.AWAITING_PARTNER_SIGNATURE]: 'Aguardando assinatura do parceiro',
-  [SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN]: 'Contrato assinado pelo parceiro',
-  [SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT]: 'Contrato assinado enviado para conferência no Luxus Task',
-  [SaleContractStage.TASK_APPROVED_REVIEW_PENDING]: 'Contrato aprovado no Luxus Task',
-  [SaleContractStage.TASK_REJECTED_REVIEW_PENDING]: 'Contrato recusado no Luxus Task',
-  [SaleContractStage.CHANGES_REQUESTED]: 'Correção do contrato solicitada',
-  [SaleContractStage.COMPLETED]: 'Venda concluída',
+  [SaleContractStage.PRE_REVIEW]: 'Em andamento no Luxus Task',
+  [SaleContractStage.TASK_PROCESSING]: 'Em andamento no Luxus Task',
+  [SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN]: 'Em andamento no Luxus Task',
+  [SaleContractStage.AWAITING_PARTNER_SIGNATURE]: 'Em andamento no Luxus Task',
+  [SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN]: 'Em andamento no Luxus Task',
+  [SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT]: 'Em andamento no Luxus Task',
+  [SaleContractStage.TASK_APPROVED_REVIEW_PENDING]: 'Em andamento no Luxus Task',
+  [SaleContractStage.TASK_REJECTED_REVIEW_PENDING]: 'Em andamento no Luxus Task',
+  [SaleContractStage.CHANGES_REQUESTED]: 'Em andamento no Luxus Task',
+  [SaleContractStage.COMPLETED]: 'Concluído',
 };
 
-/** Nome de quem está na vez no Luxus Task (editor ao vivo ou responsável). */
+/** Nome de quem está cuidando no Luxus Task (editor ao vivo ou responsável). */
 export function saleTaskUserName(sale?: {
   taskEditorName?: string | null;
   taskResponsibleName?: string | null;
@@ -100,66 +100,56 @@ export function saleTaskUserName(sale?: {
   return responsible || null;
 }
 
-/** Label da etapa, trocando "Aguardando Luxus Task" pelo nome do usuário do Task quando disponível. */
+/** Label da etapa após envio ao Luxus Task. */
 export function saleContractStageLabel(
   stage?: SaleContractStage | string | null,
   taskUserName?: string | null,
 ): string {
   if (!stage) return '';
+  if (stage === SaleContractStage.COMPLETED) {
+    return SALE_CONTRACT_STAGE_LABELS[SaleContractStage.COMPLETED];
+  }
   const name = taskUserName?.trim();
-  if (
-    name
-    && (
-      stage === SaleContractStage.PRE_REVIEW
-      || stage === SaleContractStage.TASK_PROCESSING
-    )
-  ) {
-    return `Aguardando ${name}`;
-  }
-  if (name && stage === SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT) {
-    return `Aguardando conferência de ${name}`;
-  }
-  return SALE_CONTRACT_STAGE_LABELS[stage as SaleContractStage] ?? String(stage);
+  if (name) return `Em andamento com ${name}`;
+  return SALE_CONTRACT_STAGE_LABELS[stage as SaleContractStage]
+    ?? 'Em andamento no Luxus Task';
 }
 
+/** @deprecated Fluxo de “vez” removido — a demanda fica com o Luxus Task após a aprovação. */
 export type SaleWorkflowTurn = 'luxus_task' | 'luxus_parceiros' | 'parceiro' | 'concluido';
 
+/** @deprecated */
 export const SALE_TURN_STAGES: Record<Exclude<SaleWorkflowTurn, 'concluido'>, SaleContractStage[]> = {
   luxus_task: [
     SaleContractStage.PRE_REVIEW,
     SaleContractStage.TASK_PROCESSING,
-    SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
-  ],
-  luxus_parceiros: [
     SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN,
+    SaleContractStage.AWAITING_PARTNER_SIGNATURE,
     SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
+    SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
     SaleContractStage.TASK_APPROVED_REVIEW_PENDING,
     SaleContractStage.TASK_REJECTED_REVIEW_PENDING,
-  ],
-  parceiro: [
-    SaleContractStage.AWAITING_PARTNER_SIGNATURE,
     SaleContractStage.CHANGES_REQUESTED,
   ],
+  luxus_parceiros: [],
+  parceiro: [],
 };
 
+/** @deprecated Sempre luxus_task ou concluido após o envio. */
 export function saleWorkflowTurn(stage?: SaleContractStage | string | null): SaleWorkflowTurn | null {
   if (!stage) return null;
   if (stage === SaleContractStage.COMPLETED) return 'concluido';
-  if ((SALE_TURN_STAGES.luxus_parceiros as string[]).includes(stage)) return 'luxus_parceiros';
-  if ((SALE_TURN_STAGES.parceiro as string[]).includes(stage)) return 'parceiro';
-  if ((SALE_TURN_STAGES.luxus_task as string[]).includes(stage)) return 'luxus_task';
-  return null;
+  return 'luxus_task';
 }
 
+/** @deprecated */
 export function saleWorkflowTurnLabel(
   stage?: SaleContractStage | string | null,
   taskUserName?: string | null,
 ): string | null {
   const turn = saleWorkflowTurn(stage);
-  if (turn === 'luxus_task') return taskUserName?.trim() || 'Luxus Task';
-  if (turn === 'luxus_parceiros') return 'Luxus Parceiros';
-  if (turn === 'parceiro') return 'Parceiro';
   if (turn === 'concluido') return 'Concluído';
+  if (turn === 'luxus_task') return taskUserName?.trim() || 'Luxus Task';
   return null;
 }
 

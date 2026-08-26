@@ -192,29 +192,9 @@ export class UploadsService {
       throw new ForbiddenException(MESSAGES.FORBIDDEN);
     }
     if (purpose === DocumentPurpose.SIGNED_CONTRACT) {
-      if (type !== DocumentType.CONTRACT) {
-        throw new BadRequestException('Contrato assinado deve usar o tipo CONTRACT');
-      }
-      const adminActing = isAdminRole(user.role);
-      const allowedStages = adminActing
-        ? [
-            SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN,
-            SaleContractStage.AWAITING_PARTNER_SIGNATURE,
-            SaleContractStage.CHANGES_REQUESTED,
-            SaleContractStage.SIGNED_CONTRACT_READY_FOR_ADMIN,
-          ]
-        : [
-            SaleContractStage.AWAITING_PARTNER_SIGNATURE,
-            SaleContractStage.CHANGES_REQUESTED,
-          ];
-      if (!(allowedStages as SaleContractStage[]).includes(sale.contractStage)) {
-        throw new BadRequestException(
-          adminActing
-            ? 'O contrato assinado só pode ser anexado quando a assinatura estiver pendente'
-            : 'O contrato assinado só pode ser enviado pelo parceiro quando a assinatura estiver pendente',
-        );
-      }
-      return;
+      throw new BadRequestException(
+        'Contrato assinado é tratado no Luxus Task. No Parceiros só é possível baixar anexos sincronizados.',
+      );
     }
     if (purpose !== DocumentPurpose.GENERAL && purpose !== DocumentPurpose.ORIGINAL_SALE) {
       throw new BadRequestException('Finalidade de documento inválida para este envio');

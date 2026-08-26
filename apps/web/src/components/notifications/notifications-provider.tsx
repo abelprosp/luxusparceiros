@@ -10,11 +10,16 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { useRouter } from 'next/navigation';
 import { io, type Socket } from 'socket.io-client';
 import { api, WS_URL } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/ui/toaster';
+import {
+  NotificationAlertModal,
+  type NotificationAlertPayload,
+} from '@/components/notifications/notification-alert-modal';
 
 export interface NotificationItem {
   id: string;
@@ -40,15 +45,55 @@ interface NotificationsContextValue {
   markAllAsRead: () => Promise<void>;
 }
 
+const ALERT_EVENTS = new Set(['TASK_REMINDER', 'SALE_COMPLETED_BY_TASK']);
+
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
+
+function isAlertEvent(data?: Record<string, unknown> | null): boolean {
+  const event = data?.event;
+  return typeof event === 'string' && ALERT_EVENTS.has(event);
+}
+
+export function getNotificationPath(data?: Record<string, unknown> | null): string | null {
+  if (!data) return null;
+  if (typeof data.path === 'string' && data.path.trim()) return data.path.trim();
+  if (data.saleId) return `/vendas?sale=${encodeURIComponent(String(data.saleId))}`;
+  if (data.ticketId) return `/chamados?ticket=${encodeURIComponent(String(data.ticketId))}`;
+  if (data.commissionId) return '/comissoes';
+  if (data.requestId) return `/solicitacoes?request=${encodeURIComponent(String(data.requestId))}`;
+  return null;
+}
+
+function buildAlertPayload(notification: NotificationItem): NotificationAlertPayload | null {
+  if (!isAlertEvent(notification.data)) return null;
+  const path = getNotificationPath(notification.data) ?? '/vendas';
+  return {
+    id: notification.id,
+    title: notification.title,
+    message: notification.message,
+    path,
+  };
+}
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const router = useRouter();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [alert, setAlert] = useState<NotificationAlertPayload | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const shownAlertIdsRef = useRef<Set<string>>(new Set());
+  const initialAlertsCheckedRef = useRef(false);
+
+  const showAlertIfNeeded = useCallback((notification: NotificationItem) => {
+    if (shownAlertIdsRef.current.has(notification.id)) return;
+    const payload = buildAlertPayload(notification);
+    if (!payload) return;
+    shownAlertIdsRef.current.add(notification.id);
+    setAlert(payload);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!user?.id) {
@@ -63,13 +108,19 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       });
       setNotifications(res.data);
       setUnreadCount(res.unreadCount);
+
+      if (!initialAlertsCheckedRef.current) {
+        initialAlertsCheckedRef.current = true;
+        const unreadAlert = res.data.find((n) => !n.isRead && isAlertEvent(n.data));
+        if (unreadAlert) showAlertIfNeeded(unreadAlert);
+      }
     } catch {
       setNotifications([]);
       setUnreadCount(0);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, showAlertIfNeeded]);
 
   const markAsRead = useCallback(async (id: string) => {
     await api(`/notifications/${id}/read`, { method: 'PATCH' });
@@ -84,6 +135,12 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     setUnreadCount(0);
   }, []);
+
+  useEffect(() => {
+    initialAlertsCheckedRef.current = false;
+    shownAlertIdsRef.current = new Set();
+    setAlert(null);
+  }, [user?.id]);
 
   useEffect(() => {
     refresh();
@@ -117,6 +174,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         title: notification.title,
         description: notification.message,
       });
+      showAlertIfNeeded(notification);
     };
 
     socket.on('notification:new', handleNew);
@@ -137,7 +195,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [user?.id, toast]);
+  }, [user?.id, toast, showAlertIfNeeded]);
 
   const value = useMemo(
     () => ({
@@ -154,6 +212,16 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   return (
     <NotificationsContext.Provider value={value}>
       {children}
+      <NotificationAlertModal
+        alert={alert}
+        onClose={() => setAlert(null)}
+        onOpenSale={(path) => {
+          const alertId = alert?.id;
+          setAlert(null);
+          if (alertId) void markAsRead(alertId).catch(() => undefined);
+          router.push(path);
+        }}
+      />
     </NotificationsContext.Provider>
   );
 }
@@ -164,13 +232,4 @@ export function useNotifications() {
     throw new Error('useNotifications must be used within NotificationsProvider');
   }
   return ctx;
-}
-
-export function getNotificationPath(data?: Record<string, unknown> | null): string | null {
-  if (!data) return null;
-  if (data.saleId) return `/vendas?sale=${encodeURIComponent(String(data.saleId))}`;
-  if (data.ticketId) return `/chamados?ticket=${encodeURIComponent(String(data.ticketId))}`;
-  if (data.commissionId) return '/comissoes';
-  if (data.requestId) return `/solicitacoes?request=${encodeURIComponent(String(data.requestId))}`;
-  return null;
 }

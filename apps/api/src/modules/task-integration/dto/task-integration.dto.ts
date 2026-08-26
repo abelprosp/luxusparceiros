@@ -101,6 +101,11 @@ export class TaskDemandCallbackDto {
   @IsBoolean()
   clearTurnRequest?: boolean;
 
+  /** Cobrança/aviso do Luxus Task (assinaturas pendentes etc.) — só notificação. */
+  @IsOptional()
+  @IsString()
+  reminderMessage?: string;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
