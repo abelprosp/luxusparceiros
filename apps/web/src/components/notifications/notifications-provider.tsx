@@ -48,8 +48,45 @@ interface NotificationsContextValue {
 }
 
 const ALERT_EVENTS = new Set(['TASK_REMINDER', 'SALE_COMPLETED_BY_TASK']);
+const DISMISSED_ALERT_PREFIX = 'luxus:alert-dismissed:';
+const DISMISSED_SALE_COMPLETED_PREFIX = 'luxus:alert-dismissed-sale-completed:';
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
+
+function dismissedAlertKey(id: string) {
+  return `${DISMISSED_ALERT_PREFIX}${id}`;
+}
+
+function dismissedSaleCompletedKey(saleId: string) {
+  return `${DISMISSED_SALE_COMPLETED_PREFIX}${saleId}`;
+}
+
+function wasAlertDismissed(payload: NotificationAlertPayload) {
+  try {
+    if (sessionStorage.getItem(dismissedAlertKey(payload.id))) return true;
+    if (
+      payload.event === 'SALE_COMPLETED_BY_TASK'
+      && payload.saleId
+      && sessionStorage.getItem(dismissedSaleCompletedKey(payload.saleId))
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function rememberAlertDismissed(payload: NotificationAlertPayload) {
+  try {
+    sessionStorage.setItem(dismissedAlertKey(payload.id), '1');
+    if (payload.event === 'SALE_COMPLETED_BY_TASK' && payload.saleId) {
+      sessionStorage.setItem(dismissedSaleCompletedKey(payload.saleId), '1');
+    }
+  } catch {
+    // sessionStorage pode estar indisponível; o markAsRead ainda cobre o caso.
+  }
+}
 
 function isAlertEvent(data?: Record<string, unknown> | null): boolean {
   const event = data?.event;
@@ -85,13 +122,16 @@ export function getNotificationPath(data?: Record<string, unknown> | null): stri
 }
 
 function buildAlertPayload(notification: NotificationItem): NotificationAlertPayload | null {
-  if (!isAlertEvent(notification.data)) return null;
+  if (notification.isRead || !isAlertEvent(notification.data)) return null;
   const path = getNotificationPath(notification.data) ?? '/vendas';
   return {
     id: notification.id,
     title: notification.title,
     message: notification.message,
     path,
+    event: typeof notification.data?.event === 'string' ? notification.data.event : undefined,
+    saleId: notification.data?.saleId ? String(notification.data.saleId) : null,
+    requestId: notification.data?.requestId ? String(notification.data.requestId) : null,
   };
 }
 
@@ -105,14 +145,19 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [alert, setAlert] = useState<NotificationAlertPayload | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const shownAlertIdsRef = useRef<Set<string>>(new Set());
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
+  const markedReadIdsRef = useRef<Set<string>>(new Set());
+  const dismissingAlertIdRef = useRef<string | null>(null);
   const initialAlertsCheckedRef = useRef(false);
+  const notificationsRef = useRef<NotificationItem[]>([]);
+  notificationsRef.current = notifications;
 
   const showAlertIfNeeded = useCallback((notification: NotificationItem) => {
     if (shownAlertIdsRef.current.has(notification.id)) return;
     const payload = buildAlertPayload(notification);
-    if (!payload) return;
+    if (!payload || wasAlertDismissed(payload)) return;
     shownAlertIdsRef.current.add(notification.id);
-    setAlert(payload);
+    setAlert((current) => current ?? payload);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -128,6 +173,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       });
       setNotifications(res.data);
       setUnreadCount(res.unreadCount);
+      res.data.forEach((item) => seenNotificationIdsRef.current.add(item.id));
 
       if (!initialAlertsCheckedRef.current) {
         initialAlertsCheckedRef.current = true;
@@ -143,11 +189,18 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   }, [user, showAlertIfNeeded]);
 
   const markAsRead = useCallback(async (id: string) => {
-    await api(`/notifications/${id}/read`, { method: 'PATCH' });
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
-    );
-    setUnreadCount((c) => Math.max(0, c - 1));
+    if (markedReadIdsRef.current.has(id)) return;
+    markedReadIdsRef.current.add(id);
+    try {
+      await api(`/notifications/${id}/read`, { method: 'PATCH' });
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
+      );
+      setUnreadCount((c) => Math.max(0, c - 1));
+    } catch (error) {
+      markedReadIdsRef.current.delete(id);
+      throw error;
+    }
   }, []);
 
   const markAllAsRead = useCallback(async () => {
@@ -170,9 +223,32 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     await Promise.all(unread.map((item) => markAsRead(item.id)));
   }, [markAsRead, notifications]);
 
+  const dismissAlert = useCallback(async (payload: NotificationAlertPayload | null) => {
+    setAlert(null);
+    if (!payload) return;
+    if (dismissingAlertIdRef.current === payload.id) return;
+    dismissingAlertIdRef.current = payload.id;
+    shownAlertIdsRef.current.add(payload.id);
+    rememberAlertDismissed(payload);
+    const ids = new Set<string>([payload.id]);
+    for (const item of notificationsRef.current) {
+      if (item.isRead) continue;
+      const sameCompletedSale =
+        payload.event === 'SALE_COMPLETED_BY_TASK'
+        && payload.saleId
+        && item.data?.event === 'SALE_COMPLETED_BY_TASK'
+        && String(item.data?.saleId ?? '') === payload.saleId;
+      if (item.id === payload.id || sameCompletedSale) ids.add(item.id);
+    }
+    await Promise.all([...ids].map((id) => markAsRead(id).catch(() => undefined)));
+  }, [markAsRead]);
+
   useEffect(() => {
     initialAlertsCheckedRef.current = false;
     shownAlertIdsRef.current = new Set();
+    seenNotificationIdsRef.current = new Set();
+    markedReadIdsRef.current = new Set();
+    dismissingAlertIdRef.current = null;
     setAlert(null);
   }, [user?.id]);
 
@@ -199,6 +275,8 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     socketRef.current = socket;
 
     const handleNew = (notification: NotificationItem) => {
+      if (!notification?.id || seenNotificationIdsRef.current.has(notification.id)) return;
+      seenNotificationIdsRef.current.add(notification.id);
       setNotifications((prev) => {
         if (prev.some((n) => n.id === notification.id)) return prev;
         return [notification, ...prev];
@@ -212,7 +290,6 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     };
 
     socket.on('notification:new', handleNew);
-    socket.on('notification', handleNew);
     socket.on('notification:read', ({ id }: { id: string }) => {
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
@@ -225,7 +302,6 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
     return () => {
       socket.off('notification:new', handleNew);
-      socket.off('notification', handleNew);
       socket.disconnect();
       socketRef.current = null;
     };
@@ -259,9 +335,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       {children}
       <NotificationAlertModal
         alert={alert}
-        onClose={() => setAlert(null)}
+        onClose={() => { void dismissAlert(alert); }}
         onOpenSale={(path) => {
-          setAlert(null);
+          void dismissAlert(alert);
           router.push(path);
         }}
       />

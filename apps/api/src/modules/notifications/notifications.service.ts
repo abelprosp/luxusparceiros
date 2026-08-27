@@ -66,6 +66,7 @@ export class NotificationsService {
       },
     });
     this.eventsGateway.emitToUser(dto.userId, 'notification:new', notification);
+    // App mobile ainda escuta o evento legado `notification`.
     this.eventsGateway.emitToUser(dto.userId, 'notification', notification);
     return notification;
   }

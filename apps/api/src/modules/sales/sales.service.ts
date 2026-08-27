@@ -1514,6 +1514,8 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
   async refreshTaskStatus(id: string, user: AuthUser) {
     const sale = await this.findOne(id, user);
     if (!sale.taskDemandId) return sale;
+    const alreadyCompleted = sale.contractStage === SaleContractStage.COMPLETED
+      || sale.status === SaleStatus.ACTIVATED;
     const task = await this.taskIntegration.getDemand(id);
     await this.taskIntegration.applyCallback({
       externalRequestId: id,
@@ -1531,7 +1533,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       editorName: task.editorName,
       editorActivity: task.editorActivity,
       editorLastSeenAt: task.editorLastSeenAt,
-    });
+    }, { notify: !alreadyCompleted });
     return this.findOne(id, user);
   }
 

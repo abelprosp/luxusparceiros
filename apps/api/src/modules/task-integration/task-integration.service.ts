@@ -330,7 +330,7 @@ export class TaskIntegrationService {
     };
   }
 
-  async applyCallback(dto: TaskDemandCallbackDto) {
+  async applyCallback(dto: TaskDemandCallbackDto, options?: { notify?: boolean }) {
     const existing = await this.prisma.request.findUnique({
       where: { id: dto.externalRequestId },
       select: {
@@ -344,7 +344,7 @@ export class TaskIntegrationService {
         resolution: true,
       },
     });
-    if (!existing) return this.applySaleCallback(dto);
+    if (!existing) return this.applySaleCallback(dto, options);
     if (existing.taskDemandId && existing.taskDemandId !== dto.demandId) {
       throw new BadGatewayException('A demanda não corresponde à solicitação informada');
     }
@@ -443,7 +443,7 @@ export class TaskIntegrationService {
     return { accepted: true };
   }
 
-  private async applySaleCallback(dto: TaskDemandCallbackDto) {
+  private async applySaleCallback(dto: TaskDemandCallbackDto, options?: { notify?: boolean }) {
     const sale = await this.prisma.sale.findUnique({
       where: { id: dto.externalRequestId },
       select: {
@@ -605,7 +605,17 @@ export class TaskIntegrationService {
       });
     }
 
-    if (workflowChanged || shouldComplete || reminderMessage) {
+    const alreadyCompletedNotice = shouldComplete
+      ? await this.hasSaleCompletedNotification(sale.id)
+      : false;
+    const allowNotify = options?.notify !== false;
+    const shouldNotify = allowNotify && (
+      Boolean(reminderMessage)
+      || (shouldComplete && !alreadyCompletedNotice)
+      || (!saleLocked && !shouldComplete && workflowChanged)
+    );
+
+    if (shouldNotify) {
       const notification = shouldComplete
         ? {
             type: 'SALE_APPROVED' as const,
@@ -636,7 +646,13 @@ export class TaskIntegrationService {
               data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
             };
 
-      await this.notifications.createForAdminUsers(notification);
+      const adminNotifications = await this.notifications.createForAdminUsers(
+        notification,
+        [sale.createdById],
+      );
+      const adminIds = (adminNotifications ?? [])
+        .map((item) => item?.userId)
+        .filter((id): id is string => Boolean(id));
       await this.notifications.create({
         userId: sale.createdById,
         ...notification,
@@ -645,11 +661,24 @@ export class TaskIntegrationService {
         await this.notifications.createForPartnerUsers(
           sale.partnerId,
           notification,
-          [sale.createdById],
+          [...adminIds, sale.createdById],
         ).catch(() => undefined);
       }
     }
     return { accepted: true };
+  }
+
+  private async hasSaleCompletedNotification(saleId: string) {
+    const existing = await this.prisma.notification.findFirst({
+      where: {
+        AND: [
+          { data: { path: ['event'], equals: 'SALE_COMPLETED_BY_TASK' } },
+          { data: { path: ['saleId'], equals: saleId } },
+        ],
+      },
+      select: { id: true },
+    });
+    return Boolean(existing);
   }
 
   private resolveSaleContractStage(dto: TaskDemandCallbackDto, current: SaleContractStage): SaleContractStage {
