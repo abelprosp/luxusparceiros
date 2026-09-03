@@ -392,6 +392,8 @@ export interface DashboardAdminMetrics {
   activatedLines: number;
   revenue: number;
   commissions: number;
+  /** Soma das comissões previstas das vendas do ciclo (não canceladas/rejeitadas). */
+  projectedCommission: number;
   salesChart: { date: string; value: number }[];
   partnersInBrazil: PartnerMapLocation[];
   ranking: { partnerId: string; partnerName: string; sales: number }[];

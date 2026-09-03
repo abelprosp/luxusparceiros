@@ -4,6 +4,8 @@ import {
   LineStatus,
   PartnerStatus,
   Prisma,
+  SaleReviewStatus,
+  SaleStatus,
 } from '@prisma/client';
 import {
   AuthUser,
@@ -16,6 +18,16 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { resolveBranchId } from '@/common/utils/branch-scope';
 import { realizedSaleStatusFilter } from '@/common/constants/realized-sale-statuses';
 import { DashboardFiltersDto } from './dto/dashboard-filters.dto';
+
+/** Vendas que ainda entram na projeção de comissão do ciclo. */
+const PIPELINE_SALE_STATUSES: SaleStatus[] = [
+  SaleStatus.IN_ANALYSIS,
+  SaleStatus.PENDING,
+  SaleStatus.APPROVED,
+  SaleStatus.DOCUMENTS_PENDING,
+  SaleStatus.CONTESTED,
+  SaleStatus.ACTIVATED,
+];
 
 @Injectable()
 export class DashboardService {
@@ -30,6 +42,7 @@ export class DashboardService {
     const lineWhere = this.buildLineWhere(filters);
     const saleWhereMonth = this.buildSaleWhere(filters, startOfMonth);
     const commissionWhere = this.buildCommissionWhere(filters, startOfMonth);
+    const projectionWhere = this.buildProjectionSaleWhere(filters, startOfMonth);
 
     const [
       totalPartners,
@@ -39,6 +52,7 @@ export class DashboardService {
       activatedLines,
       sales,
       commissions,
+      projectedSales,
       partnersInBrazil,
       ranking,
       salesChart,
@@ -58,6 +72,10 @@ export class DashboardService {
       this.prisma.commission.findMany({
         where: commissionWhere,
         select: { value: true },
+      }),
+      this.prisma.sale.findMany({
+        where: projectionWhere,
+        select: { commissionValue: true },
       }),
       this.prisma.partner.findMany({
         where: partnerWhere,
@@ -117,6 +135,10 @@ export class DashboardService {
       activatedLines,
       revenue: sales.reduce((sum, s) => sum + Number(s.value), 0),
       commissions: commissions.reduce((sum, c) => sum + Number(c.value), 0),
+      projectedCommission: projectedSales.reduce(
+        (sum, s) => sum + Number(s.commissionValue ?? 0),
+        0,
+      ),
       salesChart,
       partnersInBrazil: partnersInBrazil.map((p) => ({
         id: p.id,
@@ -443,8 +465,40 @@ export class DashboardService {
     };
 
     if (since) {
-      where.createdAt = { gte: since };
+      // Receita do mês = vendas ativadas no período (não pela data de cadastro).
+      where.OR = [
+        { activatedAt: { gte: since } },
+        { activatedAt: null, createdAt: { gte: since } },
+      ];
     }
+    if (filters.partnerId) {
+      where.partnerId = filters.partnerId;
+    }
+    if (filters.campaignId) {
+      where.campaignId = filters.campaignId;
+    }
+    if (filters.operatorId) {
+      where.operatorId = filters.operatorId;
+    }
+    if (filters.state) {
+      where.partner = { state: filters.state };
+    }
+
+    return where;
+  }
+
+  private buildProjectionSaleWhere(
+    filters: DashboardFiltersDto,
+    since: Date,
+  ): Prisma.SaleWhereInput {
+    const where: Prisma.SaleWhereInput = {
+      status: { in: PIPELINE_SALE_STATUSES },
+      reviewStatus: {
+        notIn: [SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED],
+      },
+      createdAt: { gte: since },
+    };
+
     if (filters.partnerId) {
       where.partnerId = filters.partnerId;
     }
@@ -513,9 +567,12 @@ export class DashboardService {
     branchId?: string,
   ): Prisma.CommissionWhereInput {
     const where: Prisma.CommissionWhereInput = {
-      createdAt: { gte: since },
       sale: {
         status: realizedSaleStatusFilter(),
+        OR: [
+          { activatedAt: { gte: since } },
+          { activatedAt: null, createdAt: { gte: since } },
+        ],
         ...(branchId && { branchId }),
         ...(filters.campaignId && { campaignId: filters.campaignId }),
         ...(filters.operatorId && { operatorId: filters.operatorId }),
@@ -541,13 +598,14 @@ export class DashboardService {
         ...this.buildSaleWhere(filters, since),
         ...(branchId && { branchId }),
       },
-      select: { createdAt: true, value: true },
+      select: { createdAt: true, activatedAt: true, value: true },
       orderBy: { createdAt: 'asc' },
     });
 
     const grouped: Record<string, number> = {};
     for (const sale of sales) {
-      const date = sale.createdAt.toISOString().split('T')[0];
+      const when = sale.activatedAt ?? sale.createdAt;
+      const date = when.toISOString().split('T')[0];
       grouped[date] = (grouped[date] ?? 0) + Number(sale.value);
     }
 

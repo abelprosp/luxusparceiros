@@ -66,6 +66,7 @@ const fallbackMetrics: DashboardAdminMetrics = {
   activatedLines: 0,
   revenue: 0,
   commissions: 0,
+  projectedCommission: 0,
   salesChart: [],
   partnersInBrazil: [],
   ranking: [],
@@ -324,6 +325,7 @@ export default function DashboardPage() {
             <MetricsCard
               title="Receita"
               value={formatCurrency(data.revenue)}
+              description="Vendas ativadas no mês"
               icon={TrendingUp}
               variant="accent"
               onClick={() => openDetails('sales', 'Vendas realizadas no mês')}
@@ -331,6 +333,7 @@ export default function DashboardPage() {
             <MetricsCard
               title="Comissões"
               value={formatCurrency(data.commissions)}
+              description={`Projeção ciclo cheio: ${formatCurrency(data.projectedCommission ?? 0)}`}
               icon={DollarSign}
               onClick={() => openDetails('commissions', 'Comissões do mês')}
             />

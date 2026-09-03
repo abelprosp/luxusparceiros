@@ -1,11 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { PartnerStatus, Prisma, UserRole } from '@prisma/client';
+import { CommissionStatus, PartnerStatus, Prisma, UserRole } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
@@ -406,14 +407,136 @@ export class PartnersService {
   }
 
   async remove(id: string, actor: AuthUser) {
-    await this.findOne(id, actor);
-    await this.prisma.partner.delete({ where: { id } });
+    const partner = await this.findOne(id, actor);
+    if (actor.partnerId && actor.partnerId === id) {
+      throw new ForbiddenException('Você não pode excluir o próprio parceiro vinculado à conta');
+    }
+
+    const paidCommissions = await this.prisma.commission.count({
+      where: { partnerId: id, status: CommissionStatus.PAID },
+    });
+    if (paidCommissions > 0) {
+      throw new BadRequestException(
+        'Não é possível excluir este parceiro: existem comissões já pagas vinculadas.',
+      );
+    }
+
+    const userIds = (
+      await this.prisma.user.findMany({
+        where: { partnerId: id },
+        select: { id: true },
+      })
+    ).map((user) => user.id);
+
+    const saleIds = (
+      await this.prisma.sale.findMany({
+        where: { partnerId: id },
+        select: { id: true },
+      })
+    ).map((sale) => sale.id);
+
+    const requestIds = (
+      await this.prisma.request.findMany({
+        where: { partnerId: id },
+        select: { id: true },
+      })
+    ).map((request) => request.id);
+
+    const ticketIds = (
+      await this.prisma.ticket.findMany({
+        where: { partnerId: id },
+        select: { id: true },
+      })
+    ).map((ticket) => ticket.id);
+
+    const clientIds = (
+      await this.prisma.client.findMany({
+        where: { partnerId: id },
+        select: { id: true },
+      })
+    ).map((client) => client.id);
+
+    const branchIds = (
+      await this.prisma.branch.findMany({
+        where: { parentPartnerId: id },
+        select: { id: true },
+      })
+    ).map((branch) => branch.id);
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if (saleIds.length) {
+          await tx.commission.deleteMany({ where: { saleId: { in: saleIds } } });
+          await tx.document.deleteMany({ where: { saleId: { in: saleIds } } });
+          await tx.sale.deleteMany({ where: { id: { in: saleIds } } });
+        }
+
+        if (requestIds.length) {
+          await tx.document.deleteMany({ where: { requestId: { in: requestIds } } });
+          await tx.request.deleteMany({ where: { id: { in: requestIds } } });
+        }
+
+        if (ticketIds.length) {
+          await tx.document.deleteMany({ where: { ticketId: { in: ticketIds } } });
+          await tx.ticket.deleteMany({ where: { id: { in: ticketIds } } });
+        }
+
+        if (clientIds.length) {
+          await tx.document.deleteMany({ where: { clientId: { in: clientIds } } });
+          await tx.client.deleteMany({ where: { id: { in: clientIds } } });
+        }
+
+        await tx.stockMovement.deleteMany({
+          where: {
+            OR: [
+              { partnerId: id },
+              ...(branchIds.length ? [{ branchId: { in: branchIds } }] : []),
+              ...(userIds.length ? [{ userId: { in: userIds } }] : []),
+            ],
+          },
+        });
+        await tx.line.deleteMany({ where: { partnerId: id } });
+        await tx.simCard.deleteMany({ where: { partnerId: id } });
+        await tx.commissionRule.deleteMany({ where: { partnerId: id } });
+        await tx.financialRecord.deleteMany({ where: { partnerId: id } });
+        await tx.commission.deleteMany({ where: { partnerId: id } });
+
+        if (userIds.length) {
+          await tx.notification.deleteMany({ where: { userId: { in: userIds } } });
+          await tx.refreshToken.deleteMany({ where: { userId: { in: userIds } } });
+          await tx.session.deleteMany({ where: { userId: { in: userIds } } });
+          await tx.userPermission.deleteMany({ where: { userId: { in: userIds } } });
+          await tx.auditLog.updateMany({
+            where: { userId: { in: userIds } },
+            data: { userId: null },
+          });
+          await tx.user.deleteMany({ where: { id: { in: userIds } } });
+        }
+
+        await tx.partner.delete({ where: { id } });
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (/Foreign key|P2003|constraint/i.test(message)) {
+        throw new BadRequestException(
+          'Não foi possível excluir o parceiro: ainda há registros vinculados. Remova vendas, usuários ou estoque relacionados e tente novamente.',
+        );
+      }
+      throw error;
+    }
+
     await this.auditService.log({
       userId: actor.id,
       action: 'DELETE',
       module: 'partners',
       entityId: id,
       entityType: 'Partner',
+      oldData: {
+        name: partner.name,
+        document: partner.document,
+        sales: saleIds.length,
+        users: userIds.length,
+      } as Prisma.InputJsonValue,
     });
     return { message: 'Parceiro removido com sucesso' };
   }

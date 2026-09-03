@@ -23,13 +23,28 @@ test('comissões do dashboard respeitam venda realizada, campanha, operadora e f
   );
 
   assert.equal(where.partnerId, 'partner-1');
-  assert.equal(where.createdAt.gte, since);
   assert.deepEqual(where.sale, {
     status: { in: [SaleStatus.ACTIVATED] },
+    OR: [
+      { activatedAt: { gte: since } },
+      { activatedAt: null, createdAt: { gte: since } },
+    ],
     branchId: 'branch-1',
     campaignId: 'campaign-1',
     operatorId: 'operator-1',
   });
+});
+
+test('receita do dashboard usa data de ativação e não só a de cadastro', () => {
+  const service = new DashboardService({});
+  const since = new Date('2026-09-01T00:00:00.000Z');
+  const where = service.buildSaleWhere({ partnerId: 'partner-1' }, since);
+
+  assert.deepEqual(where.status, { in: [SaleStatus.ACTIVATED] });
+  assert.deepEqual(where.OR, [
+    { activatedAt: { gte: since } },
+    { activatedAt: null, createdAt: { gte: since } },
+  ]);
 });
 
 test('detalhes do ranking nunca retornam vendas de outro parceiro', async () => {
