@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   CommissionType,
+  LineStatus,
   SaleReviewStatus,
   SaleStatus,
   SaleTaskSyncStatus,
@@ -1693,6 +1694,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     }
 
     await this.commissionsService.createFromSale(updated, user.id);
+    await this.markSaleLineAsSold(sale.lineId, sale.newNumber, sale.partnerId).catch((error) => {
+      console.warn('[sales] Falha ao marcar linha como vendida', error);
+    });
     await this.notificationsService.createForPartnerUsers(sale.partnerId, {
       type: 'SALE_APPROVED',
       title: options.notificationTitle,
@@ -1700,6 +1704,35 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
     });
     return updated;
+  }
+
+  private async markSaleLineAsSold(
+    lineId: string | null | undefined,
+    newNumber: string | null | undefined,
+    partnerId: string,
+  ) {
+    const digits = String(newNumber || '').replace(/\D/g, '');
+    const line = lineId
+      ? await this.prisma.line.findUnique({ where: { id: lineId }, select: { id: true } })
+      : digits
+        ? await this.prisma.line.findFirst({
+            where: {
+              OR: [
+                { number: digits },
+                { number: { contains: digits.slice(-8) } },
+              ],
+            },
+            select: { id: true },
+          })
+        : null;
+    if (!line) return;
+    await this.prisma.line.update({
+      where: { id: line.id },
+      data: {
+        status: LineStatus.ACTIVATED,
+        partnerId,
+      },
+    });
   }
 
   async updateStatus(id: string, dto: UpdateSaleStatusDto, user: AuthUser) {

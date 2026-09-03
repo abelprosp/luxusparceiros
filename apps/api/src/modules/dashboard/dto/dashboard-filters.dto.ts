@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID, Length } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 
 export class DashboardFiltersDto {
   @ApiPropertyOptional({ description: 'Filtrar pela filial vinculada' })
@@ -27,4 +27,13 @@ export class DashboardFiltersDto {
   @IsOptional()
   @IsUUID()
   operatorId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Período das métricas de vendas',
+    enum: ['30d', 'month'],
+    default: '30d',
+  })
+  @IsOptional()
+  @IsIn(['30d', 'month'])
+  period?: '30d' | 'month';
 }

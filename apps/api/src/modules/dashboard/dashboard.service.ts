@@ -29,20 +29,50 @@ const PIPELINE_SALE_STATUSES: SaleStatus[] = [
   SaleStatus.ACTIVATED,
 ];
 
+const IN_PROGRESS_SALE_STATUSES: SaleStatus[] = [
+  SaleStatus.IN_ANALYSIS,
+  SaleStatus.PENDING,
+  SaleStatus.APPROVED,
+  SaleStatus.DOCUMENTS_PENDING,
+  SaleStatus.CONTESTED,
+];
+
+const CANCELLED_SALE_STATUSES: SaleStatus[] = [
+  SaleStatus.CANCELLED,
+  SaleStatus.REJECTED,
+];
+
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
-  async getAdminMetrics(filters: DashboardFiltersDto = {}): Promise<DashboardAdminMetrics> {
+  private resolvePeriod(filters: DashboardFiltersDto) {
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const period = filters.period === 'month' ? 'month' : '30d';
+    const since = period === 'month'
+      ? new Date(now.getFullYear(), now.getMonth(), 1)
+      : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return {
+      now,
+      period: period as '30d' | 'month',
+      since,
+      periodLabel: period === 'month' ? 'Mês atual' : 'Últimos 30 dias',
+      chartSince: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+    };
+  }
+
+  async getAdminMetrics(filters: DashboardFiltersDto = {}): Promise<DashboardAdminMetrics> {
+    const { period, since, periodLabel, chartSince } = this.resolvePeriod(filters);
 
     const partnerWhere = this.buildPartnerWhere(filters);
     const lineWhere = this.buildLineWhere(filters);
-    const saleWhereMonth = this.buildSaleWhere(filters, startOfMonth);
-    const commissionWhere = this.buildCommissionWhere(filters, startOfMonth);
-    const projectionWhere = this.buildProjectionSaleWhere(filters, startOfMonth);
+    const saleWherePeriod = this.buildSaleWhere(filters, since);
+    const commissionWhere = this.buildCommissionWhere(filters, since);
+    const projectionWhere = this.buildProjectionSaleWhere(filters, since);
+    const inProgressWhere = this.buildStatusSaleWhere(filters, since, IN_PROGRESS_SALE_STATUSES);
+    const cancelledWhere = this.buildStatusSaleWhere(filters, since, CANCELLED_SALE_STATUSES, {
+      byCancelledAt: true,
+    });
 
     const [
       totalPartners,
@@ -53,6 +83,8 @@ export class DashboardService {
       sales,
       commissions,
       projectedSales,
+      inProgressSales,
+      cancelledSales,
       partnersInBrazil,
       ranking,
       salesChart,
@@ -62,11 +94,17 @@ export class DashboardService {
       this.prisma.partner.count({ where: { ...partnerWhere, status: PartnerStatus.ACTIVE } }),
       this.prisma.line.count({ where: { ...lineWhere, status: LineStatus.AVAILABLE } }),
       this.prisma.line.count({
-        where: { ...lineWhere, status: { in: [LineStatus.USED, LineStatus.ACTIVATED] } },
+        where: {
+          ...lineWhere,
+          OR: [
+            { status: { in: [LineStatus.USED, LineStatus.ACTIVATED] } },
+            { sales: { some: { status: SaleStatus.ACTIVATED } } },
+          ],
+        },
       }),
       this.prisma.line.count({ where: { ...lineWhere, status: LineStatus.ACTIVATED } }),
       this.prisma.sale.findMany({
-        where: saleWhereMonth,
+        where: saleWherePeriod,
         select: { value: true },
       }),
       this.prisma.commission.findMany({
@@ -76,6 +114,14 @@ export class DashboardService {
       this.prisma.sale.findMany({
         where: projectionWhere,
         select: { commissionValue: true },
+      }),
+      this.prisma.sale.findMany({
+        where: inProgressWhere,
+        select: { value: true },
+      }),
+      this.prisma.sale.findMany({
+        where: cancelledWhere,
+        select: { value: true },
       }),
       this.prisma.partner.findMany({
         where: partnerWhere,
@@ -95,17 +141,17 @@ export class DashboardService {
       this.prisma.sale.groupBy({
         by: ['partnerId'],
         _count: { id: true },
-        where: saleWhereMonth,
+        where: saleWherePeriod,
         orderBy: { _count: { id: 'desc' } },
         take: 10,
       }),
-      this.getSalesChart(thirtyDaysAgo, filters),
+      this.getSalesChart(chartSince, filters),
       this.prisma.sale.groupBy({
         by: ['campaignId'],
         _count: { id: true },
         _sum: { value: true },
         where: {
-          ...saleWhereMonth,
+          ...saleWherePeriod,
           campaignId: filters.campaignId ? filters.campaignId : { not: null },
         },
       }),
@@ -139,6 +185,12 @@ export class DashboardService {
         (sum, s) => sum + Number(s.commissionValue ?? 0),
         0,
       ),
+      inProgressSales: inProgressSales.length,
+      inProgressValue: inProgressSales.reduce((sum, s) => sum + Number(s.value), 0),
+      cancelledSales: cancelledSales.length,
+      cancelledValue: cancelledSales.reduce((sum, s) => sum + Number(s.value), 0),
+      period,
+      periodLabel,
       salesChart,
       partnersInBrazil: partnersInBrazil.map((p) => ({
         id: p.id,
@@ -317,8 +369,7 @@ export class DashboardService {
     filters: DashboardFiltersDto = {},
     requestedBranchId?: string,
   ): Promise<DashboardDetails> {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const { now, since, periodLabel } = this.resolvePeriod(filters);
     // Admin pode filtrar por filial; usuário de filial fica sempre restrito à própria.
     const branchId = resolveBranchId(user, requestedBranchId);
     const scopedFilters: DashboardFiltersDto = {
@@ -326,7 +377,17 @@ export class DashboardService {
       ...(user.partnerId && { partnerId: user.partnerId }),
     };
     const saleWhere: Prisma.SaleWhereInput = {
-      ...this.buildSaleWhere(scopedFilters, startOfMonth),
+      ...this.buildSaleWhere(scopedFilters, since),
+      ...(branchId && { branchId }),
+    };
+    const inProgressWhere: Prisma.SaleWhereInput = {
+      ...this.buildStatusSaleWhere(scopedFilters, since, IN_PROGRESS_SALE_STATUSES),
+      ...(branchId && { branchId }),
+    };
+    const cancelledWhere: Prisma.SaleWhereInput = {
+      ...this.buildStatusSaleWhere(scopedFilters, since, CANCELLED_SALE_STATUSES, {
+        byCancelledAt: true,
+      }),
       ...(branchId && { branchId }),
     };
     const partnerWhere = this.buildPartnerWhere(scopedFilters);
@@ -335,25 +396,67 @@ export class DashboardService {
       ...(branchId && { sales: { some: { branchId, status: realizedSaleStatusFilter() } } }),
     };
     const commissionWhere: Prisma.CommissionWhereInput = {
-      ...this.buildCommissionWhere(scopedFilters, startOfMonth, branchId),
+      ...this.buildCommissionWhere(scopedFilters, since, branchId),
     };
 
-    const [sales, partners, lines, commissions, campaigns] = await Promise.all([
+    const saleSelect = {
+      id: true,
+      protocol: true,
+      status: true,
+      value: true,
+      createdAt: true,
+      activatedAt: true,
+      cancelledAt: true,
+      partner: { select: { name: true } },
+      branch: { select: { name: true } },
+      client: { select: { name: true } },
+      plan: { select: { name: true } },
+    } as const;
+
+    const mapSaleRow = (sale: {
+      id: string;
+      protocol: string;
+      status: string;
+      value: unknown;
+      createdAt: Date;
+      activatedAt?: Date | null;
+      cancelledAt?: Date | null;
+      partner: { name: string };
+      branch: { name: string } | null;
+      client: { name: string };
+      plan: { name: string };
+    }) => ({
+      id: sale.id,
+      primary: sale.protocol,
+      secondary: [
+        sale.partner.name,
+        sale.branch?.name ?? 'Matriz',
+        sale.client.name,
+        sale.plan.name,
+      ].join(' • '),
+      status: sale.status,
+      value: Number(sale.value),
+      date: (sale.activatedAt ?? sale.cancelledAt ?? sale.createdAt).toISOString(),
+    });
+
+    const [sales, salesInProgress, salesCancelled, partners, lines, commissions, campaigns] = await Promise.all([
       this.prisma.sale.findMany({
         where: saleWhere,
         take: 1000,
         orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          protocol: true,
-          status: true,
-          value: true,
-          createdAt: true,
-          partner: { select: { name: true } },
-          branch: { select: { name: true } },
-          client: { select: { name: true } },
-          plan: { select: { name: true } },
-        },
+        select: saleSelect,
+      }),
+      this.prisma.sale.findMany({
+        where: inProgressWhere,
+        take: 1000,
+        orderBy: { createdAt: 'desc' },
+        select: saleSelect,
+      }),
+      this.prisma.sale.findMany({
+        where: cancelledWhere,
+        take: 1000,
+        orderBy: { createdAt: 'desc' },
+        select: saleSelect,
       }),
       this.prisma.partner.findMany({
         where: partnerWhere,
@@ -411,21 +514,14 @@ export class DashboardService {
     return {
       generatedAt: now.toISOString(),
       scopeLabel:
-        [scopedPartnerName, scopedBranch?.name].filter(Boolean).join(' • ') ||
-        (scopedFilters.partnerId ? 'Parceiro selecionado' : 'Visão administrativa'),
-      sales: sales.map((sale) => ({
-        id: sale.id,
-        primary: sale.protocol,
-        secondary: [
-          sale.partner.name,
-          sale.branch?.name ?? 'Matriz',
-          sale.client.name,
-          sale.plan.name,
-        ].join(' • '),
-        status: sale.status,
-        value: Number(sale.value),
-        date: sale.createdAt.toISOString(),
-      })),
+        [
+          [scopedPartnerName, scopedBranch?.name].filter(Boolean).join(' • ')
+            || (scopedFilters.partnerId ? 'Parceiro selecionado' : 'Visão administrativa'),
+          periodLabel,
+        ].filter(Boolean).join(' • '),
+      sales: sales.map(mapSaleRow),
+      salesInProgress: salesInProgress.map(mapSaleRow),
+      salesCancelled: salesCancelled.map(mapSaleRow),
       partners: partners.map((partner) => ({
         id: partner.id,
         primary: partner.name,
@@ -496,8 +592,51 @@ export class DashboardService {
       reviewStatus: {
         notIn: [SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED],
       },
-      createdAt: { gte: since },
+      OR: [
+        { activatedAt: { gte: since } },
+        { activatedAt: null, createdAt: { gte: since } },
+        {
+          status: { in: IN_PROGRESS_SALE_STATUSES },
+          createdAt: { gte: since },
+        },
+      ],
     };
+
+    if (filters.partnerId) {
+      where.partnerId = filters.partnerId;
+    }
+    if (filters.campaignId) {
+      where.campaignId = filters.campaignId;
+    }
+    if (filters.operatorId) {
+      where.operatorId = filters.operatorId;
+    }
+    if (filters.state) {
+      where.partner = { state: filters.state };
+    }
+
+    return where;
+  }
+
+  private buildStatusSaleWhere(
+    filters: DashboardFiltersDto,
+    since: Date,
+    statuses: SaleStatus[],
+    options?: { byCancelledAt?: boolean },
+  ): Prisma.SaleWhereInput {
+    const where: Prisma.SaleWhereInput = {
+      status: { in: statuses },
+    };
+
+    if (options?.byCancelledAt) {
+      where.OR = [
+        { cancelledAt: { gte: since } },
+        { cancelledAt: null, updatedAt: { gte: since } },
+        { cancelledAt: null, createdAt: { gte: since } },
+      ];
+    } else {
+      where.createdAt = { gte: since };
+    }
 
     if (filters.partnerId) {
       where.partnerId = filters.partnerId;

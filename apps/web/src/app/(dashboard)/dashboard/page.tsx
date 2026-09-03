@@ -12,6 +12,8 @@ import {
   Filter,
   X,
   ChevronRight,
+  Clock3,
+  Ban,
 } from 'lucide-react';
 import type { DashboardAdminMetrics, DashboardDetails } from '@luxus/types';
 import { formatCurrency } from '@luxus/utils';
@@ -52,6 +54,11 @@ interface OperatorOption {
   name: string;
 }
 
+type DetailSection = keyof Pick<
+  DashboardDetails,
+  'sales' | 'salesInProgress' | 'salesCancelled' | 'partners' | 'lines' | 'commissions' | 'campaigns'
+>;
+
 const BR_STATES = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
   'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
@@ -67,6 +74,12 @@ const fallbackMetrics: DashboardAdminMetrics = {
   revenue: 0,
   commissions: 0,
   projectedCommission: 0,
+  inProgressSales: 0,
+  inProgressValue: 0,
+  cancelledSales: 0,
+  cancelledValue: 0,
+  period: '30d',
+  periodLabel: 'Últimos 30 dias',
   salesChart: [],
   partnersInBrazil: [],
   ranking: [],
@@ -109,6 +122,7 @@ export default function DashboardPage() {
   const isPartnerScoped = isPartnerScopedUser(user);
   const [metrics, setMetrics] = useState<DashboardAdminMetrics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<'30d' | 'month'>('30d');
   const [partnerId, setPartnerId] = useState('all');
   const [state, setState] = useState('all');
   const [campaignId, setCampaignId] = useState('all');
@@ -118,12 +132,19 @@ export default function DashboardPage() {
   const [operators, setOperators] = useState<OperatorOption[]>([]);
   const [details, setDetails] = useState<DashboardDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
-  const [detailSection, setDetailSection] = useState<
-    keyof Pick<DashboardDetails, 'sales' | 'partners' | 'lines' | 'commissions' | 'campaigns'> | null
-  >(null);
+  const [detailSection, setDetailSection] = useState<DetailSection | null>(null);
   const [detailTitle, setDetailTitle] = useState('Detalhes');
 
+  const filterParams = {
+    period,
+    partnerId: partnerId !== 'all' ? partnerId : undefined,
+    state: state !== 'all' ? state : undefined,
+    campaignId: campaignId !== 'all' ? campaignId : undefined,
+    operatorId: operatorId !== 'all' ? operatorId : undefined,
+  };
+
   const hasFilters =
+    period !== '30d' ||
     partnerId !== 'all' ||
     state !== 'all' ||
     campaignId !== 'all' ||
@@ -148,12 +169,7 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       const data = await api<DashboardAdminMetrics>('/dashboard/admin', {
-        params: {
-          partnerId: partnerId !== 'all' ? partnerId : undefined,
-          state: state !== 'all' ? state : undefined,
-          campaignId: campaignId !== 'all' ? campaignId : undefined,
-          operatorId: operatorId !== 'all' ? operatorId : undefined,
-        },
+        params: filterParams,
       });
       setMetrics(data);
     } catch {
@@ -161,7 +177,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [partnerId, state, campaignId, operatorId]);
+  }, [period, partnerId, state, campaignId, operatorId]);
 
   useEffect(() => {
     if (isPartnerScoped) return;
@@ -170,37 +186,30 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setDetails(null);
-  }, [partnerId, state, campaignId, operatorId]);
+  }, [period, partnerId, state, campaignId, operatorId]);
 
   const loadDetails = useCallback(async () => {
     if (details) return details;
     setDetailsLoading(true);
     try {
       const result = await api<DashboardDetails>('/dashboard/details', {
-        params: {
-          partnerId: partnerId !== 'all' ? partnerId : undefined,
-          state: state !== 'all' ? state : undefined,
-          campaignId: campaignId !== 'all' ? campaignId : undefined,
-          operatorId: operatorId !== 'all' ? operatorId : undefined,
-        },
+        params: filterParams,
       });
       setDetails(result);
       return result;
     } finally {
       setDetailsLoading(false);
     }
-  }, [details, partnerId, state, campaignId, operatorId]);
+  }, [details, period, partnerId, state, campaignId, operatorId]);
 
-  const openDetails = (
-    section: keyof Pick<DashboardDetails, 'sales' | 'partners' | 'lines' | 'commissions' | 'campaigns'>,
-    title: string,
-  ) => {
+  const openDetails = (section: DetailSection, title: string) => {
     setDetailSection(section);
     setDetailTitle(title);
     void loadDetails().catch(() => {});
   };
 
   const clearFilters = () => {
+    setPeriod('30d');
     setPartnerId('all');
     setState('all');
     setCampaignId('all');
@@ -208,6 +217,7 @@ export default function DashboardPage() {
   };
 
   const data = metrics || fallbackMetrics;
+  const periodText = data.periodLabel || (period === 'month' ? 'Mês atual' : 'Últimos 30 dias');
 
   if (isPartnerScoped) {
     return (
@@ -234,6 +244,16 @@ export default function DashboardPage() {
           <DashboardExportButton loadDetails={loadDetails} />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap">
+          <Select value={period} onValueChange={(value) => setPeriod(value as '30d' | 'month')}>
+            <SelectTrigger className="h-11 w-full rounded-2xl border border-border bg-muted text-foreground shadow-none sm:w-48">
+              <SelectValue placeholder="Período" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="30d">Últimos 30 dias</SelectItem>
+              <SelectItem value="month">Mês atual</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Select value={partnerId} onValueChange={setPartnerId}>
             <SelectTrigger className="h-11 w-full rounded-2xl border border-border bg-muted text-foreground shadow-none sm:w-48">
               <SelectValue placeholder="Parceiro" />
@@ -300,14 +320,43 @@ export default function DashboardPage() {
       </div>
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-40 rounded-2xl" />
           ))}
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <MetricsCard
+              title="Receita"
+              value={formatCurrency(data.revenue)}
+              description={`Vendas ativadas • ${periodText}`}
+              icon={TrendingUp}
+              variant="accent"
+              onClick={() => openDetails('sales', `Vendas realizadas • ${periodText}`)}
+            />
+            <MetricsCard
+              title="Comissões"
+              value={formatCurrency(data.commissions)}
+              description={`Projeção ciclo cheio: ${formatCurrency(data.projectedCommission ?? 0)}`}
+              icon={DollarSign}
+              onClick={() => openDetails('commissions', `Comissões • ${periodText}`)}
+            />
+            <MetricsCard
+              title="Em andamento"
+              value={data.inProgressSales ?? 0}
+              description={`${formatCurrency(data.inProgressValue ?? 0)} no período`}
+              icon={Clock3}
+              onClick={() => openDetails('salesInProgress', `Vendas em andamento • ${periodText}`)}
+            />
+            <MetricsCard
+              title="Canceladas"
+              value={data.cancelledSales ?? 0}
+              description={`${formatCurrency(data.cancelledValue ?? 0)} no período`}
+              icon={Ban}
+              onClick={() => openDetails('salesCancelled', `Vendas canceladas • ${periodText}`)}
+            />
             <MetricsCard
               title="Parceiros Ativos"
               value={data.activePartners}
@@ -321,21 +370,6 @@ export default function DashboardPage() {
               description={`${data.soldLines} vendidas`}
               icon={Smartphone}
               onClick={() => openDetails('lines', 'Linhas do indicador')}
-            />
-            <MetricsCard
-              title="Receita"
-              value={formatCurrency(data.revenue)}
-              description="Vendas ativadas no mês"
-              icon={TrendingUp}
-              variant="accent"
-              onClick={() => openDetails('sales', 'Vendas realizadas no mês')}
-            />
-            <MetricsCard
-              title="Comissões"
-              value={formatCurrency(data.commissions)}
-              description={`Projeção ciclo cheio: ${formatCurrency(data.projectedCommission ?? 0)}`}
-              icon={DollarSign}
-              onClick={() => openDetails('commissions', 'Comissões do mês')}
             />
           </div>
 
@@ -427,7 +461,7 @@ export default function DashboardPage() {
         open={detailSection != null}
         onOpenChange={(open) => !open && setDetailSection(null)}
         title={detailTitle}
-        rows={detailSection && details ? details[detailSection] : []}
+        rows={detailSection && details ? details[detailSection] ?? [] : []}
         loading={detailsLoading}
       />
     </DashboardLayout>

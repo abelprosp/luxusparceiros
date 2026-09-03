@@ -48,11 +48,11 @@ test('receita do dashboard usa data de ativação e não só a de cadastro', () 
 });
 
 test('detalhes do ranking nunca retornam vendas de outro parceiro', async () => {
-  let capturedSaleWhere;
+  const capturedSaleWheres = [];
   const prisma = {
     sale: {
       findMany: async ({ where }) => {
-        capturedSaleWhere = where;
+        capturedSaleWheres.push(where);
         return [];
       },
       groupBy: async () => [],
@@ -83,7 +83,16 @@ test('detalhes do ranking nunca retornam vendas de outro parceiro', async () => 
 
   const result = await service.getDetails(user, { partnerId: 'partner-2' });
 
-  assert.equal(capturedSaleWhere.partnerId, 'partner-1');
+  assert.ok(capturedSaleWheres.every((where) => where.partnerId === 'partner-1'));
   assert.deepEqual(result.sales, []);
+  assert.deepEqual(result.salesInProgress, []);
+  assert.deepEqual(result.salesCancelled, []);
   assert.equal(JSON.stringify(result).includes('partner-2'), false);
+});
+
+test('periodo padrao do dashboard e 30 dias', () => {
+  const service = new DashboardService({});
+  const resolved = service.resolvePeriod({});
+  assert.equal(resolved.period, '30d');
+  assert.equal(resolved.periodLabel, 'Últimos 30 dias');
 });

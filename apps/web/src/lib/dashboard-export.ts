@@ -2,8 +2,16 @@ import type { DashboardDetailRow, DashboardDetails } from '@luxus/types';
 
 export type DashboardExportFormat = 'pdf' | 'xlsx' | 'txt';
 
-const SECTION_LABELS: Record<keyof Pick<DashboardDetails, 'sales' | 'partners' | 'lines' | 'commissions' | 'campaigns'>, string> = {
+const SECTION_LABELS: Record<
+  keyof Pick<
+    DashboardDetails,
+    'sales' | 'salesInProgress' | 'salesCancelled' | 'partners' | 'lines' | 'commissions' | 'campaigns'
+  >,
+  string
+> = {
   sales: 'Vendas realizadas',
+  salesInProgress: 'Vendas em andamento',
+  salesCancelled: 'Vendas canceladas',
   partners: 'Parceiros',
   lines: 'Linhas',
   commissions: 'Comissões',

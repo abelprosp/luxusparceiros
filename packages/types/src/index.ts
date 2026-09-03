@@ -394,6 +394,12 @@ export interface DashboardAdminMetrics {
   commissions: number;
   /** Soma das comissões previstas das vendas do ciclo (não canceladas/rejeitadas). */
   projectedCommission: number;
+  inProgressSales: number;
+  inProgressValue: number;
+  cancelledSales: number;
+  cancelledValue: number;
+  period: '30d' | 'month';
+  periodLabel: string;
   salesChart: { date: string; value: number }[];
   partnersInBrazil: PartnerMapLocation[];
   ranking: { partnerId: string; partnerName: string; sales: number }[];
@@ -413,6 +419,8 @@ export interface DashboardDetails {
   generatedAt: string;
   scopeLabel: string;
   sales: DashboardDetailRow[];
+  salesInProgress: DashboardDetailRow[];
+  salesCancelled: DashboardDetailRow[];
   partners: DashboardDetailRow[];
   lines: DashboardDetailRow[];
   commissions: DashboardDetailRow[];

@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, extname, join } from 'path';
 import { randomUUID } from 'crypto';
-import { SaleContractStage, SaleReviewStatus, SaleStatus, SaleTaskSyncStatus } from '@prisma/client';
+import { LineStatus, SaleContractStage, SaleReviewStatus, SaleStatus, SaleTaskSyncStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { CommissionsService } from '@/modules/commissions/commissions.service';
@@ -455,6 +455,7 @@ export class TaskIntegrationService {
         taskEditorActivity: true, taskEditorLastSeenAt: true, taskLastMessage: true,
         turnRequestFrom: true, turnRequestReason: true,
         commissionRate: true, commissionValue: true,
+        lineId: true, newNumber: true,
       },
     });
     if (!sale) return { accepted: true };
@@ -592,6 +593,9 @@ export class TaskIntegrationService {
     });
 
     if (shouldComplete) {
+      await this.markSaleLineAsSold(sale.lineId, sale.newNumber, sale.partnerId).catch((error) => {
+        console.warn('[task-integration] Falha ao marcar linha como vendida', error);
+      });
       await this.commissions.createFromSale(
         {
           id: sale.id,
@@ -679,6 +683,35 @@ export class TaskIntegrationService {
       select: { id: true },
     });
     return Boolean(existing);
+  }
+
+  private async markSaleLineAsSold(
+    lineId: string | null | undefined,
+    newNumber: string | null | undefined,
+    partnerId: string,
+  ) {
+    const digits = String(newNumber || '').replace(/\D/g, '');
+    const line = lineId
+      ? await this.prisma.line.findUnique({ where: { id: lineId }, select: { id: true } })
+      : digits
+        ? await this.prisma.line.findFirst({
+            where: {
+              OR: [
+                { number: digits },
+                { number: { contains: digits.slice(-8) } },
+              ],
+            },
+            select: { id: true },
+          })
+        : null;
+    if (!line) return;
+    await this.prisma.line.update({
+      where: { id: line.id },
+      data: {
+        status: LineStatus.ACTIVATED,
+        partnerId,
+      },
+    });
   }
 
   private resolveSaleContractStage(dto: TaskDemandCallbackDto, current: SaleContractStage): SaleContractStage {
