@@ -240,7 +240,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         && String(item.data?.saleId ?? '') === payload.saleId;
       if (item.id === payload.id || sameCompletedSale) ids.add(item.id);
     }
-    await Promise.all([...ids].map((id) => markAsRead(id).catch(() => undefined)));
+    await Promise.all(Array.from(ids).map((id) => markAsRead(id).catch(() => undefined)));
   }, [markAsRead]);
 
   useEffect(() => {
