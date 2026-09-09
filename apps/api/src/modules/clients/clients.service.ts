@@ -157,32 +157,36 @@ export class ClientsService {
 
   private async deleteClientSafely(id: string, user: AuthUser) {
     const client = await this.findOne(id, user);
-    const [salesCount, linesCount, requestsCount] = await Promise.all([
-      this.prisma.sale.count({ where: { clientId: id } }),
-      this.prisma.line.count({ where: { clientId: id } }),
-      this.prisma.request.count({ where: { clientId: id } }),
-    ]);
 
-    if (salesCount > 0) {
+    const sales = await this.prisma.sale.findMany({
+      where: { clientId: id },
+      include: {
+        commission: { select: { status: true } },
+        documents: { select: { url: true } },
+      },
+    });
+
+    const paidSales = sales.filter((sale) => sale.commission?.status === 'PAID');
+    if (paidSales.length > 0) {
       throw new BadRequestException(
-        `Não é possível excluir: este cliente possui ${salesCount} venda(s) vinculada(s).`,
-      );
-    }
-    if (linesCount > 0) {
-      throw new BadRequestException(
-        `Não é possível excluir: este cliente possui ${linesCount} linha(s) vinculada(s).`,
-      );
-    }
-    if (requestsCount > 0) {
-      throw new BadRequestException(
-        `Não é possível excluir: este cliente possui ${requestsCount} solicitação(ões) vinculada(s).`,
+        `Não é possível excluir: este cliente tem ${paidSales.length} venda(s) com comissão já paga.`,
       );
     }
 
-    await this.prisma.$transaction([
-      this.prisma.document.deleteMany({ where: { clientId: id } }),
-      this.prisma.client.delete({ where: { id } }),
-    ]);
+    const saleIds = sales.map((sale) => sale.id);
+
+    await this.prisma.$transaction(async (tx) => {
+      if (saleIds.length > 0) {
+        await tx.commission.deleteMany({ where: { saleId: { in: saleIds } } });
+        await tx.document.deleteMany({ where: { saleId: { in: saleIds } } });
+        await tx.sale.deleteMany({ where: { id: { in: saleIds } } });
+      }
+
+      await tx.document.deleteMany({ where: { clientId: id } });
+      await tx.line.updateMany({ where: { clientId: id }, data: { clientId: null } });
+      await tx.request.updateMany({ where: { clientId: id }, data: { clientId: null } });
+      await tx.client.delete({ where: { id } });
+    });
 
     await this.auditService.log({
       userId: user.id,
@@ -190,7 +194,11 @@ export class ClientsService {
       module: 'clients',
       entityId: id,
       entityType: 'Client',
-      oldData: { name: client.name, document: client.document },
+      oldData: {
+        name: client.name,
+        document: client.document,
+        removedSales: saleIds.length,
+      },
     });
   }
 }

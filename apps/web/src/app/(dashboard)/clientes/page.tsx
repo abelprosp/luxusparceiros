@@ -494,7 +494,7 @@ export default function ClientesPage() {
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         itemType="cliente"
         itemLabel={deleteTarget?.name ?? ''}
-        description="Clientes com venda, linha ou solicitação vinculada não podem ser excluídos."
+        description="Também remove vendas de teste vinculadas (exceto se a comissão já estiver paga). Linhas e solicitações só desvinculam o cliente."
         deleting={deleting}
         onConfirm={() => void confirmDeleteOne()}
       />
@@ -504,7 +504,7 @@ export default function ClientesPage() {
         onOpenChange={setBulkDeleteOpen}
         itemType="clientes"
         itemLabel={selectedLabel}
-        description="Serão excluídos apenas clientes sem venda, linha ou solicitação vinculada."
+        description="Também remove vendas de teste vinculadas (exceto comissão já paga). Clientes com comissão paga serão mantidos."
         deleting={deleting}
         onConfirm={() => void confirmBulkDelete()}
       />
