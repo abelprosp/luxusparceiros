@@ -36,6 +36,7 @@ import {
   fetchAuthenticatedFile,
   openAuthenticatedFile,
   replaceUploadedDocument,
+  uploadFile,
 } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerScopedUser } from '@/lib/rbac';
@@ -49,6 +50,14 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
 
@@ -63,6 +72,18 @@ const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   [DocumentType.CHIP_PHOTO]: 'Foto do chip',
   [DocumentType.OTHER]: 'Outro',
 };
+
+const UPLOADABLE_DOCUMENT_TYPES: DocumentType[] = [
+  DocumentType.CPF,
+  DocumentType.RG,
+  DocumentType.SELFIE,
+  DocumentType.CHIP_PHOTO,
+  DocumentType.LINE_PHOTO,
+  DocumentType.OTHER,
+  DocumentType.CONTRACT,
+];
+
+const FILE_ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf';
 
 const CONTRACT_FORMAT_LABELS: Record<ContractFormat, string> = {
   [ContractFormat.PRINT]: 'Impressão',
@@ -485,12 +506,22 @@ export function SaleDetailDialog({
   const [tab, setTab] = useState('overview');
   const [lightbox, setLightbox] = useState<{ src: string; label: string } | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadType, setUploadType] = useState<DocumentType>(DocumentType.OTHER);
+  const generalUploadRef = useRef<HTMLInputElement>(null);
+  const signedContractRef = useRef<HTMLInputElement>(null);
   const canEditSale = Boolean(
     sale
     && sale.contractStage !== SaleContractStage.COMPLETED
     && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
     && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus)
     && onEdit,
+  );
+  const canAttachDocuments = Boolean(
+    sale
+    && sale.contractStage !== SaleContractStage.COMPLETED
+    && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
+    && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus),
   );
 
   const load = useCallback(async () => {
@@ -599,6 +630,51 @@ export function SaleDetailDialog({
     }
   };
 
+  const handleUploadDocument = async (file: File | undefined, kind: 'general' | 'signed') => {
+    if (!file || !sale) return;
+    setUploading(true);
+    try {
+      if (kind === 'signed') {
+        await uploadFile(
+          file,
+          DocumentType.CONTRACT,
+          { saleId: sale.id, clientId: sale.client?.id },
+          DocumentPurpose.SIGNED_CONTRACT,
+        );
+        toast({
+          title: 'Contrato assinado anexado',
+          description: sale.taskDemandId
+            ? 'O arquivo ficou nesta venda e será enviado ao Luxus Task.'
+            : 'O contrato assinado ficou disponível nesta venda.',
+          variant: 'success',
+        });
+      } else {
+        await uploadFile(
+          file,
+          uploadType,
+          { saleId: sale.id, clientId: sale.client?.id },
+          DocumentPurpose.GENERAL,
+        );
+        toast({
+          title: 'Documento adicionado',
+          description: `${DOCUMENT_TYPE_LABELS[uploadType] ?? 'Arquivo'} enviado com sucesso.`,
+          variant: 'success',
+        });
+      }
+      await load();
+    } catch (err) {
+      toast({
+        title: 'Não foi possível anexar',
+        description: err instanceof Error ? err.message : 'Falha no envio',
+        variant: 'destructive',
+      });
+    } finally {
+      setUploading(false);
+      if (generalUploadRef.current) generalUploadRef.current.value = '';
+      if (signedContractRef.current) signedContractRef.current.value = '';
+    }
+  };
+
   const runWorkflowAction = async (path: string, body?: unknown) => {
     if (!sale) return;
     setWorkflowBusy(true);
@@ -655,7 +731,7 @@ export function SaleDetailDialog({
   const taskFilesHeaderActions = linkedToTask ? (
     <>
       <HeaderIconButton
-        label="Ajuda: o Luxus Task anexa o contrato e os arquivos na demanda. Eles aparecem nesta tela. Use a seta para puxar a versão mais recente."
+        label="Ajuda: anexe documentos aqui ou no Luxus Task. Contrato assinado pode ser colocado nos dois sistemas. Use a seta para puxar a versão mais recente do Task."
       >
         <HelpCircle className="h-4 w-4" />
       </HeaderIconButton>
@@ -929,6 +1005,9 @@ export function SaleDetailDialog({
                         <p>{sale.taskSyncError}</p>
                       </div>
                     )}
+                    <p className="py-2 text-xs text-muted-foreground">
+                      O contrato assinado pode ser anexado no Luxus Task ou aqui no Luxus Parceiros. Use a seta para puxar arquivos novos do Task.
+                    </p>
                     <div className="flex flex-wrap gap-2 py-3">
                       {!isPartnerScoped
                         && neverSentToTask
@@ -977,10 +1056,88 @@ export function SaleDetailDialog({
                     </div>
                   </Section>
 
+                  {canAttachDocuments && (
+                    <Section title="Adicionar documentos">
+                      <div className="space-y-4 py-3">
+                        <input
+                          ref={generalUploadRef}
+                          type="file"
+                          accept={FILE_ACCEPT}
+                          className="hidden"
+                          onChange={(event) => void handleUploadDocument(event.target.files?.[0], 'general')}
+                        />
+                        <input
+                          ref={signedContractRef}
+                          type="file"
+                          accept={FILE_ACCEPT}
+                          className="hidden"
+                          onChange={(event) => void handleUploadDocument(event.target.files?.[0], 'signed')}
+                        />
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                          <div className="space-y-2 sm:min-w-[12rem]">
+                            <Label>Tipo do documento</Label>
+                            <Select
+                              value={uploadType}
+                              onValueChange={(value) => setUploadType(value as DocumentType)}
+                              disabled={uploading}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {UPLOADABLE_DOCUMENT_TYPES.map((type) => (
+                                  <SelectItem key={type} value={type}>
+                                    {DOCUMENT_TYPE_LABELS[type]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Button
+                            variant="outline"
+                            disabled={uploading}
+                            onClick={() => generalUploadRef.current?.click()}
+                          >
+                            {uploading ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Upload className="mr-2 h-4 w-4" />
+                            )}
+                            Adicionar documento
+                          </Button>
+                          <Button
+                            disabled={uploading}
+                            onClick={() => signedContractRef.current?.click()}
+                          >
+                            {uploading ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <FileText className="mr-2 h-4 w-4" />
+                            )}
+                            Anexar contrato assinado
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Aceita JPG, PNG, WebP ou PDF. O contrato assinado no Parceiros também pode ser sincronizado com o Luxus Task.
+                        </p>
+                      </div>
+                    </Section>
+                  )}
+
                   {docCount === 0 ? (
                     <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed py-16 text-muted-foreground">
                       <ImageIcon className="h-12 w-12 opacity-30" />
                       <p className="text-sm">Nenhuma foto ou documento anexado a esta venda.</p>
+                      {canAttachDocuments && (
+                        <Button
+                          variant="outline"
+                          disabled={uploading}
+                          onClick={() => generalUploadRef.current?.click()}
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          Adicionar o primeiro documento
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     <>

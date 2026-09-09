@@ -484,7 +484,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
             <div>
               <h3 className="text-sm font-semibold">Assinatura do contrato</h3>
               <p className="text-xs text-muted-foreground">
-                Não é necessário anexar contrato assinado nesta etapa. O Luxus Task cuidará da assinatura conforme o formato escolhido acima.
+                Não é obrigatório anexar o contrato assinado nesta etapa. Depois da criação, use a aba Documentos da venda ou o Luxus Task.
               </p>
             </div>
           </section>

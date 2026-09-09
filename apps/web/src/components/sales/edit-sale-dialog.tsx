@@ -319,7 +319,9 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
             <section className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
               <div>
                 <h3 className="text-sm font-semibold">Assinatura do contrato</h3>
-                <p className="text-xs text-muted-foreground">Não anexe contrato assinado aqui. A assinatura será obtida no Luxus Task conforme o formato escolhido.</p>
+                <p className="text-xs text-muted-foreground">
+                  Você pode anexar o contrato assinado depois, na aba Documentos desta venda, ou no Luxus Task.
+                </p>
               </div>
             </section>
 

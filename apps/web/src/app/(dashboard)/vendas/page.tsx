@@ -451,6 +451,11 @@ export default function VendasPage() {
                               <DropdownMenuItem onClick={() => openDetail(s.id, 'photos')}>
                                 <ImageIcon className="mr-2 h-4 w-4" /> Documentos
                               </DropdownMenuItem>
+                              {canEdit(s) && (
+                                <DropdownMenuItem onClick={() => openDetail(s.id, 'photos')}>
+                                  <Upload className="mr-2 h-4 w-4" /> Adicionar / anexar contrato
+                                </DropdownMenuItem>
+                              )}
                               {hasTaskMessage(s) && (
                                 <DropdownMenuItem onClick={() => setMessageSale(s)}>
                                   <MessageSquare className="mr-2 h-4 w-4" /> Ver mensagem
@@ -545,6 +550,11 @@ export default function VendasPage() {
                         <DropdownMenuItem onClick={() => openDetail(s.id, 'photos')}>
                           <ImageIcon className="mr-2 h-4 w-4" /> Documentos
                         </DropdownMenuItem>
+                        {canEdit(s) && (
+                          <DropdownMenuItem onClick={() => openDetail(s.id, 'photos')}>
+                            <Upload className="mr-2 h-4 w-4" /> Adicionar / anexar contrato
+                          </DropdownMenuItem>
+                        )}
                         {hasTaskMessage(s) && (
                           <DropdownMenuItem onClick={() => setMessageSale(s)}>
                             <MessageSquare className="mr-2 h-4 w-4" /> Ver mensagem

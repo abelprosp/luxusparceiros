@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DocumentPurpose, DocumentType, Prisma, SaleContractStage, SaleStatus } from '@prisma/client';
+import { DocumentPurpose, DocumentType, Prisma, SaleContractStage, SaleReviewStatus, SaleStatus, SaleTaskSyncStatus } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
 import {
   createReadStream,
@@ -97,10 +97,48 @@ export class UploadsService {
 
     if (relations?.saleId) {
       await this.markSaleDocumentFulfilled(relations.saleId, type);
-      await this.taskIntegration.pushSaleDocumentIfSynced(relations.saleId, document);
+      if (purpose === DocumentPurpose.SIGNED_CONTRACT) {
+        await this.queueSignedContractFromParceiros(relations.saleId, user);
+      } else {
+        await this.taskIntegration.pushSaleDocumentIfSynced(relations.saleId, document);
+      }
     }
 
     return document;
+  }
+
+  private async queueSignedContractFromParceiros(saleId: string, user: AuthUser) {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { taskDemandId: true, contractStage: true },
+    });
+    if (!sale) return;
+
+    await this.prisma.sale.update({
+      where: { id: saleId },
+      data: {
+        ...(sale.taskDemandId
+          ? {
+              contractStage: SaleContractStage.TASK_VALIDATING_SIGNED_CONTRACT,
+              contractStageUpdatedAt: new Date(),
+              signedContractSyncStatus: SaleTaskSyncStatus.PENDING,
+              signedContractSyncError: null,
+              signedContractNextRetryAt: new Date(),
+              signedContractSyncAttempts: 0,
+            }
+          : {}),
+        timeline: {
+          create: {
+            actorId: user.id,
+            actorName: user.name,
+            action: 'Contrato assinado anexado no Luxus Parceiros',
+            details: sale.taskDemandId
+              ? 'O arquivo será enviado à demanda do Luxus Task para validação.'
+              : 'Contrato assinado disponível nesta venda (ainda sem demanda no Luxus Task).',
+          },
+        },
+      },
+    });
   }
 
   async uploadAvatar(file: Express.Multer.File, user: AuthUser) {
@@ -186,8 +224,10 @@ export class UploadsService {
         branchId: true,
         clientId: true,
         status: true,
+        reviewStatus: true,
         requiredDocuments: true,
         contractStage: true,
+        taskDemandId: true,
       },
     });
     if (!sale) throw new BadRequestException('Venda não encontrada');
@@ -196,27 +236,44 @@ export class UploadsService {
     if (user.branchId && user.branchId !== sale.branchId) {
       throw new ForbiddenException(MESSAGES.FORBIDDEN);
     }
-    if (purpose === DocumentPurpose.SIGNED_CONTRACT) {
+
+    const saleClosed =
+      sale.contractStage === SaleContractStage.COMPLETED
+      || sale.status === SaleStatus.ACTIVATED
+      || sale.status === SaleStatus.CANCELLED
+      || sale.status === SaleStatus.REJECTED
+      || sale.reviewStatus === SaleReviewStatus.REJECTED
+      || sale.reviewStatus === SaleReviewStatus.CANCELLED;
+    if (saleClosed) {
       throw new BadRequestException(
-        'Contrato assinado é tratado no Luxus Task. No Parceiros só é possível baixar anexos sincronizados.',
+        'Não é possível anexar documentos em venda concluída, cancelada ou rejeitada. Reabra a venda para corrigir.',
       );
     }
-    if (purpose !== DocumentPurpose.GENERAL && purpose !== DocumentPurpose.ORIGINAL_SALE) {
+
+    if (purpose === DocumentPurpose.SIGNED_CONTRACT) {
+      if (type !== DocumentType.CONTRACT) {
+        throw new BadRequestException('O contrato assinado deve ser enviado como tipo Contrato');
+      }
+    } else if (purpose !== DocumentPurpose.GENERAL && purpose !== DocumentPurpose.ORIGINAL_SALE) {
       throw new BadRequestException('Finalidade de documento inválida para este envio');
     }
+
     if (relations.clientId && relations.clientId !== sale.clientId) {
       throw new BadRequestException('Cliente não pertence à venda informada');
     }
-    if (
-      !isAdminRole(user.role) &&
-      !([SaleStatus.IN_ANALYSIS, SaleStatus.DOCUMENTS_PENDING] as SaleStatus[]).includes(
-        sale.status,
-      )
-    ) {
+
+    const partnerUploadStatuses: SaleStatus[] = [
+      SaleStatus.IN_ANALYSIS,
+      SaleStatus.DOCUMENTS_PENDING,
+      SaleStatus.APPROVED,
+      SaleStatus.PENDING,
+      SaleStatus.CONTESTED,
+    ];
+    if (!isAdminRole(user.role) && !partnerUploadStatuses.includes(sale.status)) {
       throw new BadRequestException('Não é possível anexar documentos neste status da venda');
     }
 
-    if (sale.status === SaleStatus.DOCUMENTS_PENDING) {
+    if (sale.status === SaleStatus.DOCUMENTS_PENDING && purpose !== DocumentPurpose.SIGNED_CONTRACT) {
       const required = (sale.requiredDocuments ?? []) as Array<{
         type: string;
         fulfilled: boolean;
