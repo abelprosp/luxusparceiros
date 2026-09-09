@@ -1,22 +1,26 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Plus, Search, User, Pencil } from 'lucide-react';
-import { DocumentType } from '@luxus/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Plus, Search, User, Pencil, Trash2 } from 'lucide-react';
+import { DocumentType, PERMISSIONS } from '@luxus/types';
 import { formatDocument, formatPhone } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import { useToast } from '@/components/ui/toaster';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuth } from '@/hooks/useAuth';
+import { hasPermission } from '@/lib/rbac';
 
 interface Client {
   id: string;
@@ -55,6 +59,9 @@ const emptyForm = {
 };
 
 export default function ClientesPage() {
+  const { user } = useAuth();
+  const canWrite = hasPermission(user, PERMISSIONS.CLIENTS_WRITE);
+  const canDelete = hasPermission(user, PERMISSIONS.CLIENTS_DELETE);
   const [items, setItems] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -62,7 +69,19 @@ export default function ClientesPage() {
   const [editing, setEditing] = useState<Client | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
+
+  const allSelected = items.length > 0 && selectedIds.length === items.length;
+  const selectedLabel = useMemo(() => {
+    if (selectedIds.length === 1) {
+      return items.find((item) => item.id === selectedIds[0])?.name ?? '1 cliente';
+    }
+    return `${selectedIds.length} clientes`;
+  }, [items, selectedIds]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,8 +91,10 @@ export default function ClientesPage() {
         limit: 50,
       });
       setItems(res.data);
+      setSelectedIds((current) => current.filter((id) => res.data.some((item) => item.id === id)));
     } catch {
       setItems([]);
+      setSelectedIds([]);
     } finally {
       setLoading(false);
     }
@@ -83,6 +104,18 @@ export default function ClientesPage() {
     const timer = setTimeout(() => load(), 300);
     return () => clearTimeout(timer);
   }, [load]);
+
+  const toggleAll = (checked: boolean) => {
+    setSelectedIds(checked ? items.map((item) => item.id) : []);
+  };
+
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelectedIds((current) => (
+      checked
+        ? Array.from(new Set([...current, id]))
+        : current.filter((itemId) => itemId !== id)
+    ));
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -163,6 +196,65 @@ export default function ClientesPage() {
     }
   };
 
+  const confirmDeleteOne = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api(`/clients/${deleteTarget.id}`, { method: 'DELETE' });
+      toast({ title: 'Cliente excluído', variant: 'success' });
+      setDeleteTarget(null);
+      setSelectedIds((current) => current.filter((id) => id !== deleteTarget.id));
+      await load();
+    } catch (err) {
+      toast({
+        title: 'Não foi possível excluir',
+        description: err instanceof Error ? err.message : 'Falha na exclusão',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const confirmBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setDeleting(true);
+    try {
+      const result = await api<{ deleted: string[]; failed: Array<{ id: string; reason: string }> }>(
+        '/clients/bulk-delete',
+        { method: 'POST', body: { ids: selectedIds } },
+      );
+      const deletedCount = result.deleted?.length ?? 0;
+      const failedCount = result.failed?.length ?? 0;
+      if (deletedCount > 0) {
+        toast({
+          title: `${deletedCount} cliente(s) excluído(s)`,
+          description: failedCount > 0
+            ? `${failedCount} não puderam ser excluídos (ex.: com venda vinculada).`
+            : undefined,
+          variant: failedCount > 0 ? 'default' : 'success',
+        });
+      } else {
+        toast({
+          title: 'Nenhum cliente excluído',
+          description: result.failed?.[0]?.reason ?? 'Verifique se os clientes têm vendas vinculadas.',
+          variant: 'destructive',
+        });
+      }
+      setBulkDeleteOpen(false);
+      setSelectedIds([]);
+      await load();
+    } catch (err) {
+      toast({
+        title: 'Não foi possível excluir',
+        description: err instanceof Error ? err.message : 'Falha na exclusão',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <DashboardLayout title="Clientes" description="Cadastro de clientes do parceiro">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -175,10 +267,20 @@ export default function ClientesPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" />
-          Novo cliente
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {canDelete && selectedIds.length > 0 && (
+            <Button variant="destructive" onClick={() => setBulkDeleteOpen(true)}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Excluir selecionados ({selectedIds.length})
+            </Button>
+          )}
+          {canWrite && (
+            <Button onClick={openCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo cliente
+            </Button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -188,7 +290,7 @@ export default function ClientesPage() {
           icon={User}
           title="Nenhum cliente"
           description="Cadastre seu primeiro cliente para começar."
-          action={<Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Novo cliente</Button>}
+          action={canWrite ? <Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Novo cliente</Button> : undefined}
         />
       ) : (
         <ResponsiveDataView
@@ -196,6 +298,15 @@ export default function ClientesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {canDelete && (
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={(checked) => toggleAll(checked === true)}
+                        aria-label="Selecionar todos"
+                      />
+                    </TableHead>
+                  )}
                   <TableHead>Nome</TableHead>
                   <TableHead>Documento</TableHead>
                   <TableHead>Telefone</TableHead>
@@ -206,7 +317,16 @@ export default function ClientesPage() {
               </TableHeader>
               <TableBody>
                 {items.map((c) => (
-                  <TableRow key={c.id}>
+                  <TableRow key={c.id} data-state={selectedIds.includes(c.id) ? 'selected' : undefined}>
+                    {canDelete && (
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedIds.includes(c.id)}
+                          onCheckedChange={(checked) => toggleOne(c.id, checked === true)}
+                          aria-label={`Selecionar ${c.name}`}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell>{formatDocument(c.document)}</TableCell>
                     <TableCell>{formatPhone(c.phone)}</TableCell>
@@ -217,9 +337,24 @@ export default function ClientesPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button size="icon" variant="ghost" onClick={() => openEdit(c)} title="Editar">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        {canWrite && (
+                          <Button size="icon" variant="ghost" onClick={() => openEdit(c)} title="Editar">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setDeleteTarget(c)}
+                            title="Excluir"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -233,14 +368,38 @@ export default function ClientesPage() {
               subtitle={formatDocument(c.document)}
               meta={`${formatPhone(c.phone)}${c.email ? ` · ${c.email}` : ''}`}
               badges={
-                <Badge variant={c.isActive ? 'success' : 'secondary'}>
-                  {c.isActive ? 'Ativo' : 'Inativo'}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  {canDelete && (
+                    <Checkbox
+                      checked={selectedIds.includes(c.id)}
+                      onCheckedChange={(checked) => toggleOne(c.id, checked === true)}
+                      aria-label={`Selecionar ${c.name}`}
+                    />
+                  )}
+                  <Badge variant={c.isActive ? 'success' : 'secondary'}>
+                    {c.isActive ? 'Ativo' : 'Inativo'}
+                  </Badge>
+                </div>
               }
               actions={
-                <Button size="icon" variant="ghost" onClick={() => openEdit(c)} title="Editar">
-                  <Pencil className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  {canWrite && (
+                    <Button size="icon" variant="ghost" onClick={() => openEdit(c)} title="Editar">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {canDelete && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDeleteTarget(c)}
+                      title="Excluir"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               }
             />
           ))}
@@ -329,6 +488,26 @@ export default function ClientesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmationDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        itemType="cliente"
+        itemLabel={deleteTarget?.name ?? ''}
+        description="Clientes com venda, linha ou solicitação vinculada não podem ser excluídos."
+        deleting={deleting}
+        onConfirm={() => void confirmDeleteOne()}
+      />
+
+      <DeleteConfirmationDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        itemType="clientes"
+        itemLabel={selectedLabel}
+        description="Serão excluídos apenas clientes sem venda, linha ou solicitação vinculada."
+        deleting={deleting}
+        onConfirm={() => void confirmBulkDelete()}
+      />
     </DashboardLayout>
   );
 }

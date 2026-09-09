@@ -1,5 +1,7 @@
 import {
+  BadRequestException,
   ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -116,15 +118,79 @@ export class ClientsService {
   }
 
   async remove(id: string, user: AuthUser) {
-    await this.findOne(id, user);
-    await this.prisma.client.delete({ where: { id } });
+    await this.deleteClientSafely(id, user);
+    return { message: 'Cliente removido com sucesso' };
+  }
+
+  async bulkRemove(ids: string[], user: AuthUser) {
+    const uniqueIds = [...new Set(ids)];
+    const deleted: string[] = [];
+    const failed: Array<{ id: string; reason: string }> = [];
+
+    for (const id of uniqueIds) {
+      try {
+        await this.deleteClientSafely(id, user);
+        deleted.push(id);
+      } catch (error) {
+        failed.push({
+          id,
+          reason: this.errorMessage(error),
+        });
+      }
+    }
+
+    return { deleted, failed };
+  }
+
+  private errorMessage(error: unknown): string {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      if (typeof response === 'string') return response;
+      if (response && typeof response === 'object' && 'message' in response) {
+        const message = (response as { message?: string | string[] }).message;
+        if (Array.isArray(message)) return message.join(', ');
+        if (typeof message === 'string') return message;
+      }
+    }
+    return error instanceof Error ? error.message : 'Falha ao excluir';
+  }
+
+  private async deleteClientSafely(id: string, user: AuthUser) {
+    const client = await this.findOne(id, user);
+    const [salesCount, linesCount, requestsCount] = await Promise.all([
+      this.prisma.sale.count({ where: { clientId: id } }),
+      this.prisma.line.count({ where: { clientId: id } }),
+      this.prisma.request.count({ where: { clientId: id } }),
+    ]);
+
+    if (salesCount > 0) {
+      throw new BadRequestException(
+        `Não é possível excluir: este cliente possui ${salesCount} venda(s) vinculada(s).`,
+      );
+    }
+    if (linesCount > 0) {
+      throw new BadRequestException(
+        `Não é possível excluir: este cliente possui ${linesCount} linha(s) vinculada(s).`,
+      );
+    }
+    if (requestsCount > 0) {
+      throw new BadRequestException(
+        `Não é possível excluir: este cliente possui ${requestsCount} solicitação(ões) vinculada(s).`,
+      );
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.document.deleteMany({ where: { clientId: id } }),
+      this.prisma.client.delete({ where: { id } }),
+    ]);
+
     await this.auditService.log({
       userId: user.id,
       action: 'DELETE',
       module: 'clients',
       entityId: id,
       entityType: 'Client',
+      oldData: { name: client.name, document: client.document },
     });
-    return { message: 'Cliente removido com sucesso' };
   }
 }

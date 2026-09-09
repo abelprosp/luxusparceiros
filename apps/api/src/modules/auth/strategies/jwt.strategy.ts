@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
-import { JwtPayload } from '@luxus/types';
+import { JwtPayload, ROLE_PERMISSIONS, UserRole } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MESSAGES } from '@/common/constants/messages';
 
@@ -37,8 +37,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException(MESSAGES.PARTNER_SUSPENDED);
     }
 
+    const rolePermissions = ROLE_PERMISSIONS[user.role as UserRole] ?? [];
     const customPermissions = user.permissions.map((p) => p.permission.name);
-    const permissions = [...new Set([...payload.permissions, ...customPermissions])];
+    const permissions = [...new Set([...rolePermissions, ...customPermissions])];
 
     return {
       id: user.id,

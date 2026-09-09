@@ -6,7 +6,7 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
 import { PaginationDto } from '@/common/dto/pagination.dto';
 import { ClientsService } from './clients.service';
-import { CreateClientDto, UpdateClientDto } from './dto/client.dto';
+import { BulkDeleteClientsDto, CreateClientDto, UpdateClientDto } from './dto/client.dto';
 
 class ClientQueryDto extends PaginationDto {
   @IsOptional()
@@ -33,6 +33,13 @@ export class ClientsController {
       search: query.search,
       partnerId: query.partnerId,
     });
+  }
+
+  @Post('bulk-delete')
+  @RequirePermissions(PERMISSIONS.CLIENTS_DELETE)
+  @ApiOperation({ summary: 'Remover vários clientes' })
+  bulkDelete(@Body() dto: BulkDeleteClientsDto, @CurrentUser() user: AuthUser) {
+    return this.clientsService.bulkRemove(dto.ids, user);
   }
 
   @Get(':id')
