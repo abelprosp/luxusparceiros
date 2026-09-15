@@ -314,15 +314,18 @@ export class TaskIntegrationService {
       sale.notes ? sale.notes : null,
     ].filter((line) => line !== null).join('\n');
 
-    const sanitize = (value: string) => value
+    const sanitizeSubject = (value: string) => value
       .replace(/[^0-9A-Za-zÀ-ÖØ-öø-ÿ\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const sanitizeBody = (value: string) => value
       .replace(/[^\S\n]+/g, ' ')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
 
     const lineDigits = String(sale.newNumber || '').replace(/\D/g, '') || 'semlinha';
-    const subject = sanitize(`${sale.client.name} ${lineDigits}`);
-    const observations = sanitize(description);
+    const subject = sanitizeSubject(`${sale.client.name} ${lineDigits}`);
+    const observations = sanitizeBody(description);
     return {
       id: sale.id,
       protocol: sale.protocol,

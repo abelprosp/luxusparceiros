@@ -1137,13 +1137,20 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
   }) {
     const lineDigits = String(sale.newNumber || '').replace(/\D/g, '') || 'semlinha';
     const raw = `${sale.client.name} ${lineDigits}`;
-    return this.sanitizeTaskPlainText(raw);
+    return this.sanitizeTaskSubject(raw);
   }
 
-  /** Texto enviado ao Task: só letras, números e espaços (sem traços/barras/especiais). */
-  private sanitizeTaskPlainText(value: string) {
+  /** Assunto do Task: letras, números e espaços (sem especiais). */
+  private sanitizeTaskSubject(value: string) {
     return String(value || '')
       .replace(/[^0-9A-Za-zÀ-ÖØ-öø-ÿ\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /** Observações/corpo: preserva e-mail (@ .) e pontuação útil; só normaliza espaços. */
+  private sanitizeTaskBody(value: string) {
+    return String(value || '')
       .replace(/[^\S\n]+/g, ' ')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
@@ -1232,7 +1239,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       sale.notes ? sale.notes : null,
     ];
 
-    return this.sanitizeTaskPlainText(lines.filter((line) => line !== null).join('\n'));
+    return this.sanitizeTaskBody(lines.filter((line) => line !== null).join('\n'));
   }
 
   private retryDelayMs(attempts: number) {
