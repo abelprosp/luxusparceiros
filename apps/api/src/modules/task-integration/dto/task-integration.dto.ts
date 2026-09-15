@@ -149,6 +149,16 @@ export class CreateTaskDemandInput {
   @IsString()
   description: string;
 
+  /** Dados da venda/cliente — não deve ir para o campo de instruções do template. */
+  @IsOptional()
+  @IsString()
+  observations?: string;
+
+  /** Deixar vazio: instruções nativas ficam só no template do Task. */
+  @IsOptional()
+  @IsString()
+  instructions?: string;
+
   @IsString()
   localProtocol: string;
 
@@ -164,6 +174,15 @@ export class CreateTaskDemandInput {
 
   @IsString()
   requesterEmail: string;
+
+  /** Rótulo do criador para filtro no Luxus Task. */
+  @IsOptional()
+  @IsString()
+  creatorName?: string;
+
+  @IsOptional()
+  @IsString()
+  source?: string;
 
   @IsOptional()
   @IsBoolean()

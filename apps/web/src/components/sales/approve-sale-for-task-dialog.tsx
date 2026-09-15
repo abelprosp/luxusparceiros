@@ -80,29 +80,8 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
         setDocument(saleData.client?.document ?? '');
         const saleDocument = saleData.client?.document?.replace(/\D/g, '') ?? '';
         setDocumentType(saleDocument.length > 11 ? 'pj' : 'pf');
-        const suggestedDeadline = new Date();
-        suggestedDeadline.setDate(suggestedDeadline.getDate() + 7);
-        const y = suggestedDeadline.getFullYear();
-        const m = String(suggestedDeadline.getMonth() + 1).padStart(2, '0');
-        const d = String(suggestedDeadline.getDate()).padStart(2, '0');
-        const existingDeadline = saleData.taskDeadline
-          ? (() => {
-              const raw = String(saleData.taskDeadline);
-              const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-              if (match) return `${match[1]}-${match[2]}-${match[3]}`;
-              const date = new Date(raw);
-              if (Number.isNaN(date.getTime())) return '';
-              const ey = date.getUTCFullYear();
-              const em = String(date.getUTCMonth() + 1).padStart(2, '0');
-              const ed = String(date.getUTCDate()).padStart(2, '0');
-              return `${ey}-${em}-${ed}`;
-            })()
-          : '';
-        const preferred =
-          existingDeadline && existingDeadline >= minDeadline
-            ? existingDeadline
-            : `${y}-${m}-${d}`;
-        setDeadline((current) => current || preferred);
+        // Demanda deve abrir no dia da chegada no Luxus Task (demandas do dia).
+        setDeadline((current) => current || minDeadline);
       })
       .catch((error) => toast({
         title: 'Não foi possível carregar a venda',
@@ -390,7 +369,7 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
                 onChange={(event) => setDeadline(event.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Não pode ser anterior a hoje. Sugestão automática: 7 dias.
+                Use a data de hoje para a demanda aparecer em “demandas do dia” no Luxus Task.
               </p>
             </div>
             <div className="flex items-center gap-2">

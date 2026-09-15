@@ -93,29 +93,8 @@ export function SendSaleToTaskDialog({ saleId, open, onOpenChange, onSuccess }: 
           setClientMode('manual');
           setClientId('');
         }
-        const suggestedDeadline = new Date();
-        suggestedDeadline.setDate(suggestedDeadline.getDate() + 7);
-        const y = suggestedDeadline.getFullYear();
-        const m = String(suggestedDeadline.getMonth() + 1).padStart(2, '0');
-        const d = String(suggestedDeadline.getDate()).padStart(2, '0');
-        const existingDeadline = saleData.taskDeadline
-          ? (() => {
-              const raw = String(saleData.taskDeadline);
-              const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-              if (match) return `${match[1]}-${match[2]}-${match[3]}`;
-              const date = new Date(raw);
-              if (Number.isNaN(date.getTime())) return '';
-              const ey = date.getUTCFullYear();
-              const em = String(date.getUTCMonth() + 1).padStart(2, '0');
-              const ed = String(date.getUTCDate()).padStart(2, '0');
-              return `${ey}-${em}-${ed}`;
-            })()
-          : '';
-        setDeadline(
-          existingDeadline && existingDeadline >= minDeadline
-            ? existingDeadline
-            : `${y}-${m}-${d}`,
-        );
+        // Demanda deve abrir no dia da chegada no Luxus Task (demandas do dia).
+        setDeadline(minDeadline);
       })
       .catch((error) => toast({
         title: 'Não foi possível carregar os dados',
@@ -312,6 +291,9 @@ export function SendSaleToTaskDialog({ saleId, open, onOpenChange, onSuccess }: 
                 value={deadline}
                 onChange={(event) => setDeadline(event.target.value)}
               />
+              <p className="text-xs text-muted-foreground">
+                Use a data de hoje para a demanda aparecer em “demandas do dia” no Luxus Task.
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="handoff-priority" checked={priority} onCheckedChange={(checked) => setPriority(checked === true)} />

@@ -932,32 +932,6 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     });
     if (!sale?.taskDemandId || sale.taskSyncStatus !== SaleTaskSyncStatus.SYNCED) return;
 
-    const full = await this.prisma.sale.findUnique({
-      where: { id },
-      include: {
-        partner: { select: { name: true } },
-        branch: { select: { name: true } },
-        client: true,
-        operator: { select: { name: true } },
-        plan: { select: { name: true } },
-        campaign: { select: { title: true } },
-        createdBy: { select: { name: true, email: true } },
-      },
-    });
-    if (full) {
-      await this.pushSaleDetailsToTask(sale.id, {
-        subject: this.buildSaleTaskSubject(full),
-        description: this.buildSaleTaskDescription(full),
-        localProtocol: full.protocol,
-        partnerName: full.partner.name,
-        branchName: full.branch?.name ?? undefined,
-        requesterName: full.createdBy.name,
-        requesterEmail: full.createdBy.email,
-      }).catch((error) => {
-        console.warn('[sales] Reforço de detalhes da demanda falhou', error);
-      });
-    }
-
     const partnerDocuments = sale.documents.filter(
       (document) => !document.externalId?.startsWith('task:'),
     );
@@ -1102,6 +1076,16 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     return `${y}-${m}-${d}`;
   }
 
+  /** Data de hoje em America/Sao_Paulo (YYYY-MM-DD) — demanda abre no dia da chegada. */
+  private todayDeadlineIsoDate(): string {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  }
+
   private assertAdmin(user: AuthUser) {
     if (!isAdminRole(user.role)) throw new ForbiddenException('Apenas administradores podem revisar vendas');
   }
@@ -1149,9 +1133,10 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     protocol: string;
     partner: { name: string };
     newNumber?: string | null;
+    client: { name: string };
   }) {
-    const line = this.formatSalePhone(sale.newNumber).replace(/\D/g, '') || 'semlinha';
-    const raw = `Venda ${sale.protocol} ${sale.partner.name} Linha ${line}`;
+    const lineDigits = String(sale.newNumber || '').replace(/\D/g, '') || 'semlinha';
+    const raw = `${sale.client.name} ${lineDigits}`;
     return this.sanitizeTaskPlainText(raw);
   }
 
@@ -1324,13 +1309,13 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     }
     try {
       let task;
-      let createdNow = false;
       try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
       if (!task && sale.taskDemandId) {
         try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
       }
       const subject = this.buildSaleTaskSubject(sale);
-      const description = this.buildSaleTaskDescription(sale);
+      const observations = this.buildSaleTaskDescription(sale);
+      const arrivalDeadline = this.todayDeadlineIsoDate();
       if (!task) {
         // Cria a demanda sem anexos pesados; a importação acontece em seguida, 1 a 1.
         try {
@@ -1342,35 +1327,32 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
             clientName: sale.taskClientName ?? sale.client.name,
             clientDocumentType: (sale.taskClientDocumentType as 'pf' | 'pj' | null) ?? undefined,
             clientDocument: sale.taskClientDocument ?? sale.client.document?.replace(/\D/g, '') ?? undefined,
-            deadline: this.formatTaskDeadlineDate(sale.taskDeadline),
+            deadline: arrivalDeadline,
             subject,
-            description,
+            description: observations,
+            observations,
+            instructions: '',
             localProtocol: sale.protocol,
             partnerName: sale.partner.name,
             branchName: sale.branch?.name,
-            requesterName: sale.createdBy.name,
+            requesterName: 'Luxus Parceiros',
             requesterEmail: sale.createdBy.email,
+            creatorName: 'Luxus Parceiros',
+            source: 'luxus_parceiros',
             priority: sale.taskPriority,
             documents: [],
           });
-          createdNow = true;
+          await this.prisma.sale.update({
+            where: { id },
+            data: { taskDeadline: this.parseTaskDeadlineOrThrow(arrivalDeadline) },
+          }).catch(() => undefined);
         } catch (createError) {
           // Corrida/protocolo duplicado no Task: a demanda pode ter sido criada — tenta recuperar o vínculo.
           try { task = await this.taskIntegration.getDemand(sale.id); } catch { task = null; }
           if (!task) throw createError;
         }
       }
-      if (task && !createdNow) {
-        await this.pushSaleDetailsToTask(sale.id, {
-          subject,
-          description,
-          localProtocol: sale.protocol,
-          partnerName: sale.partner.name,
-          branchName: sale.branch?.name ?? undefined,
-          requesterName: sale.createdBy.name,
-          requesterEmail: sale.createdBy.email,
-        });
-      }
+      // Demanda já existente: não reenvia subject/description (respeita edição no Task).
       // Nunca devolve ao Task um arquivo que originalmente veio dele.
       const partnerDocuments = sale.documents.filter(
         (document) => !document.externalId?.startsWith('task:'),

@@ -109,12 +109,16 @@ export class TaskIntegrationService {
     input: {
       subject?: string;
       description?: string;
+      observations?: string;
+      instructions?: string;
       deadline?: string;
       localProtocol?: string;
       partnerName?: string;
       branchName?: string;
       requesterName?: string;
       requesterEmail?: string;
+      creatorName?: string;
+      source?: string;
     },
   ) {
     return this.request(
@@ -317,16 +321,23 @@ export class TaskIntegrationService {
       .trim();
 
     const lineDigits = String(sale.newNumber || '').replace(/\D/g, '') || 'semlinha';
+    const subject = sanitize(`${sale.client.name} ${lineDigits}`);
+    const observations = sanitize(description);
     return {
       id: sale.id,
       protocol: sale.protocol,
       partnerName: sale.partner.name,
       branchName: sale.branch?.name ?? null,
-      lineNumber,
-      subject: sanitize(`Venda ${sale.protocol} ${sale.partner.name} Linha ${lineDigits}`),
-      description: sanitize(description),
-      requesterName: sale.createdBy.name,
+      lineNumber: lineDigits,
+      clientName: sale.client.name,
+      subject,
+      description: observations,
+      observations,
+      instructions: '',
+      requesterName: 'Luxus Parceiros',
       requesterEmail: sale.createdBy.email,
+      creatorName: 'Luxus Parceiros',
+      source: 'luxus_parceiros',
     };
   }
 
