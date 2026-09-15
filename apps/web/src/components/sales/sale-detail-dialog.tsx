@@ -39,7 +39,7 @@ import {
   uploadFile,
 } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
-import { isPartnerScopedUser } from '@/lib/rbac';
+import { isAdminUser, isPartnerScopedUser } from '@/lib/rbac';
 import {
   isTaskReminderNotification,
   taskReminderText,
@@ -60,6 +60,7 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
+import { SendSaleToTaskDialog } from '@/components/sales/send-sale-to-task-dialog';
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   [DocumentType.CPF]: 'CPF',
@@ -132,6 +133,8 @@ interface SaleDetail {
   taskDeadline?: string | null;
   taskSyncStatus?: string | null;
   taskSyncError?: string | null;
+  taskHandoff?: boolean;
+  taskHandoffAt?: string | null;
   taskIsBeingEdited?: boolean;
   taskEditorName?: string | null;
   taskEditorActivity?: string | null;
@@ -501,6 +504,7 @@ export function SaleDetailDialog({
   const { user } = useAuth();
   const { notifications, markSaleRemindersRead } = useNotifications();
   const isPartnerScoped = isPartnerScopedUser(user);
+  const isAdmin = isAdminUser(user);
   const [loading, setLoading] = useState(false);
   const [sale, setSale] = useState<SaleDetail | null>(null);
   const [tab, setTab] = useState('overview');
@@ -508,6 +512,7 @@ export function SaleDetailDialog({
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadType, setUploadType] = useState<DocumentType>(DocumentType.OTHER);
+  const [sendToTaskOpen, setSendToTaskOpen] = useState(false);
   const generalUploadRef = useRef<HTMLInputElement>(null);
   const signedContractRef = useRef<HTMLInputElement>(null);
   const canEditSale = Boolean(
@@ -768,9 +773,20 @@ export function SaleDetailDialog({
   const neverSentToTask = Boolean(
     sale
     && !sale.taskDemandId
+    && !sale.taskHandoff
     && (sale.taskSyncStatus ?? 'NOT_READY') === 'NOT_READY'
     && !sale.taskProtocol,
   );
+  const canSendToTaskHandoff = Boolean(
+    sale
+    && isAdmin
+    && !sale.taskDemandId
+    && !sale.taskHandoff
+    && !['PENDING', 'PROCESSING', 'SYNCED'].includes(sale.taskSyncStatus ?? 'NOT_READY')
+    && ![SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
+    && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus),
+  );
+  const isTaskHandoff = Boolean(sale?.taskHandoff);
   const reminderUnread = Boolean(
     sale?.id
     && notifications.some((item) => !item.isRead && isTaskReminderNotification(item, sale.id)),
@@ -796,12 +812,18 @@ export function SaleDetailDialog({
                     <Badge variant={statusBadgeVariant(sale.status)}>
                       {sale.reviewStatus === SaleReviewStatus.APPROVED
                         ? (
-                          sale.contractStage === SaleContractStage.COMPLETED && !sale.taskDemandId
+                          sale.contractStage === SaleContractStage.COMPLETED && !sale.taskDemandId && !sale.taskHandoff
                             ? 'Concluída no Luxus Parceiros'
                             : saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))
                         )
                         : SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus}
                     </Badge>
+                    {sale.taskHandoff && (
+                      <Badge variant="outline">
+                        Enviado ao Luxus Task
+                        {sale.taskProtocol ? ` · ${sale.taskProtocol}` : ''}
+                      </Badge>
+                    )}
                     {sale.taskIsBeingEdited && <Badge variant="success">Em atendimento agora</Badge>}
                   </div>
                 )}
@@ -998,7 +1020,56 @@ export function SaleDetailDialog({
 
               <TabsContent value="photos" className={TAB_PANEL_CLASS}>
                 <div className="space-y-4 pb-4">
-                  <Section title="Luxus Task" className="border-primary/40 bg-primary/5" actions={taskFilesHeaderActions}>
+                  <Section title="Luxus Task" className="border-primary/40 bg-primary/5" actions={isTaskHandoff ? undefined : taskFilesHeaderActions}>
+                    {isTaskHandoff ? (
+                      <div className="space-y-3 py-2">
+                        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+                          <p className="font-medium">Enviado ao Luxus Task — será finalizado por lá</p>
+                          <p className="mt-1 text-xs opacity-90">
+                            A equipe do Task assume o restante. Não há retorno ou cobrança nesta venda no Parceiros.
+                          </p>
+                          {(sale.taskProtocol || sale.taskStatus) && (
+                            <p className="mt-2 text-xs">
+                              {sale.taskProtocol ? `Protocolo Task: ${sale.taskProtocol}` : ''}
+                              {sale.taskProtocol && sale.taskStatus ? ' · ' : ''}
+                              {sale.taskStatus ? `Status: ${sale.taskStatus}` : ''}
+                            </p>
+                          )}
+                          {sale.taskSyncStatus === 'PENDING' || sale.taskSyncStatus === 'PROCESSING' || sale.taskSyncStatus === 'RETRY' ? (
+                            <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">
+                              {sale.taskSyncStatus === 'RETRY'
+                                ? `Falha no envio — nova tentativa automática.${sale.taskSyncError ? ` ${sale.taskSyncError}` : ''}`
+                                : 'Envio em andamento...'}
+                            </p>
+                          ) : null}
+                        </div>
+                        {!isPartnerScoped
+                          && (
+                            sale.contractStage === SaleContractStage.COMPLETED
+                            || sale.status === SaleStatus.ACTIVATED
+                          ) && (
+                          <Button
+                            variant="outline"
+                            disabled={workflowBusy}
+                            onClick={() => {
+                              const reason = window.prompt(
+                                'Reabrir esta venda concluída para correção?\n\nDescreva o erro encontrado:',
+                              );
+                              if (reason === null) return;
+                              if (!reason.trim()) {
+                                toast({ title: 'Informe o motivo da reabertura', variant: 'destructive' });
+                                return;
+                              }
+                              void runWorkflowAction('reopen', { reason: reason.trim() });
+                            }}
+                          >
+                            {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Reabrir venda
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <>
                     <DetailRow label="Status" value={saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))} />
                     {sale.taskSyncError && (
                       <div className="my-3 rounded-md bg-red-500/10 p-3 text-sm text-red-500">
@@ -1009,6 +1080,11 @@ export function SaleDetailDialog({
                       O contrato assinado pode ser anexado no Luxus Task ou aqui no Luxus Parceiros. Use a seta para puxar arquivos novos do Task.
                     </p>
                     <div className="flex flex-wrap gap-2 py-3">
+                      {canSendToTaskHandoff && (
+                        <Button onClick={() => setSendToTaskOpen(true)}>
+                          Enviar Luxus Task
+                        </Button>
+                      )}
                       {!isPartnerScoped
                         && neverSentToTask
                         && sale.contractStage !== SaleContractStage.COMPLETED
@@ -1054,6 +1130,8 @@ export function SaleDetailDialog({
                         </Button>
                       )}
                     </div>
+                      </>
+                    )}
                   </Section>
 
                   {canAttachDocuments && (
@@ -1276,6 +1354,11 @@ export function SaleDetailDialog({
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Fechar
             </Button>
+            {canSendToTaskHandoff && (
+              <Button onClick={() => setSendToTaskOpen(true)}>
+                Enviar Luxus Task
+              </Button>
+            )}
             {canEditSale && sale && (
               <Button
                 variant="secondary"
@@ -1314,6 +1397,13 @@ export function SaleDetailDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SendSaleToTaskDialog
+        saleId={saleId}
+        open={sendToTaskOpen}
+        onOpenChange={setSendToTaskOpen}
+        onSuccess={() => void load()}
+      />
 
       {lightbox && (
         <ImageLightbox src={lightbox.src} label={lightbox.label} onClose={() => setLightbox(null)} />

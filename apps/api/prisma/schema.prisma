@@ -598,6 +598,8 @@ model Sale {
   taskEditorActivity String?
   taskEditorLastSeenAt DateTime?
   taskLastMessage     String?
+  taskHandoff         Boolean  @default(false)
+  taskHandoffAt       DateTime?
   contractStage     SaleContractStage @default(PRE_REVIEW)
   contractStageUpdatedAt DateTime @default(now())
   contractCorrectionReason String?

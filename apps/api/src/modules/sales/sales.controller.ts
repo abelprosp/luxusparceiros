@@ -128,6 +128,19 @@ export class SalesController {
     return this.salesService.approveForTask(id, dto, user);
   }
 
+  @Post(':id/send-to-task')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({
+    summary: 'Enviar venda ao Luxus Task em modo handoff (Task assume o restante, sem retorno)',
+  })
+  sendToTask(
+    @Param('id') id: string,
+    @Body() dto: ApproveSaleForTaskDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesService.sendToTask(id, dto, user);
+  }
+
   @Post(':id/approve-internal')
   @RequirePermissions(PERMISSIONS.SALES_WRITE)
   @ApiOperation({ summary: 'Aprovar e concluir a venda no Luxus Parceiros sem enviar ao Luxus Task' })

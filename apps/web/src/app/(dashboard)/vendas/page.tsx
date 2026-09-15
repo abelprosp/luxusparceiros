@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Search, Download, ShoppingCart, Check, X, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2, MessageSquare, AlertTriangle, ImageIcon } from 'lucide-react';
+import { Search, Download, ShoppingCart, Check, X, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2, MessageSquare, AlertTriangle, ImageIcon, Send } from 'lucide-react';
 import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS, saleContractStageLabel, saleTaskUserName } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
@@ -23,10 +23,11 @@ import { ResubmitSaleDocumentsDialog } from '@/components/sales/resubmit-sale-do
 import { SaleDetailDialog } from '@/components/sales/sale-detail-dialog';
 import { EditSaleDialog } from '@/components/sales/edit-sale-dialog';
 import { ApproveSaleForTaskDialog } from '@/components/sales/approve-sale-for-task-dialog';
+import { SendSaleToTaskDialog } from '@/components/sales/send-sale-to-task-dialog';
 import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { useAuth } from '@/hooks/useAuth';
-import { hasPermission, isPartnerUser } from '@/lib/rbac';
+import { hasPermission, isAdminUser, isPartnerUser } from '@/lib/rbac';
 import {
   isTaskReminderNotification,
   taskReminderText,
@@ -46,6 +47,7 @@ interface Sale {
   taskSyncStatus?: string;
   taskSyncError?: string | null;
   taskDemandId?: string;
+  taskHandoff?: boolean;
   contractStage: SaleContractStage;
   taskIsBeingEdited?: boolean;
   taskEditorName?: string;
@@ -119,6 +121,7 @@ export default function VendasPage() {
   const [messageSale, setMessageSale] = useState<Sale | null>(null);
   const [editSaleId, setEditSaleId] = useState<string | null>(null);
   const [approveSaleId, setApproveSaleId] = useState<string | null>(null);
+  const [sendToTaskSaleId, setSendToTaskSaleId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Sale | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -128,6 +131,7 @@ export default function VendasPage() {
   const { user } = useAuth();
   const { notifications, markSaleRemindersRead } = useNotifications();
   const isPartner = isPartnerUser(user);
+  const isAdmin = isAdminUser(user);
   const canDeleteSales = hasPermission(user, PERMISSIONS.SALES_DELETE);
   const canDelete = (sale: Sale) =>
     canDeleteSales
@@ -140,6 +144,13 @@ export default function VendasPage() {
     && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus);
   const canReview = (sale: Sale) =>
     [SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW].includes(sale.reviewStatus);
+  const canSendToTaskHandoff = (sale: Sale) =>
+    isAdmin
+    && !sale.taskDemandId
+    && !sale.taskHandoff
+    && !['PENDING', 'PROCESSING', 'SYNCED'].includes(sale.taskSyncStatus ?? 'NOT_READY')
+    && ![SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
+    && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus);
   const openDetail = (saleId: string, tab: 'overview' | 'photos' = 'overview') => {
     setDetailTab(tab);
     setDetailSaleId(saleId);
@@ -281,6 +292,11 @@ export default function VendasPage() {
   };
 
   const workflowLabel = (sale: Sale) => {
+    if (sale.taskHandoff) {
+      return sale.taskProtocol
+        ? `Enviado ao Luxus Task · ${sale.taskProtocol}`
+        : 'Enviado ao Luxus Task';
+    }
     const taskName = saleTaskUserName(sale);
     if (sale.reviewStatus === SaleReviewStatus.APPROVED) {
       if (sale.contractStage === SaleContractStage.COMPLETED && !sale.taskDemandId) {
@@ -471,6 +487,11 @@ export default function VendasPage() {
                                   <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
                                 </DropdownMenuItem>
                               )}
+                              {canSendToTaskHandoff(s) && (
+                                <DropdownMenuItem onClick={() => setSendToTaskSaleId(s.id)}>
+                                  <Send className="mr-2 h-4 w-4" /> Enviar Luxus Task
+                                </DropdownMenuItem>
+                              )}
                               {canReview(s) && (
                                 <DropdownMenuItem onClick={() => openAction(s, 'reject')}>
                                   <X className="mr-2 h-4 w-4 text-red-600" /> Solicitar correção
@@ -568,6 +589,11 @@ export default function VendasPage() {
                         {canReview(s) && (
                           <DropdownMenuItem onClick={() => handleApprove(s)}>
                             <Check className="mr-2 h-4 w-4 text-green-600" /> Aprovar
+                          </DropdownMenuItem>
+                        )}
+                        {canSendToTaskHandoff(s) && (
+                          <DropdownMenuItem onClick={() => setSendToTaskSaleId(s.id)}>
+                            <Send className="mr-2 h-4 w-4" /> Enviar Luxus Task
                           </DropdownMenuItem>
                         )}
                         {canReview(s) && (
@@ -714,6 +740,13 @@ export default function VendasPage() {
         saleId={approveSaleId}
         open={!!approveSaleId}
         onOpenChange={(open) => { if (!open) setApproveSaleId(null); }}
+        onSuccess={load}
+      />
+
+      <SendSaleToTaskDialog
+        saleId={sendToTaskSaleId}
+        open={!!sendToTaskSaleId}
+        onOpenChange={(open) => { if (!open) setSendToTaskSaleId(null); }}
         onSuccess={load}
       />
 

@@ -751,6 +751,79 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     return updated;
   }
 
+  /**
+   * Envia a venda ao Luxus Task em modo handoff: a demanda nasce no 1º status do template
+   * e o Task assume o restante, sem comunicação de retorno ao Parceiros.
+   * Não altera status/review/contractStage locais.
+   */
+  async sendToTask(id: string, dto: ApproveSaleForTaskDto, user: AuthUser) {
+    this.assertAdmin(user);
+    if (!this.taskIntegration.isConfigured()) {
+      throw new BadRequestException('Configure a integração com o Luxus Task antes de enviar a venda');
+    }
+    const deadlineDate = this.parseTaskDeadlineOrThrow(dto.deadline);
+    const sale = await this.findOne(id, user);
+
+    if (
+      sale.status === SaleStatus.CANCELLED
+      || sale.status === SaleStatus.REJECTED
+      || sale.reviewStatus === SaleReviewStatus.REJECTED
+      || sale.reviewStatus === SaleReviewStatus.CANCELLED
+    ) {
+      throw new BadRequestException('Venda cancelada ou rejeitada não pode ser enviada ao Luxus Task');
+    }
+    if (sale.taskDemandId) {
+      throw new BadRequestException('Esta venda já possui demanda no Luxus Task');
+    }
+    if (sale.taskHandoff) {
+      throw new BadRequestException('Esta venda já foi enviada ao Luxus Task em modo handoff');
+    }
+    if (
+      sale.taskSyncStatus === SaleTaskSyncStatus.PENDING
+      || sale.taskSyncStatus === SaleTaskSyncStatus.PROCESSING
+      || sale.taskSyncStatus === SaleTaskSyncStatus.SYNCED
+    ) {
+      throw new BadRequestException('Esta venda já está em sincronização ou enviada ao Luxus Task');
+    }
+    if (!dto.clientId && (!dto.clientName?.trim() || !dto.clientDocument?.trim())) {
+      throw new BadRequestException('Selecione um cliente do Luxus Task ou informe nome e CPF/CNPJ');
+    }
+
+    const updated = await this.prisma.sale.update({
+      where: { id },
+      data: {
+        taskResponsibleId: dto.responsibleId,
+        taskClientId: dto.clientId,
+        taskClientName: dto.clientName?.trim(),
+        taskClientDocumentType: dto.clientDocumentType,
+        taskClientDocument: dto.clientDocument?.replace(/\D/g, ''),
+        taskDeadline: deadlineDate,
+        taskPriority: dto.priority ?? false,
+        taskHandoff: true,
+        taskHandoffAt: new Date(),
+        taskSyncStatus: SaleTaskSyncStatus.PENDING,
+        taskSyncError: null,
+        taskNextRetryAt: new Date(),
+        taskSyncAttempts: 0,
+        notes: dto.notes?.trim()
+          ? [sale.notes, dto.notes.trim()].filter(Boolean).join('\n\n')
+          : sale.notes,
+        timeline: {
+          create: {
+            actorId: user.id,
+            actorName: user.name,
+            action: 'Venda enviada ao Luxus Task (handoff)',
+            details:
+              'A demanda será criada no primeiro status do template. O Luxus Task assume a finalização; não há retorno ao Parceiros.',
+          },
+        },
+      },
+    });
+
+    setImmediate(() => void this.processTaskSyncQueue());
+    return updated;
+  }
+
   /** Aprova e conclui a venda inteiramente no Luxus Parceiros, sem enviar ao Luxus Task. */
   async approveInternal(id: string, user: AuthUser) {
     this.assertAdmin(user);
@@ -1556,6 +1629,11 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       || sale.reviewStatus === SaleReviewStatus.CANCELLED
     ) {
       throw new BadRequestException('Venda rejeitada ou cancelada na revisão não pode ser finalizada');
+    }
+    if (sale.taskHandoff) {
+      throw new BadRequestException(
+        'Esta venda foi enviada ao Luxus Task em modo handoff. A finalização fica com o Task.',
+      );
     }
     if (sale.taskDemandId || sale.taskSyncStatus === SaleTaskSyncStatus.SYNCED
       || sale.taskSyncStatus === SaleTaskSyncStatus.PENDING
