@@ -17,6 +17,7 @@ import {
 import { PrismaService } from '@/prisma/prisma.service';
 import { resolveBranchId } from '@/common/utils/branch-scope';
 import { realizedSaleStatusFilter } from '@/common/constants/realized-sale-statuses';
+import { formatDocument, formatPhone } from '@luxus/utils';
 import { DashboardFiltersDto } from './dto/dashboard-filters.dto';
 
 /** Vendas que ainda entram na projeção de comissão do ciclo. */
@@ -407,9 +408,12 @@ export class DashboardService {
       createdAt: true,
       activatedAt: true,
       cancelledAt: true,
+      newNumber: true,
       partner: { select: { name: true } },
       branch: { select: { name: true } },
-      client: { select: { name: true } },
+      client: {
+        select: { name: true, phone: true, document: true, documentType: true },
+      },
       plan: { select: { name: true } },
     } as const;
 
@@ -421,23 +425,46 @@ export class DashboardService {
       createdAt: Date;
       activatedAt?: Date | null;
       cancelledAt?: Date | null;
+      newNumber: string | null;
       partner: { name: string };
       branch: { name: string } | null;
-      client: { name: string };
+      client: {
+        name: string;
+        phone: string;
+        document: string;
+        documentType: string;
+      };
       plan: { name: string };
-    }) => ({
-      id: sale.id,
-      primary: sale.protocol,
-      secondary: [
+    }) => {
+      const lineDigits = (sale.newNumber ?? '').replace(/\D/g, '');
+      const clientPhoneDigits = (sale.client.phone ?? '').replace(/\D/g, '');
+      const detailParts = [
         sale.partner.name,
         sale.branch?.name ?? 'Matriz',
         sale.client.name,
         sale.plan.name,
-      ].join(' • '),
-      status: sale.status,
-      value: Number(sale.value),
-      date: (sale.activatedAt ?? sale.cancelledAt ?? sale.createdAt).toISOString(),
-    });
+      ];
+      if (lineDigits) {
+        detailParts.push(`Linha ${formatPhone(sale.newNumber!)}`);
+      }
+      if (clientPhoneDigits && clientPhoneDigits !== lineDigits) {
+        detailParts.push(`Tel ${formatPhone(sale.client.phone)}`);
+      } else if (!lineDigits && clientPhoneDigits) {
+        detailParts.push(`Tel ${formatPhone(sale.client.phone)}`);
+      }
+      if (sale.client.document) {
+        const docLabel = sale.client.documentType === 'CNPJ' ? 'CNPJ' : 'CPF';
+        detailParts.push(`${docLabel} ${formatDocument(sale.client.document)}`);
+      }
+      return {
+        id: sale.id,
+        primary: sale.protocol,
+        secondary: detailParts.join(' • '),
+        status: sale.status,
+        value: Number(sale.value),
+        date: (sale.activatedAt ?? sale.cancelledAt ?? sale.createdAt).toISOString(),
+      };
+    };
 
     const [sales, salesInProgress, salesCancelled, partners, lines, commissions, campaigns] = await Promise.all([
       this.prisma.sale.findMany({
