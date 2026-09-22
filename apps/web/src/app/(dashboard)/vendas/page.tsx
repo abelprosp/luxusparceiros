@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Search, Download, ShoppingCart, Check, X, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2, MessageSquare, AlertTriangle, ImageIcon, Send } from 'lucide-react';
+import { Search, ShoppingCart, Check, X, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2, MessageSquare, AlertTriangle, ImageIcon, Send } from 'lucide-react';
 import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS, saleContractStageLabel, saleTaskUserName } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
@@ -24,6 +24,7 @@ import { SaleDetailDialog } from '@/components/sales/sale-detail-dialog';
 import { EditSaleDialog } from '@/components/sales/edit-sale-dialog';
 import { ApproveSaleForTaskDialog } from '@/components/sales/approve-sale-for-task-dialog';
 import { SendSaleToTaskDialog } from '@/components/sales/send-sale-to-task-dialog';
+import { SalesExportButton } from '@/components/sales/sales-export-button';
 import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { useAuth } from '@/hooks/useAuth';
@@ -177,6 +178,25 @@ export default function VendasPage() {
       });
     } finally { setLoading(false); }
   }, [search, statusFilter, syncErrorOnly, page, toast]);
+
+  const loadAllForExport = useCallback(async () => {
+    const rows: Sale[] = [];
+    let exportPage = 1;
+    let exportTotalPages = 1;
+    while (exportPage <= exportTotalPages) {
+      const res = await getPaginated<Sale>('/sales', {
+        search: search || undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+        syncError: syncErrorOnly || undefined,
+        page: exportPage,
+        limit: 100,
+      });
+      rows.push(...res.data);
+      exportTotalPages = res.meta.totalPages;
+      exportPage += 1;
+    }
+    return rows;
+  }, [search, statusFilter, syncErrorOnly]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -346,7 +366,7 @@ export default function VendasPage() {
           )}
           <CreateSaleButton onSuccess={load} />
           {!isPartner && (
-            <Button variant="outline"><Download className="mr-2 h-4 w-4" /> Exportar</Button>
+            <SalesExportButton loadSales={loadAllForExport} includePartnerColumns={!isPartner} />
           )}
         </div>
       </div>
