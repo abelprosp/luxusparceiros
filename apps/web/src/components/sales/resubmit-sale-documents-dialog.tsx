@@ -179,7 +179,7 @@ export function ResubmitSaleDocumentsDialog({
                   {!doc.fulfilled && (
                     <Input
                       type="file"
-                      accept="image/*,application/pdf"
+                      accept="*/*"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;

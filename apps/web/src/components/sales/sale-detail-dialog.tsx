@@ -84,7 +84,7 @@ const UPLOADABLE_DOCUMENT_TYPES: DocumentType[] = [
   DocumentType.CONTRACT,
 ];
 
-const FILE_ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf';
+const FILE_ACCEPT = '*/*';
 
 const CONTRACT_FORMAT_LABELS: Record<ContractFormat, string> = {
   [ContractFormat.PRINT]: 'Impressão',
@@ -349,7 +349,7 @@ function DocumentPreview({
       <input
         ref={inputRef}
         type="file"
-        accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+        accept="*/*"
         className="hidden"
         onChange={(event) => void handleReplacement(event.target.files?.[0])}
       />

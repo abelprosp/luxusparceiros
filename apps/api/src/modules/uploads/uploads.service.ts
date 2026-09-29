@@ -28,14 +28,7 @@ import {
 } from '@/common/utils/partner-scope';
 import { TaskIntegrationService } from '@/modules/task-integration/task-integration.service';
 
-const ALLOWED_MIME_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'application/pdf',
-];
-
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.pdf'];
+const DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 @Injectable()
 export class UploadsService {
@@ -52,7 +45,7 @@ export class UploadsService {
       this.configService.get<string>('UPLOAD_DIR') ||
       this.configService.get<string>('RAILWAY_VOLUME_MOUNT_PATH') ||
       './uploads';
-    this.maxSize = this.configService.get<number>('UPLOAD_MAX_SIZE', 10485760);
+    this.maxSize = this.configService.get<number>('UPLOAD_MAX_SIZE', DEFAULT_MAX_UPLOAD_BYTES);
     if (!existsSync(this.uploadDir)) {
       mkdirSync(this.uploadDir, { recursive: true });
     }
@@ -73,7 +66,7 @@ export class UploadsService {
     this.validateFile(file);
     await this.validateRelations(type, purpose, user, relations);
 
-    const ext = extname(file.originalname).toLowerCase();
+    const ext = this.resolveExtension(file);
     const filename = `${uuidv4()}${ext}`;
     const filepath = join(this.uploadDir, filename);
 
@@ -233,7 +226,7 @@ export class UploadsService {
     if (!sale) throw new BadRequestException('Venda não encontrada');
 
     assertPartnerAccess(user, sale.partnerId);
-    if (user.branchId && user.branchId !== sale.branchId) {
+    if (user.branchId && sale.branchId && user.branchId !== sale.branchId) {
       throw new ForbiddenException(MESSAGES.FORBIDDEN);
     }
 
@@ -454,16 +447,20 @@ export class UploadsService {
     return types[extname(filename).toLowerCase()] ?? 'application/octet-stream';
   }
 
+  private resolveExtension(file: Express.Multer.File) {
+    const fromName = extname(file.originalname || '').toLowerCase();
+    if (/^\.[a-z0-9]{1,10}$/.test(fromName)) return fromName;
+    return '.bin';
+  }
+
   private validateFile(file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('Arquivo é obrigatório');
     }
     if (file.size > this.maxSize) {
-      throw new BadRequestException(MESSAGES.FILE_TOO_LARGE);
-    }
-    const ext = extname(file.originalname).toLowerCase();
-    if (!ALLOWED_MIME_TYPES.includes(file.mimetype) || !ALLOWED_EXTENSIONS.includes(ext)) {
-      throw new BadRequestException(MESSAGES.FILE_TYPE_INVALID);
+      throw new BadRequestException(
+        `Arquivo excede o tamanho máximo de ${Math.round(this.maxSize / (1024 * 1024))} MB`,
+      );
     }
   }
 

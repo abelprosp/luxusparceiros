@@ -40,7 +40,7 @@ export class UploadsController {
       },
     },
   })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
   upload(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadFileDto,
@@ -86,7 +86,7 @@ export class UploadsController {
       },
     },
   })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
   replaceDocument(
     @Param('documentId') documentId: string,
     @UploadedFile() file: Express.Multer.File,

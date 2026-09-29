@@ -278,6 +278,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     }
 
     setSaving(true);
+    let createdSaleId: string | null = null;
     try {
       const sale = await api<{ id: string; client?: { id: string } }>('/sales', {
         method: 'POST',
@@ -301,6 +302,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
           },
         },
       });
+      createdSaleId = sale.id;
 
       const clientId = sale.client?.id;
       await uploadFile(chipPhoto, DocumentType.CHIP_PHOTO, { saleId: sale.id, clientId });
@@ -316,6 +318,9 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       onOpenChange(false);
       onSuccess();
     } catch (err) {
+      if (createdSaleId) {
+        await api(`/sales/${createdSaleId}/discard-draft`, { method: 'POST' }).catch(() => undefined);
+      }
       toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha', variant: 'destructive' });
     } finally {
       setSaving(false);
@@ -463,7 +468,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                 <Label>Foto do chip *</Label>
                 <Input
                   type="file"
-                  accept="image/*"
+                  accept="*/*"
                   onChange={(e) => setChipPhoto(e.target.files?.[0] ?? null)}
                 />
               </div>
@@ -579,7 +584,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                 <Label>Foto do CPF *</Label>
                 <Input
                   type="file"
-                  accept="image/*"
+                  accept="*/*"
                   onChange={(e) => setCpfPhoto(e.target.files?.[0] ?? null)}
                 />
               </div>
@@ -587,7 +592,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                 <Label>Foto do RG *</Label>
                 <Input
                   type="file"
-                  accept="image/*"
+                  accept="*/*"
                   onChange={(e) => setRgPhoto(e.target.files?.[0] ?? null)}
                 />
               </div>

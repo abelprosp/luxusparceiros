@@ -77,7 +77,7 @@ export function CreateTicketDialog({ open, onOpenChange, onSuccess }: CreateTick
             <Label>Anexo (opcional)</Label>
             <Input
               type="file"
-              accept=".jpg,.jpeg,.png,.webp,.pdf"
+              accept="*/*"
               onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
             />
           </div>

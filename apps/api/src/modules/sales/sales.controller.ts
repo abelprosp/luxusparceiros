@@ -92,6 +92,13 @@ export class SalesController {
     return this.salesService.approve(id, user);
   }
 
+  @Post(':id/discard-draft')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Descarta rascunho de venda quando o anexo falha' })
+  discardDraft(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesService.discardDraft(id, user);
+  }
+
   @Post(':id/submit')
   @RequirePermissions(PERMISSIONS.SALES_WRITE)
   @ApiOperation({ summary: 'Enviar ou reenviar venda para análise do administrador' })

@@ -2038,6 +2038,23 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async discardDraft(id: string, user: AuthUser) {
+    const sale = await this.findOne(id, user);
+    if (sale.reviewStatus !== SaleReviewStatus.DRAFT) {
+      throw new BadRequestException('Só é possível descartar uma venda ainda em rascunho');
+    }
+    if (sale.createdById !== user.id && !isAdminRole(user.role)) {
+      throw new ForbiddenException('Sem permissão para descartar esta venda');
+    }
+    await this.prisma.$transaction([
+      this.prisma.commission.deleteMany({ where: { saleId: id } }),
+      this.prisma.document.deleteMany({ where: { saleId: id } }),
+      this.prisma.sale.delete({ where: { id } }),
+    ]);
+    this.uploadsService.removeStoredFiles(sale.documents);
+    return { message: 'Rascunho descartado' };
+  }
+
   async remove(id: string, user: AuthUser) {
     const sale = await this.findOne(id, user);
     if (sale.status === SaleStatus.ACTIVATED) {

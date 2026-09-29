@@ -343,7 +343,7 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
                 <div className="flex gap-2">
                   <Input
                     type="file"
-                    accept=".jpg,.jpeg,.png,.webp,.pdf"
+                    accept="*/*"
                     onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
                     disabled={sending}
                   />
