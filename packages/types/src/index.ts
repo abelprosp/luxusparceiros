@@ -398,7 +398,7 @@ export interface DashboardAdminMetrics {
   inProgressValue: number;
   cancelledSales: number;
   cancelledValue: number;
-  period: '30d' | 'month';
+  period: 'month' | '30d' | '60d' | 'all';
   periodLabel: string;
   salesChart: { date: string; value: number }[];
   partnersInBrazil: PartnerMapLocation[];

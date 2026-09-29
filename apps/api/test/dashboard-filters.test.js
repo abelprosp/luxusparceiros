@@ -95,4 +95,20 @@ test('periodo padrao do dashboard e 30 dias', () => {
   const resolved = service.resolvePeriod({});
   assert.equal(resolved.period, '30d');
   assert.equal(resolved.periodLabel, 'Últimos 30 dias');
+  assert.ok(resolved.since instanceof Date);
+  assert.equal(resolved.chartSince?.getTime(), resolved.since.getTime());
+});
+
+test('periodos do dashboard sao distintos', () => {
+  const service = new DashboardService({});
+  const month = service.resolvePeriod({ period: 'month' });
+  const last30 = service.resolvePeriod({ period: '30d' });
+  const last60 = service.resolvePeriod({ period: '60d' });
+  const all = service.resolvePeriod({ period: 'all' });
+  assert.equal(month.periodLabel, 'Mês atual');
+  assert.equal(last60.periodLabel, 'Últimos 60 dias');
+  assert.equal(all.periodLabel, 'Todos os períodos');
+  assert.equal(all.since, undefined);
+  assert.ok(last60.since.getTime() < last30.since.getTime());
+  assert.ok(month.since.getTime() !== last30.since.getTime() || month.since.getDate() === 1);
 });

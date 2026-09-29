@@ -30,10 +30,10 @@ export class DashboardFiltersDto {
 
   @ApiPropertyOptional({
     description: 'Período das métricas de vendas',
-    enum: ['30d', 'month'],
+    enum: ['month', '30d', '60d', 'all'],
     default: '30d',
   })
   @IsOptional()
-  @IsIn(['30d', 'month'])
-  period?: '30d' | 'month';
+  @IsIn(['month', '30d', '60d', 'all'])
+  period?: 'month' | '30d' | '60d' | 'all';
 }

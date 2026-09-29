@@ -122,7 +122,7 @@ export default function DashboardPage() {
   const isPartnerScoped = isPartnerScopedUser(user);
   const [metrics, setMetrics] = useState<DashboardAdminMetrics | null>(null);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<'30d' | 'month'>('30d');
+  const [period, setPeriod] = useState<'month' | '30d' | '60d' | 'all'>('30d');
   const [partnerId, setPartnerId] = useState('all');
   const [state, setState] = useState('all');
   const [campaignId, setCampaignId] = useState('all');
@@ -217,7 +217,7 @@ export default function DashboardPage() {
   };
 
   const data = metrics || fallbackMetrics;
-  const periodText = data.periodLabel || (period === 'month' ? 'Mês atual' : 'Últimos 30 dias');
+  const periodText = data.periodLabel || 'Últimos 30 dias';
 
   if (isPartnerScoped) {
     return (
@@ -244,13 +244,15 @@ export default function DashboardPage() {
           <DashboardExportButton loadDetails={loadDetails} />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap">
-          <Select value={period} onValueChange={(value) => setPeriod(value as '30d' | 'month')}>
-            <SelectTrigger className="h-11 w-full rounded-2xl border border-border bg-muted text-foreground shadow-none sm:w-48">
+          <Select value={period} onValueChange={(value) => setPeriod(value as 'month' | '30d' | '60d' | 'all')}>
+            <SelectTrigger className="h-11 w-full rounded-2xl border border-border bg-muted text-foreground shadow-none sm:w-56">
               <SelectValue placeholder="Período" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="30d">Últimos 30 dias</SelectItem>
               <SelectItem value="month">Mês atual</SelectItem>
+              <SelectItem value="30d">Últimos 30 dias</SelectItem>
+              <SelectItem value="60d">Últimos 60 dias</SelectItem>
+              <SelectItem value="all">Todos os períodos</SelectItem>
             </SelectContent>
           </Select>
 
@@ -381,7 +383,7 @@ export default function DashboardPage() {
               onClick={() => openDetails('sales', 'Vendas realizadas')}
               onKeyDown={(event) => event.key === 'Enter' && openDetails('sales', 'Vendas realizadas')}
             >
-              <SalesChart data={data.salesChart} title="Vendas nos últimos 30 dias" />
+              <SalesChart data={data.salesChart} title={`Vendas • ${periodText}`} />
             </div>
 
             <BentoPanel

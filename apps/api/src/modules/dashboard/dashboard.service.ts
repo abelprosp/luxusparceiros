@@ -49,16 +49,31 @@ export class DashboardService {
 
   private resolvePeriod(filters: DashboardFiltersDto) {
     const now = new Date();
-    const period = filters.period === 'month' ? 'month' : '30d';
-    const since = period === 'month'
-      ? new Date(now.getFullYear(), now.getMonth(), 1)
-      : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const period = filters.period === 'month' || filters.period === '60d' || filters.period === 'all'
+      ? filters.period
+      : '30d';
+    const day = 24 * 60 * 60 * 1000;
+    let since: Date | undefined;
+    let periodLabel: string;
+    if (period === 'month') {
+      since = new Date(now.getFullYear(), now.getMonth(), 1);
+      periodLabel = 'Mês atual';
+    } else if (period === '60d') {
+      since = new Date(now.getTime() - 60 * day);
+      periodLabel = 'Últimos 60 dias';
+    } else if (period === 'all') {
+      since = undefined;
+      periodLabel = 'Todos os períodos';
+    } else {
+      since = new Date(now.getTime() - 30 * day);
+      periodLabel = 'Últimos 30 dias';
+    }
     return {
       now,
-      period: period as '30d' | 'month',
+      period,
       since,
-      periodLabel: period === 'month' ? 'Mês atual' : 'Últimos 30 dias',
-      chartSince: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+      periodLabel,
+      chartSince: since,
     };
   }
 
@@ -612,21 +627,25 @@ export class DashboardService {
 
   private buildProjectionSaleWhere(
     filters: DashboardFiltersDto,
-    since: Date,
+    since?: Date,
   ): Prisma.SaleWhereInput {
     const where: Prisma.SaleWhereInput = {
       status: { in: PIPELINE_SALE_STATUSES },
       reviewStatus: {
         notIn: [SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED],
       },
-      OR: [
-        { activatedAt: { gte: since } },
-        { activatedAt: null, createdAt: { gte: since } },
-        {
-          status: { in: IN_PROGRESS_SALE_STATUSES },
-          createdAt: { gte: since },
-        },
-      ],
+      ...(since
+        ? {
+            OR: [
+              { activatedAt: { gte: since } },
+              { activatedAt: null, createdAt: { gte: since } },
+              {
+                status: { in: IN_PROGRESS_SALE_STATUSES },
+                createdAt: { gte: since },
+              },
+            ],
+          }
+        : {}),
     };
 
     if (filters.partnerId) {
@@ -647,7 +666,7 @@ export class DashboardService {
 
   private buildStatusSaleWhere(
     filters: DashboardFiltersDto,
-    since: Date,
+    since: Date | undefined,
     statuses: SaleStatus[],
     options?: { byCancelledAt?: boolean },
   ): Prisma.SaleWhereInput {
@@ -655,13 +674,13 @@ export class DashboardService {
       status: { in: statuses },
     };
 
-    if (options?.byCancelledAt) {
+    if (since && options?.byCancelledAt) {
       where.OR = [
         { cancelledAt: { gte: since } },
         { cancelledAt: null, updatedAt: { gte: since } },
         { cancelledAt: null, createdAt: { gte: since } },
       ];
-    } else {
+    } else if (since) {
       where.createdAt = { gte: since };
     }
 
@@ -729,16 +748,20 @@ export class DashboardService {
 
   private buildCommissionWhere(
     filters: DashboardFiltersDto,
-    since: Date,
+    since?: Date,
     branchId?: string,
   ): Prisma.CommissionWhereInput {
     const where: Prisma.CommissionWhereInput = {
       sale: {
         status: realizedSaleStatusFilter(),
-        OR: [
-          { activatedAt: { gte: since } },
-          { activatedAt: null, createdAt: { gte: since } },
-        ],
+        ...(since
+          ? {
+              OR: [
+                { activatedAt: { gte: since } },
+                { activatedAt: null, createdAt: { gte: since } },
+              ],
+            }
+          : {}),
         ...(branchId && { branchId }),
         ...(filters.campaignId && { campaignId: filters.campaignId }),
         ...(filters.operatorId && { operatorId: filters.operatorId }),
@@ -755,7 +778,7 @@ export class DashboardService {
   }
 
   private async getSalesChart(
-    since: Date,
+    since: Date | undefined,
     filters: DashboardFiltersDto = {},
     branchId?: string,
   ) {
