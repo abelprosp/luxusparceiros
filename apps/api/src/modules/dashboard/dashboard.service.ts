@@ -49,8 +49,10 @@ export class DashboardService {
 
   private resolvePeriod(filters: DashboardFiltersDto) {
     const now = new Date();
-    const period = filters.period === 'month' || filters.period === '60d' || filters.period === 'all'
-      ? filters.period
+    const allowed = ['month', '30d', '60d', 'all'] as const;
+    type DashboardPeriod = (typeof allowed)[number];
+    const period: DashboardPeriod = allowed.includes(filters.period as DashboardPeriod)
+      ? (filters.period as DashboardPeriod)
       : '30d';
     const day = 24 * 60 * 60 * 1000;
     let since: Date | undefined;
