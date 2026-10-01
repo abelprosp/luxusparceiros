@@ -555,7 +555,6 @@ export function SaleDetailDialog({
   );
   const canAttachDocuments = Boolean(
     sale
-    && !partnerLockedToStatus
     && sale.contractStage !== SaleContractStage.COMPLETED
     && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
     && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus),
@@ -1207,7 +1206,7 @@ export function SaleDetailDialog({
                           </Button>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Dá para trocar a foto do chip, do CPF ou do RG e também anexar outras fotos ou documentos, além dos três obrigatórios.
+                          Dá para trocar a foto do chip, do CPF ou do RG e anexar outros arquivos. A troca vale na hora para o administrador e, se a venda já estiver no Luxus Task, o arquivo novo segue para lá sem nova aprovação.
                         </p>
                       </div>
                     </Section>

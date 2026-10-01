@@ -243,11 +243,6 @@ export class UploadsService {
         'Não é possível anexar documentos em venda concluída, cancelada ou rejeitada. Reabra a venda para corrigir.',
       );
     }
-    if (sale.taskDemandId || sale.taskHandoff) {
-      throw new BadRequestException(
-        'Esta venda já foi enviada ao Luxus Task. Os anexos passam a ser tratados lá.',
-      );
-    }
 
     if (purpose === DocumentPurpose.SIGNED_CONTRACT) {
       if (type !== DocumentType.CONTRACT) {
@@ -367,11 +362,6 @@ export class UploadsService {
       if (saleClosed) {
         throw new BadRequestException(
           'Não é possível substituir documentos de venda concluída, cancelada ou rejeitada.',
-        );
-      }
-      if (document.sale.taskDemandId || document.sale.taskHandoff) {
-        throw new BadRequestException(
-          'Esta venda já foi enviada ao Luxus Task. Os anexos passam a ser tratados lá.',
         );
       }
     }
