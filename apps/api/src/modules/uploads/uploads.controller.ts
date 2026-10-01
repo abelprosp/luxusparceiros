@@ -75,7 +75,7 @@ export class UploadsController {
   }
 
   @Post(':documentId/replace')
-  @ApiOperation({ summary: 'Reanexar arquivo físico perdido de um documento' })
+  @ApiOperation({ summary: 'Substituir o arquivo de um documento já anexado' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {

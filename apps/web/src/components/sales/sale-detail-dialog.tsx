@@ -285,6 +285,7 @@ function DocumentPreview({
   onReplace,
   onZoom,
   compact,
+  allowReplace = false,
 }: {
   doc: SaleDocument;
   onOpen: () => void;
@@ -292,6 +293,7 @@ function DocumentPreview({
   onReplace: (file: File) => Promise<void>;
   onZoom?: (url: string) => void;
   compact?: boolean;
+  allowReplace?: boolean;
 }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -456,6 +458,21 @@ function DocumentPreview({
             <Download className="mr-1 h-3.5 w-3.5" />
             Baixar
           </Button>
+          {allowReplace && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={replacing}
+              onClick={() => inputRef.current?.click()}
+            >
+              {replacing ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <UploadCloud className="mr-1 h-3.5 w-3.5" />
+              )}
+              Trocar
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -541,12 +558,7 @@ export function SaleDetailDialog({
     && !partnerLockedToStatus
     && sale.contractStage !== SaleContractStage.COMPLETED
     && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
-    && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus)
-    && (
-      !isPartnerScoped
-      || [SaleReviewStatus.DRAFT, SaleReviewStatus.CHANGES_REQUESTED].includes(sale.reviewStatus)
-      || sale.status === SaleStatus.DOCUMENTS_PENDING
-    ),
+    && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus),
   );
 
   const load = useCallback(async () => {
@@ -640,8 +652,8 @@ export function SaleDetailDialog({
     try {
       await replaceUploadedDocument(doc.id, file);
       toast({
-        title: 'Arquivo reanexado',
-        description: 'O documento foi recuperado e já está disponível.',
+        title: 'Anexo substituído',
+        description: 'O arquivo novo já está na venda.',
         variant: 'success',
       });
       await load();
@@ -962,6 +974,7 @@ export function SaleDetailDialog({
                             key={doc.id}
                             doc={doc}
                             compact
+                            allowReplace={canAttachDocuments}
                             onOpen={() => handleOpenDocument(doc)}
                             onDownload={() => handleDownloadDocument(doc)}
                             onReplace={(file) => handleReplaceDocument(doc, file)}
@@ -1194,7 +1207,7 @@ export function SaleDetailDialog({
                           </Button>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Aceita JPG, PNG, WebP ou PDF. O contrato assinado no Parceiros também pode ser sincronizado com o Luxus Task.
+                          Dá para trocar a foto do chip, do CPF ou do RG e também anexar outras fotos ou documentos, além dos três obrigatórios.
                         </p>
                       </div>
                     </Section>
@@ -1225,6 +1238,7 @@ export function SaleDetailDialog({
                               <DocumentPreview
                                 key={doc.id}
                                 doc={doc}
+                                allowReplace={canAttachDocuments}
                                 onOpen={() => handleOpenDocument(doc)}
                                 onDownload={() => handleDownloadDocument(doc)}
                                 onReplace={(file) => handleReplaceDocument(doc, file)}
@@ -1247,6 +1261,7 @@ export function SaleDetailDialog({
                               <DocumentPreview
                                 key={doc.id}
                                 doc={doc}
+                                allowReplace={canAttachDocuments}
                                 onOpen={() => handleOpenDocument(doc)}
                                 onDownload={() => handleDownloadDocument(doc)}
                                 onReplace={(file) => handleReplaceDocument(doc, file)}

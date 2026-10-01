@@ -221,6 +221,7 @@ export class UploadsService {
         requiredDocuments: true,
         contractStage: true,
         taskDemandId: true,
+        taskHandoff: true,
       },
     });
     if (!sale) throw new BadRequestException('Venda não encontrada');
@@ -240,6 +241,11 @@ export class UploadsService {
     if (saleClosed) {
       throw new BadRequestException(
         'Não é possível anexar documentos em venda concluída, cancelada ou rejeitada. Reabra a venda para corrigir.',
+      );
+    }
+    if (sale.taskDemandId || sale.taskHandoff) {
+      throw new BadRequestException(
+        'Esta venda já foi enviada ao Luxus Task. Os anexos passam a ser tratados lá.',
       );
     }
 
@@ -313,7 +319,17 @@ export class UploadsService {
       select: {
         id: true,
         url: true,
-        sale: { select: { partnerId: true, branchId: true } },
+        sale: {
+          select: {
+            partnerId: true,
+            branchId: true,
+            status: true,
+            reviewStatus: true,
+            contractStage: true,
+            taskDemandId: true,
+            taskHandoff: true,
+          },
+        },
         client: { select: { partnerId: true, branchId: true } },
         request: { select: { partnerId: true, branchId: true } },
         ticket: { select: { partnerId: true } },
@@ -340,14 +356,29 @@ export class UploadsService {
       throw new ForbiddenException(MESSAGES.FORBIDDEN);
     }
 
+    if (document.sale) {
+      const saleClosed =
+        document.sale.contractStage === SaleContractStage.COMPLETED
+        || document.sale.status === SaleStatus.ACTIVATED
+        || document.sale.status === SaleStatus.CANCELLED
+        || document.sale.status === SaleStatus.REJECTED
+        || document.sale.reviewStatus === SaleReviewStatus.REJECTED
+        || document.sale.reviewStatus === SaleReviewStatus.CANCELLED;
+      if (saleClosed) {
+        throw new BadRequestException(
+          'Não é possível substituir documentos de venda concluída, cancelada ou rejeitada.',
+        );
+      }
+      if (document.sale.taskDemandId || document.sale.taskHandoff) {
+        throw new BadRequestException(
+          'Esta venda já foi enviada ao Luxus Task. Os anexos passam a ser tratados lá.',
+        );
+      }
+    }
+
     const previousFilename = document.url
       .replace(/^\/uploads\//, '')
       .replace(/[^a-zA-Z0-9._-]/g, '');
-    if (previousFilename && existsSync(join(this.uploadDir, previousFilename))) {
-      throw new BadRequestException(
-        'O arquivo original ainda está disponível e não pode ser substituído',
-      );
-    }
 
     const ext = extname(file.originalname).toLowerCase();
     const filename = `${uuidv4()}${ext}`;
@@ -365,6 +396,13 @@ export class UploadsService {
           uploadedBy: user.id,
         },
       });
+      if (
+        previousFilename
+        && previousFilename !== filename
+        && existsSync(join(this.uploadDir, previousFilename))
+      ) {
+        unlinkSync(join(this.uploadDir, previousFilename));
+      }
       if (updated.saleId) {
         await this.taskIntegration.pushSaleDocumentIfSynced(updated.saleId, updated);
       }

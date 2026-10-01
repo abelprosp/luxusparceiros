@@ -73,14 +73,15 @@ describe('recuperacao de arquivo perdido', () => {
     assert.equal(existsSync(join(directory, savedFilename)), true);
   });
 
-  it('impede substituir um arquivo que ainda existe', async () => {
+  it('substitui o arquivo que ainda existe e apaga o anterior', async () => {
     writeFileSync(join(directory, 'arquivo-perdido.pdf'), 'original');
 
-    await assert.rejects(
-      service.replaceDocument('doc-1', file(), user()),
-      /arquivo original ainda está disponível/,
-    );
-    assert.equal(updated, null);
+    const result = await service.replaceDocument('doc-1', file(), user());
+    const savedFilename = basename(result.url);
+
+    assert.equal(updated.name, 'contrato-recuperado.pdf');
+    assert.equal(existsSync(join(directory, 'arquivo-perdido.pdf')), false);
+    assert.equal(existsSync(join(directory, savedFilename)), true);
   });
 
   it('impede que outro parceiro recupere o documento', async () => {
