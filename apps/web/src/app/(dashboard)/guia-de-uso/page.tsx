@@ -107,9 +107,9 @@ const partnerSections: GuideSection[] = [
     description: 'Cadastre e acompanhe cada venda até a conclusão.',
     icon: ShoppingCart,
     steps: [
-      'Preencha cliente, plano, linha e documentos disponíveis.',
-      'O contrato pode ser anexado depois, mas é obrigatório antes da aprovação.',
-      'Vendas rejeitadas continuam na listagem, sem contar nos resultados do dashboard.',
+      'Preencha cliente, plano, linha e documentos e envie para análise.',
+      'Depois que o administrador encaminhar ao Luxus Task, acompanhe só o status.',
+      'A venda aparece como concluída quando a demanda for concluída no Luxus Task.',
     ],
   },
   {

@@ -100,7 +100,7 @@ test('callback concluído atualiza somente a solicitação vinculada', async () 
   assert.equal(userNotifications[0].data.requestId, '11111111-1111-4111-8111-111111111111');
 });
 
-test('primeira conclusao da venda retorna contrato em branco sem ativar nem comissionar', async () => {
+test('concluir a demanda no Task ativa a venda e gera a comissão', async () => {
   const updates = [];
   const importedDocuments = [];
   let commissions = 0;
@@ -119,6 +119,7 @@ test('primeira conclusao da venda retorna contrato em branco sem ativar nem comi
       update: async (args) => { updates.push(args); return { ...sale, ...args.data }; },
     },
     document: { upsert: async (args) => importedDocuments.push(args) },
+    notification: { findFirst: async () => null },
   };
   const service = new TaskIntegrationService(
     { get: () => undefined }, prisma,
@@ -131,13 +132,13 @@ test('primeira conclusao da venda retorna contrato em branco sem ativar nem comi
     workflowStage: 'BLANK_CONTRACT_READY_FOR_ADMIN',
     attachments: [{ id: 'anexo-1', name: 'contrato-em-branco.pdf', mimeType: 'application/pdf', size: 1200 }],
   });
-  assert.equal(updates[0].data.contractStage, 'BLANK_CONTRACT_READY_FOR_ADMIN');
-  assert.equal(updates[0].data.status, undefined);
-  assert.equal(importedDocuments[0].create.purpose, 'BLANK_CONTRACT');
-  assert.equal(commissions, 0);
+  assert.equal(updates[0].data.contractStage, 'COMPLETED');
+  assert.equal(updates[0].data.status, 'ACTIVATED');
+  assert.equal(importedDocuments[0].create.purpose, 'SIGNED_CONTRACT');
+  assert.equal(commissions, 1);
 });
 
-test('aprovacao do Task aguarda confirmacao final do administrador sem ativar venda', async () => {
+test('status concluido do Task conclui a venda mesmo com etapa antiga no payload', async () => {
   const updates = [];
   let commissions = 0;
   const sale = {
@@ -155,6 +156,7 @@ test('aprovacao do Task aguarda confirmacao final do administrador sem ativar ve
       update: async (args) => { updates.push(args); return { ...sale, ...args.data }; },
     },
     document: { upsert: async () => {} },
+    notification: { findFirst: async () => null },
   };
   const service = new TaskIntegrationService(
     { get: () => undefined }, prisma,
@@ -165,9 +167,9 @@ test('aprovacao do Task aguarda confirmacao final do administrador sem ativar ve
     externalRequestId: sale.id, demandId: sale.taskDemandId,
     protocol: 'LUX-2026-00002', status: 'concluido', workflowStage: 'TASK_APPROVED_REVIEW_PENDING',
   });
-  assert.equal(updates[0].data.status, undefined);
-  assert.equal(updates[0].data.contractStage, 'TASK_APPROVED_REVIEW_PENDING');
-  assert.equal(commissions, 0);
+  assert.equal(updates[0].data.status, 'ACTIVATED');
+  assert.equal(updates[0].data.contractStage, 'COMPLETED');
+  assert.equal(commissions, 1);
 });
 
 test('callback materializa bytes do anexo do Task sem depender de outro download', async () => {

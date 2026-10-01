@@ -139,10 +139,20 @@ export default function VendasPage() {
     && sale.status !== SaleStatus.ACTIVATED
     && !sale.taskDemandId
     && (sale.taskSyncStatus ?? 'NOT_READY') === 'NOT_READY';
-  const canEdit = (sale: Sale) =>
-    sale.contractStage !== SaleContractStage.COMPLETED
-    && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
-    && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus);
+  const sentToTask = (sale: Sale) =>
+    Boolean(sale.taskDemandId || sale.taskHandoff)
+    || ['PENDING', 'PROCESSING', 'SYNCED', 'RETRY'].includes(sale.taskSyncStatus ?? 'NOT_READY');
+  const canEdit = (sale: Sale) => {
+    const open = sale.contractStage !== SaleContractStage.COMPLETED
+      && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
+      && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus);
+    if (!open) return false;
+    if (isPartner) {
+      return !sentToTask(sale)
+        && [SaleReviewStatus.DRAFT, SaleReviewStatus.CHANGES_REQUESTED].includes(sale.reviewStatus);
+    }
+    return true;
+  };
   const canReview = (sale: Sale) =>
     [SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW].includes(sale.reviewStatus);
   const canSendToTaskHandoff = (sale: Sale) =>
@@ -312,17 +322,13 @@ export default function VendasPage() {
   };
 
   const workflowLabel = (sale: Sale) => {
-    if (sale.taskHandoff) {
-      return sale.taskProtocol
-        ? `Enviado ao Luxus Task · ${sale.taskProtocol}`
-        : 'Enviado ao Luxus Task';
-    }
     const taskName = saleTaskUserName(sale);
-    if (sale.reviewStatus === SaleReviewStatus.APPROVED) {
-      if (sale.contractStage === SaleContractStage.COMPLETED && !sale.taskDemandId) {
-        return 'Concluída no Luxus Parceiros';
-      }
-      return saleContractStageLabel(sale.contractStage, taskName);
+    if (sale.contractStage === SaleContractStage.COMPLETED || sale.status === SaleStatus.ACTIVATED) {
+      if (!sale.taskDemandId && !sale.taskHandoff) return 'Concluída no Luxus Parceiros';
+      return 'Concluído';
+    }
+    if (sentToTask(sale) || sale.reviewStatus === SaleReviewStatus.APPROVED) {
+      return saleContractStageLabel(sale.contractStage, taskName) || 'Em andamento no Luxus Task';
     }
     return SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus;
   };
@@ -459,7 +465,7 @@ export default function VendasPage() {
                             <Button size="sm" variant="ghost" onClick={() => openDetail(s.id)}>
                               <Eye className="mr-2 h-4 w-4" /> Ver
                             </Button>
-                            {hasTaskMessage(s) && (
+                            {hasTaskMessage(s) && !sentToTask(s) && (
                               <Button size="sm" variant="outline" onClick={() => setMessageSale(s)}>
                                 <MessageSquare className="mr-2 h-4 w-4" /> Ver mensagem
                               </Button>
@@ -469,7 +475,7 @@ export default function VendasPage() {
                                 <Pencil className="mr-2 h-4 w-4" /> Editar
                               </Button>
                             )}
-                            {s.status === SaleStatus.DOCUMENTS_PENDING && (
+                            {s.status === SaleStatus.DOCUMENTS_PENDING && !sentToTask(s) && (
                               <Button size="sm" variant="outline" onClick={() => setResubmitSaleId(s.id)}>
                                 <Upload className="mr-2 h-4 w-4" /> Enviar docs
                               </Button>
@@ -563,12 +569,12 @@ export default function VendasPage() {
                 actions={
                   isPartner ? (
                     <div className="flex flex-col gap-1">
-                      {hasTaskMessage(s) && (
+                      {hasTaskMessage(s) && !sentToTask(s) && (
                         <Button size="sm" variant="outline" onClick={() => setMessageSale(s)}>
                           <MessageSquare className="h-4 w-4" />
                         </Button>
                       )}
-                      {s.status === SaleStatus.DOCUMENTS_PENDING && (
+                      {s.status === SaleStatus.DOCUMENTS_PENDING && !sentToTask(s) && (
                         <Button size="sm" variant="outline" onClick={() => setResubmitSaleId(s.id)}>
                           <Upload className="h-4 w-4" />
                         </Button>

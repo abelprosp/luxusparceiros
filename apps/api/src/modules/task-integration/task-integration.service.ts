@@ -481,16 +481,13 @@ export class TaskIntegrationService {
       || dto.observations?.filter(Boolean).at(-1)?.trim()
       || undefined;
     const reminderMessage = dto.reminderMessage?.trim() || null;
-    const isHandoff = Boolean(sale.taskHandoff);
-    const saleLocked = isHandoff
-      || sale.contractStage === SaleContractStage.COMPLETED
+    const saleLocked = sale.contractStage === SaleContractStage.COMPLETED
       || sale.status === SaleStatus.ACTIVATED
       || sale.status === SaleStatus.CANCELLED
       || sale.status === SaleStatus.REJECTED;
     const callbackStage = this.resolveSaleContractStage(dto, sale.contractStage);
     const nextStage = saleLocked ? sale.contractStage : callbackStage;
     const shouldComplete = !saleLocked
-      && !isHandoff
       && nextStage === SaleContractStage.COMPLETED;
 
     for (const attachment of dto.attachments ?? []) {
@@ -551,7 +548,7 @@ export class TaskIntegrationService {
     }
 
     const finalStage = shouldComplete ? SaleContractStage.COMPLETED : nextStage;
-    const stageChanged = !isHandoff && finalStage !== sale.contractStage;
+    const stageChanged = finalStage !== sale.contractStage;
     const statusChanged = sale.taskStatus !== dto.status;
     const messageChanged = sale.taskLastMessage !== (resolution ?? null);
     const workflowChanged = statusChanged || stageChanged || messageChanged || Boolean(reminderMessage);
@@ -571,25 +568,21 @@ export class TaskIntegrationService {
         taskEditorName: dto.editorName || null,
         taskEditorActivity: dto.editorActivity || null,
         taskEditorLastSeenAt: dto.editorLastSeenAt ? new Date(dto.editorLastSeenAt) : null,
-        taskLastMessage: isHandoff
-          ? (sale.taskLastMessage ?? null)
-          : (reminderMessage || resolution || sale.taskLastMessage),
-        ...(isHandoff ? {} : {
-          contractStage: finalStage,
-          contractStageUpdatedAt: stageChanged ? new Date() : undefined,
-          turnRequestFrom: null,
-          turnRequestReason: null,
-          turnRequestAt: null,
-          ...(reminderMessage ? { contractCorrectionReason: reminderMessage } : {}),
-          ...(shouldComplete ? {
-            status: SaleStatus.ACTIVATED,
-            approvedAt: sale.approvedAt ?? new Date(),
-            activatedAt: new Date(),
-            reviewStatus: SaleReviewStatus.APPROVED,
-            reviewedAt: sale.reviewedAt ?? new Date(),
-          } : {}),
-        }),
-        ...(!isHandoff && workflowChanged ? {
+        taskLastMessage: reminderMessage || resolution || sale.taskLastMessage,
+        contractStage: finalStage,
+        contractStageUpdatedAt: stageChanged ? new Date() : undefined,
+        turnRequestFrom: null,
+        turnRequestReason: null,
+        turnRequestAt: null,
+        ...(reminderMessage ? { contractCorrectionReason: reminderMessage } : {}),
+        ...(shouldComplete ? {
+          status: SaleStatus.ACTIVATED,
+          approvedAt: sale.approvedAt ?? new Date(),
+          activatedAt: new Date(),
+          reviewStatus: SaleReviewStatus.APPROVED,
+          reviewedAt: sale.reviewedAt ?? new Date(),
+        } : {}),
+        ...(workflowChanged ? {
           timeline: {
             create: {
               action: shouldComplete
@@ -634,7 +627,7 @@ export class TaskIntegrationService {
     const alreadyCompletedNotice = shouldComplete
       ? await this.hasSaleCompletedNotification(sale.id)
       : false;
-    const allowNotify = options?.notify !== false && !isHandoff;
+    const allowNotify = options?.notify !== false;
     const shouldNotify = allowNotify && (
       Boolean(reminderMessage)
       || (shouldComplete && !alreadyCompletedNotice)
@@ -739,9 +732,13 @@ export class TaskIntegrationService {
   private resolveSaleContractStage(dto: TaskDemandCallbackDto, current: SaleContractStage): SaleContractStage {
     if (current === SaleContractStage.COMPLETED) return current;
     const explicit = dto.workflowStage as SaleContractStage | undefined;
-    // Só finaliza a venda no Parceiros quando o Task envia COMPLETED explicitamente.
-    // Concluir a demanda no Task (status concluido) é independente e não fecha a venda sozinho.
-    if (explicit === SaleContractStage.COMPLETED) {
+    const taskStatus = (dto.status || '').trim().toLowerCase();
+    // Concluir a demanda no Luxus Task conclui a venda no Parceiros.
+    if (
+      explicit === SaleContractStage.COMPLETED
+      || taskStatus === 'concluido'
+      || taskStatus === 'completed'
+    ) {
       return SaleContractStage.COMPLETED;
     }
     if (dto.status === 'cancelado') {

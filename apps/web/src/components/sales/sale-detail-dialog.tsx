@@ -515,18 +515,38 @@ export function SaleDetailDialog({
   const [sendToTaskOpen, setSendToTaskOpen] = useState(false);
   const generalUploadRef = useRef<HTMLInputElement>(null);
   const signedContractRef = useRef<HTMLInputElement>(null);
+  const sentToTask = Boolean(
+    sale
+    && (
+      sale.taskDemandId
+      || sale.taskHandoff
+      || ['PENDING', 'PROCESSING', 'SYNCED', 'RETRY'].includes(sale.taskSyncStatus ?? 'NOT_READY')
+    ),
+  );
+  const partnerLockedToStatus = Boolean(
+    isPartnerScoped
+    && sentToTask,
+  );
   const canEditSale = Boolean(
     sale
+    && !partnerLockedToStatus
     && sale.contractStage !== SaleContractStage.COMPLETED
     && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
     && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus)
+    && (!isPartnerScoped || [SaleReviewStatus.DRAFT, SaleReviewStatus.CHANGES_REQUESTED].includes(sale.reviewStatus))
     && onEdit,
   );
   const canAttachDocuments = Boolean(
     sale
+    && !partnerLockedToStatus
     && sale.contractStage !== SaleContractStage.COMPLETED
     && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
-    && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus),
+    && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED].includes(sale.reviewStatus)
+    && (
+      !isPartnerScoped
+      || [SaleReviewStatus.DRAFT, SaleReviewStatus.CHANGES_REQUESTED].includes(sale.reviewStatus)
+      || sale.status === SaleStatus.DOCUMENTS_PENDING
+    ),
   );
 
   const load = useCallback(async () => {
@@ -769,14 +789,6 @@ export function SaleDetailDialog({
   const imageDocs = sale?.documents?.filter(isImageDocument) ?? [];
   const otherDocs = sale?.documents?.filter((d) => !isImageDocument(d)) ?? [];
   const docCount = sale?.documents?.length ?? 0;
-  /** Contrato assinado é tratado no Luxus Task — parceiros não anexam por aqui. */
-  const neverSentToTask = Boolean(
-    sale
-    && !sale.taskDemandId
-    && !sale.taskHandoff
-    && (sale.taskSyncStatus ?? 'NOT_READY') === 'NOT_READY'
-    && !sale.taskProtocol,
-  );
   const canSendToTaskHandoff = Boolean(
     sale
     && isAdmin
@@ -810,13 +822,15 @@ export function SaleDetailDialog({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-sm font-semibold text-primary">{sale.protocol}</span>
                     <Badge variant={statusBadgeVariant(sale.status)}>
-                      {sale.reviewStatus === SaleReviewStatus.APPROVED
+                      {sale.contractStage === SaleContractStage.COMPLETED || sale.status === SaleStatus.ACTIVATED
                         ? (
-                          sale.contractStage === SaleContractStage.COMPLETED && !sale.taskDemandId && !sale.taskHandoff
+                          !sale.taskDemandId && !sale.taskHandoff
                             ? 'Concluída no Luxus Parceiros'
-                            : saleContractStageLabel(sale.contractStage, saleTaskUserName(sale))
+                            : 'Concluído'
                         )
-                        : SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus}
+                        : sale.taskDemandId || sale.taskHandoff || sale.reviewStatus === SaleReviewStatus.APPROVED
+                          ? (saleContractStageLabel(sale.contractStage, saleTaskUserName(sale)) || 'Em andamento no Luxus Task')
+                          : SALE_REVIEW_STATUS_LABELS[sale.reviewStatus] ?? sale.reviewStatus}
                     </Badge>
                     {sale.taskHandoff && (
                       <Badge variant="outline">
@@ -919,7 +933,7 @@ export function SaleDetailDialog({
                               </Badge>
                             </div>
                           ))}
-                          {isPartnerScoped && onResubmitDocuments && (
+                          {isPartnerScoped && !sentToTask && onResubmitDocuments && (
                             <Button onClick={() => onResubmitDocuments(sale.id)}>
                               <Upload className="mr-2 h-4 w-4" />
                               Enviar documentos pendentes
@@ -1024,9 +1038,13 @@ export function SaleDetailDialog({
                     {isTaskHandoff ? (
                       <div className="space-y-3 py-2">
                         <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
-                          <p className="font-medium">Enviado ao Luxus Task — será finalizado por lá</p>
+                          <p className="font-medium">
+                            {sale.contractStage === SaleContractStage.COMPLETED || sale.status === SaleStatus.ACTIVATED
+                              ? 'Concluído no Luxus Task'
+                              : 'Em andamento no Luxus Task'}
+                          </p>
                           <p className="mt-1 text-xs opacity-90">
-                            A equipe do Task assume o restante. Não há retorno ou cobrança nesta venda no Parceiros.
+                            A equipe do Task conduz o contrato e a ativação. Quando a demanda for concluída lá, o status muda para concluído aqui.
                           </p>
                           {(sale.taskProtocol || sale.taskStatus) && (
                             <p className="mt-2 text-xs">
@@ -1077,32 +1095,12 @@ export function SaleDetailDialog({
                       </div>
                     )}
                     <p className="py-2 text-xs text-muted-foreground">
-                      O contrato assinado pode ser anexado no Luxus Task ou aqui no Luxus Parceiros. Use a seta para puxar arquivos novos do Task.
+                      O Luxus Task conduz o contrato e a ativação. A venda fica concluída aqui quando a demanda for concluída lá.
                     </p>
                     <div className="flex flex-wrap gap-2 py-3">
                       {canSendToTaskHandoff && (
                         <Button onClick={() => setSendToTaskOpen(true)}>
                           Enviar Luxus Task
-                        </Button>
-                      )}
-                      {!isPartnerScoped
-                        && neverSentToTask
-                        && sale.contractStage !== SaleContractStage.COMPLETED
-                        && ![SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED].includes(sale.status)
-                        && ![SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED, SaleReviewStatus.DRAFT].includes(sale.reviewStatus) && (
-                        <Button
-                          variant="secondary"
-                          disabled={workflowBusy}
-                          onClick={() => {
-                            const reason = window.prompt(
-                              'Finalizar esta venda agora no Luxus Parceiros?\n\nSó é permitido se a venda nunca foi enviada ao Luxus Task.\n\nMotivo opcional:',
-                            );
-                            if (reason === null) return;
-                            void runWorkflowAction('force-finalize', { reason: reason.trim() || undefined });
-                          }}
-                        >
-                          {workflowBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                          Finalizar no Luxus Parceiros
                         </Button>
                       )}
                       {!isPartnerScoped

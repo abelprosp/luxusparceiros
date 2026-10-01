@@ -31,8 +31,6 @@ interface SaleSummary {
   } | null;
 }
 
-type ApproveFlow = 'choose' | 'task';
-
 export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess }: {
   saleId: string | null;
   open: boolean;
@@ -40,7 +38,7 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
   onSuccess: () => void;
 }) {
   const { toast } = useToast();
-  const [flow, setFlow] = useState<ApproveFlow>('choose');
+  const flow = 'task' as const;
   const [sale, setSale] = useState<SaleSummary | null>(null);
   const [responsibles, setResponsibles] = useState<Responsible[]>([]);
   const [clients, setClients] = useState<TaskClient[]>([]);
@@ -66,12 +64,7 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
   }, []);
 
   useEffect(() => {
-    if (!open) {
-      setFlow('choose');
-      return;
-    }
-    if (!saleId) return;
-    setFlow('choose');
+    if (!open || !saleId) return;
     setLoading(true);
     api<SaleSummary>(`/sales/${saleId}`)
       .then((saleData) => {
@@ -158,29 +151,6 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
     return digits ? clients.find((client) => client.document?.replace(/\D/g, '') === digits) : undefined;
   }, [clients, document]);
 
-  const approveInternal = async () => {
-    if (!saleId) return;
-    setSaving(true);
-    try {
-      await api(`/sales/${saleId}/approve-internal`, { method: 'POST' });
-      toast({
-        title: 'Venda concluída no Luxus Parceiros',
-        description: 'A venda foi aprovada e finalizada sem enviar ao Luxus Task.',
-        variant: 'success',
-      });
-      onOpenChange(false);
-      onSuccess();
-    } catch (error) {
-      toast({
-        title: 'Não foi possível concluir',
-        description: error instanceof Error ? error.message : 'Falha',
-        variant: 'destructive',
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const approve = async () => {
     if (!saleId || !responsibleId || !deadline) {
       toast({ title: 'Informe responsável e prazo', variant: 'destructive' });
@@ -233,54 +203,10 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto" onInteractOutside={(event) => event.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>
-            {flow === 'choose' ? 'Como deseja seguir com a venda?' : 'Aprovar e enviar ao Luxus Task'}
-          </DialogTitle>
+          <DialogTitle>Aprovar e enviar ao Luxus Task</DialogTitle>
         </DialogHeader>
 
-        {flow === 'choose' ? (
-          <div className="space-y-4 py-2">
-            <div className="rounded-lg border border-primary/30 bg-primary/10 p-4">
-              <p className="text-xs text-muted-foreground">{sale?.protocol} · {sale?.partner?.name}</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Escolha se a venda continua no Luxus Task ou se será resolvida toda aqui no Luxus Parceiros.
-              </p>
-            </div>
-            <Button
-              className="h-auto w-full flex-col items-start gap-1 whitespace-normal px-4 py-3 text-left"
-              variant="outline"
-              disabled={loading || saving}
-              onClick={() => setFlow('task')}
-            >
-              <span className="font-semibold">Enviar ao Luxus Task</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                Contrato, assinatura e conferência seguem no fluxo integrado com o Task.
-              </span>
-            </Button>
-            <Button
-              className="h-auto w-full flex-col items-start gap-1 whitespace-normal px-4 py-3 text-left"
-              variant="outline"
-              disabled={loading || saving}
-              onClick={() => void approveInternal()}
-            >
-              <span className="font-semibold">
-                {saving ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Concluindo...
-                  </span>
-                ) : (
-                  'Resolver no Luxus Parceiros'
-                )}
-              </span>
-              <span className="text-xs font-normal text-muted-foreground">
-                Aprova e conclui a venda agora, sem criar demanda no Luxus Task.
-              </span>
-            </Button>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-            </DialogFooter>
-          </div>
-        ) : loading ? (
+        {loading ? (
           <div className="flex min-h-48 items-center justify-center gap-3 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" /> Carregando responsáveis e clientes do Luxus Task...
           </div>
@@ -382,10 +308,10 @@ export function ApproveSaleForTaskDialog({ saleId, open, onOpenChange, onSuccess
             </div>
             <div className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              Após aprovar, o envio segue em segundo plano. Você pode continuar no sistema.
+              O Luxus Task conduz o restante. A venda fica concluída aqui quando a demanda for concluída lá.
             </div>
             <DialogFooter className="gap-2 sm:gap-0">
-              <Button variant="outline" onClick={() => setFlow('choose')}>Voltar</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
               <Button onClick={approve} disabled={loading || saving || Boolean(duplicateDocument)}>
                 {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enfileirando...</> : 'Aprovar e enviar'}
               </Button>

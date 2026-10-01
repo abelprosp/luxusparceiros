@@ -138,7 +138,7 @@ export class SalesController {
   @Post(':id/send-to-task')
   @RequirePermissions(PERMISSIONS.SALES_WRITE)
   @ApiOperation({
-    summary: 'Enviar venda ao Luxus Task em modo handoff (Task assume o restante, sem retorno)',
+    summary: 'Enviar venda ao Luxus Task. A conclusão da demanda lá conclui a venda aqui.',
   })
   sendToTask(
     @Param('id') id: string,
@@ -150,7 +150,7 @@ export class SalesController {
 
   @Post(':id/approve-internal')
   @RequirePermissions(PERMISSIONS.SALES_WRITE)
-  @ApiOperation({ summary: 'Aprovar e concluir a venda no Luxus Parceiros sem enviar ao Luxus Task' })
+  @ApiOperation({ summary: 'Recusado: a venda só conclui quando o Luxus Task concluir a demanda' })
   approveInternal(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.salesService.approveInternal(id, user);
   }

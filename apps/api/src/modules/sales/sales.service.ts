@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import {
   CommissionType,
-  LineStatus,
   SaleReviewStatus,
   SaleStatus,
   SaleTaskSyncStatus,
@@ -752,9 +751,8 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Envia a venda ao Luxus Task em modo handoff: a demanda nasce no 1º status do template
-   * e o Task assume o restante, sem comunicação de retorno ao Parceiros.
-   * Não altera status/review/contractStage locais.
+   * Envia a venda ao Luxus Task. O operador do Task conduz o restante.
+   * A venda no Parceiros fica em andamento e só conclui quando a demanda for concluída lá.
    */
   async sendToTask(id: string, dto: ApproveSaleForTaskDto, user: AuthUser) {
     this.assertAdmin(user);
@@ -799,8 +797,13 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         taskClientDocument: dto.clientDocument?.replace(/\D/g, ''),
         taskDeadline: deadlineDate,
         taskPriority: dto.priority ?? false,
+        reviewStatus: SaleReviewStatus.APPROVED,
+        reviewedAt: new Date(),
+        reviewedById: user.id,
         taskHandoff: true,
         taskHandoffAt: new Date(),
+        contractStage: SaleContractStage.TASK_PROCESSING,
+        contractStageUpdatedAt: new Date(),
         taskSyncStatus: SaleTaskSyncStatus.PENDING,
         taskSyncError: null,
         taskNextRetryAt: new Date(),
@@ -812,9 +815,10 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           create: {
             actorId: user.id,
             actorName: user.name,
-            action: 'Venda enviada ao Luxus Task (handoff)',
-            details:
-              'A demanda será criada no primeiro status do template. O Luxus Task assume a finalização; não há retorno ao Parceiros.',
+            action: 'Venda enviada ao Luxus Task',
+            fromReviewStatus: sale.reviewStatus,
+            toReviewStatus: SaleReviewStatus.APPROVED,
+            details: 'O Luxus Task conduz a venda. Ela fica concluída aqui quando a demanda for concluída lá.',
           },
         },
       },
@@ -824,53 +828,12 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     return updated;
   }
 
-  /** Aprova e conclui a venda inteiramente no Luxus Parceiros, sem enviar ao Luxus Task. */
-  async approveInternal(id: string, user: AuthUser) {
+  /** A venda não pode mais ser concluída só no Parceiros. A conclusão vem do Luxus Task. */
+  async approveInternal(_id: string, user: AuthUser) {
     this.assertAdmin(user);
-    const sale = await this.findOne(id, user);
-    if (!([SaleReviewStatus.AWAITING_REVIEW, SaleReviewStatus.UNDER_REVIEW] as SaleReviewStatus[]).includes(sale.reviewStatus)) {
-      throw new BadRequestException('Esta venda não está disponível para aprovação');
-    }
-    if (sale.taskDemandId) {
-      throw new BadRequestException('Esta venda já foi enviada ao Luxus Task. Use o fluxo de integração.');
-    }
-
-    const updated = await this.prisma.sale.update({
-      where: { id },
-      data: {
-        reviewStatus: SaleReviewStatus.APPROVED,
-        reviewedAt: new Date(),
-        reviewedById: user.id,
-        reviewStartedAt: sale.reviewStartedAt ?? new Date(),
-        status: SaleStatus.ACTIVATED,
-        approvedAt: new Date(),
-        activatedAt: new Date(),
-        contractStage: SaleContractStage.COMPLETED,
-        contractStageUpdatedAt: new Date(),
-        taskSyncStatus: SaleTaskSyncStatus.NOT_READY,
-        taskSyncError: null,
-        taskNextRetryAt: null,
-        timeline: {
-          create: {
-            actorId: user.id,
-            actorName: user.name,
-            action: 'Venda aprovada e concluída no Luxus Parceiros (sem Luxus Task)',
-            fromReviewStatus: sale.reviewStatus,
-            toReviewStatus: SaleReviewStatus.APPROVED,
-            details: 'Fluxo interno: a venda não foi enviada ao Luxus Task.',
-          },
-        },
-      },
-    });
-
-    await this.commissionsService.createFromSale(updated, user.id);
-    await this.notificationsService.createForPartnerUsers(sale.partnerId, {
-      type: 'SALE_APPROVED',
-      title: 'Venda concluída no Luxus Parceiros',
-      message: `${sale.protocol} foi aprovada e concluída sem passar pelo Luxus Task.`,
-      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-    });
-    return updated;
+    throw new BadRequestException(
+      'A venda só pode ser concluída pelo Luxus Task. Envie a venda ao Task e conclua a demanda lá.',
+    );
   }
 
   async retryTaskSync(id: string, user: AuthUser) {
@@ -1600,50 +1563,12 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     return this.findOne(id, user);
   }
 
-  /**
-   * Finaliza venda que NÃO foi encaminhada ao Luxus Task.
-   * Vendas já no Task só são concluídas pelo próprio Task.
-   */
-  async forceFinalize(id: string, user: AuthUser, reason?: string) {
+  /** A conclusão local foi desativada. A demanda concluída no Luxus Task é o que encerra a venda. */
+  async forceFinalize(_id: string, user: AuthUser, _reason?: string) {
     this.assertAdmin(user);
-    const sale = await this.findOne(id, user);
-    if (sale.contractStage === SaleContractStage.COMPLETED || sale.status === SaleStatus.ACTIVATED) {
-      throw new BadRequestException('Esta venda já está concluída');
-    }
-    if (sale.status === SaleStatus.CANCELLED || sale.status === SaleStatus.REJECTED) {
-      throw new BadRequestException('Venda cancelada ou rejeitada não pode ser finalizada');
-    }
-    if (
-      sale.reviewStatus === SaleReviewStatus.REJECTED
-      || sale.reviewStatus === SaleReviewStatus.CANCELLED
-    ) {
-      throw new BadRequestException('Venda rejeitada ou cancelada na revisão não pode ser finalizada');
-    }
-    if (sale.taskHandoff) {
-      throw new BadRequestException(
-        'Esta venda foi enviada ao Luxus Task em modo handoff. A finalização fica com o Task.',
-      );
-    }
-    if (sale.taskDemandId || sale.taskSyncStatus === SaleTaskSyncStatus.SYNCED
-      || sale.taskSyncStatus === SaleTaskSyncStatus.PENDING
-      || sale.taskSyncStatus === SaleTaskSyncStatus.PROCESSING
-      || sale.taskSyncStatus === SaleTaskSyncStatus.RETRY) {
-      throw new BadRequestException(
-        'Esta venda já foi encaminhada ao Luxus Task. A conclusão deve ser feita lá.',
-      );
-    }
-
-    const note = reason?.trim();
-    return this.completeSaleAsActivated(sale, user, {
-      timelineAction: 'Venda finalizada no Luxus Parceiros (sem envio ao Task)',
-      timelineDetails: note
-        ? `Finalização local. Motivo: ${note}`
-        : 'Venda concluída sem encaminhamento ao Luxus Task.',
-      notifyTask: false,
-      notificationTitle: 'Venda concluída no Luxus Parceiros',
-      notificationMessage: `${sale.protocol} foi finalizada pelo administrador no Luxus Parceiros.`,
-      ensureApprovedReview: true,
-    });
+    throw new BadRequestException(
+      'A venda só pode ser concluída pelo Luxus Task. Envie a venda ao Task e conclua a demanda lá.',
+    );
   }
 
   /**
@@ -1712,96 +1637,6 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     return updated;
   }
 
-  private async completeSaleAsActivated(
-    sale: Awaited<ReturnType<SalesService['findOne']>>,
-    user: AuthUser,
-    options: {
-      timelineAction: string;
-      timelineDetails?: string;
-      notifyTask: boolean;
-      notificationTitle: string;
-      notificationMessage: string;
-      ensureApprovedReview?: boolean;
-    },
-  ) {
-    const updated = await this.prisma.sale.update({
-      where: { id: sale.id },
-      data: {
-        contractStage: SaleContractStage.COMPLETED,
-        contractStageUpdatedAt: new Date(),
-        status: SaleStatus.ACTIVATED,
-        approvedAt: sale.approvedAt ?? new Date(),
-        activatedAt: new Date(),
-        reviewStatus: options.ensureApprovedReview ? SaleReviewStatus.APPROVED : sale.reviewStatus,
-        reviewedAt: options.ensureApprovedReview ? (sale.reviewedAt ?? new Date()) : sale.reviewedAt,
-        reviewedById: options.ensureApprovedReview ? (sale.reviewedById ?? user.id) : sale.reviewedById,
-        turnRequestFrom: null,
-        turnRequestReason: null,
-        turnRequestAt: null,
-        timeline: {
-          create: {
-            actorId: user.id,
-            actorName: user.name,
-            action: options.timelineAction,
-            details: options.timelineDetails,
-            fromReviewStatus: sale.reviewStatus,
-            toReviewStatus: options.ensureApprovedReview ? SaleReviewStatus.APPROVED : sale.reviewStatus,
-          },
-        },
-      },
-    });
-
-    if (options.notifyTask && sale.taskDemandId) {
-      await this.taskIntegration.updateSaleStage(sale.id, {
-        stage: SaleContractStage.COMPLETED,
-        note: `${options.timelineAction} por ${user.name}.`,
-      }).catch((error) => {
-        console.warn('[sales] Falha ao marcar a demanda como concluída no Luxus Task', error);
-      });
-    }
-
-    await this.commissionsService.createFromSale(updated, user.id);
-    await this.markSaleLineAsSold(sale.lineId, sale.newNumber, sale.partnerId).catch((error) => {
-      console.warn('[sales] Falha ao marcar linha como vendida', error);
-    });
-    await this.notificationsService.createForPartnerUsers(sale.partnerId, {
-      type: 'SALE_APPROVED',
-      title: options.notificationTitle,
-      message: options.notificationMessage,
-      data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-    });
-    return updated;
-  }
-
-  private async markSaleLineAsSold(
-    lineId: string | null | undefined,
-    newNumber: string | null | undefined,
-    partnerId: string,
-  ) {
-    const digits = String(newNumber || '').replace(/\D/g, '');
-    const line = lineId
-      ? await this.prisma.line.findUnique({ where: { id: lineId }, select: { id: true } })
-      : digits
-        ? await this.prisma.line.findFirst({
-            where: {
-              OR: [
-                { number: digits },
-                { number: { contains: digits.slice(-8) } },
-              ],
-            },
-            select: { id: true },
-          })
-        : null;
-    if (!line) return;
-    await this.prisma.line.update({
-      where: { id: line.id },
-      data: {
-        status: LineStatus.ACTIVATED,
-        partnerId,
-      },
-    });
-  }
-
   async updateStatus(id: string, dto: UpdateSaleStatusDto, user: AuthUser) {
     if (!isAdminRole(user.role)) {
       throw new ForbiddenException('Apenas administradores podem alterar o status da venda');
@@ -1815,20 +1650,12 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException(MESSAGES.SALE_STATUS_INVALID);
     }
     if (dto.status === SaleStatus.ACTIVATED) {
-      const requiredDocuments = (sale.requiredDocuments ?? []) as Array<{
-        label: string;
-        fulfilled: boolean;
-      }>;
-      const pendingDocuments = requiredDocuments.filter((document) => !document.fulfilled);
-      if (pendingDocuments.length > 0) {
-        throw new BadRequestException(
-          `Documentos pendentes: ${pendingDocuments.map((document) => document.label).join(', ')}`,
-        );
-      }
+      throw new BadRequestException(
+        'A venda só pode ser concluída pelo Luxus Task. Envie a venda ao Task e conclua a demanda lá.',
+      );
     }
 
     const data: Prisma.SaleUpdateInput = { status: dto.status };
-    if (dto.status === SaleStatus.ACTIVATED) data.activatedAt = new Date();
     if (dto.status === SaleStatus.CANCELLED) data.cancelledAt = new Date();
     if (dto.status === SaleStatus.REJECTED) data.rejectionReason = dto.rejectionReason;
     if (dto.status === SaleStatus.CONTESTED) data.contestReason = dto.contestReason;
@@ -1840,10 +1667,6 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     });
 
     await this.notifyStatusChange(updated, dto.status, dto.rejectionReason ?? dto.contestReason);
-
-    if (dto.status === SaleStatus.ACTIVATED && !updated.commission) {
-      await this.commissionsService.createFromSale(updated, user.id);
-    }
 
     await this.auditService.log({
       userId: user.id,
