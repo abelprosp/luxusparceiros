@@ -405,6 +405,10 @@ export async function replaceUploadedDocument(
   });
 }
 
+export async function deleteUploadedDocument(documentId: string): Promise<void> {
+  await api(`/uploads/${documentId}`, { method: 'DELETE' });
+}
+
 export async function openAuthenticatedFile(documentUrl: string, filename?: string): Promise<void> {
   const blob = await fetchAuthenticatedFile(documentUrl);
   if (!blob) throw new ApiError('Arquivo não encontrado', 404);

@@ -1,6 +1,7 @@
 'use client';
 
 import type { DashboardDetailRow } from '@luxus/types';
+import { dashboardStatusLabel } from '@/lib/dashboard-export';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import {
   Dialog,
@@ -54,7 +55,7 @@ export function DashboardDetailsDialog({
                 <TableRow key={row.id}>
                   <TableCell className="font-medium">{row.primary}</TableCell>
                   <TableCell>{row.secondary ?? '—'}</TableCell>
-                  <TableCell>{row.status ? <Badge variant="outline">{row.status}</Badge> : '—'}</TableCell>
+                  <TableCell>{row.status ? <Badge variant="outline">{dashboardStatusLabel(row.status)}</Badge> : '—'}</TableCell>
                   <TableCell>{row.value == null ? '—' : formatCurrency(row.value)}</TableCell>
                   <TableCell>{row.date ? formatDate(row.date) : '—'}</TableCell>
                 </TableRow>

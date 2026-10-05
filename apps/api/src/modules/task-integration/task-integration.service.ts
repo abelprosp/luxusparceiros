@@ -954,6 +954,38 @@ export class TaskIntegrationService {
     }
   }
 
+  async removeSaleDocumentFromTask(
+    saleId: string,
+    document: { id: string; name?: string | null; type?: string | null; externalId?: string | null },
+  ) {
+    if (!this.isConfigured()) return;
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { taskDemandId: true },
+    });
+    if (!sale?.taskDemandId) return;
+    const prefix = `task:${sale.taskDemandId}:`;
+    const taskAttachmentId = document.externalId?.startsWith(prefix)
+      ? document.externalId.slice(prefix.length)
+      : '';
+    const params = new URLSearchParams();
+    if (taskAttachmentId) params.set('taskAttachmentId', taskAttachmentId);
+    if (document.type) params.set('documentType', document.type);
+    if (document.name) params.set('documentName', document.name);
+    const serialized = params.toString();
+    const query = serialized ? `?${serialized}` : '';
+    try {
+      await this.request(
+        `/integrations/luxus-parceiros/demandas/${saleId}/anexos/${document.id}${query}`,
+        { method: 'DELETE' },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (/não encontrada/i.test(message)) return;
+      throw error;
+    }
+  }
+
   private async ingestRequestAttachments(requestId: string, dto: TaskDemandCallbackDto) {
     for (const attachment of dto.attachments ?? []) {
       if (!attachment.id || !attachment.name) continue;

@@ -413,6 +413,17 @@ export interface DashboardDetailRow {
   status?: string;
   value?: number;
   date?: string;
+  partnerName?: string;
+  branchName?: string;
+  clientName?: string;
+  planName?: string;
+  lineNumber?: string;
+  phone?: string;
+  document?: string;
+  city?: string;
+  state?: string;
+  operatorName?: string;
+  count?: number;
 }
 
 export interface DashboardDetails {

@@ -9,7 +9,39 @@ import {
   IsUUID,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+
+function blankToUndefined({ value }: { value: unknown }) {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'string' && value.trim() === '') return undefined;
+  return value;
+}
+
+function optionalIsoDate({ value }: { value: unknown }) {
+  const present = blankToUndefined({ value });
+  if (present === undefined) return undefined;
+  const parsed = new Date(String(present));
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString();
+}
+
+function optionalUuid({ value }: { value: unknown }) {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function optionalNumber({ value }: { value: unknown }) {
+  if (value === null || value === undefined || value === '') return undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  return value;
+}
 
 export class TaskCallbackAttachmentDto {
   @IsString()
@@ -19,14 +51,17 @@ export class TaskCallbackAttachmentDto {
   name: string;
 
   @IsOptional()
+  @Transform(blankToUndefined)
   @IsString()
   mimeType?: string;
 
   @IsOptional()
+  @Transform(optionalNumber)
   @IsNumber()
   size?: number;
 
   @IsOptional()
+  @Transform(optionalIsoDate)
   @IsDateString()
   createdAt?: string;
 
@@ -58,14 +93,17 @@ export class TaskDemandCallbackDto {
   observations?: string[];
 
   @IsOptional()
+  @Transform(optionalUuid)
   @IsUUID()
   responsibleId?: string;
 
   @IsOptional()
+  @Transform(blankToUndefined)
   @IsString()
   responsibleName?: string;
 
   @IsOptional()
+  @Transform(optionalIsoDate)
   @IsDateString()
   updatedAt?: string;
 
@@ -82,6 +120,7 @@ export class TaskDemandCallbackDto {
   editorActivity?: string;
 
   @IsOptional()
+  @Transform(optionalIsoDate)
   @IsDateString()
   editorLastSeenAt?: string;
 

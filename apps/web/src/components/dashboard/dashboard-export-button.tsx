@@ -23,7 +23,7 @@ import { exportDashboardReport, type DashboardExportFormat } from '@/lib/dashboa
 
 const FORMAT_LABELS: Record<DashboardExportFormat, string> = {
   pdf: 'PDF',
-  xlsx: 'Excel (.csv)',
+  xlsx: 'Excel (.xlsx)',
   txt: 'Texto (.txt)',
 };
 
@@ -85,7 +85,7 @@ export function DashboardExportButton({
             <FileText /> PDF
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setFormat('xlsx')}>
-            <FileSpreadsheet /> Excel (.csv)
+            <FileSpreadsheet /> Excel (.xlsx)
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setFormat('txt')}>
             <FileText /> Texto (.txt)

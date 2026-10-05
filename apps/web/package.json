@@ -37,7 +37,8 @@
     "react-leaflet": "^4.2.1",
     "recharts": "^2.15.0",
     "socket.io-client": "^4.8.1",
-    "tailwind-merge": "^2.6.0"
+    "tailwind-merge": "^2.6.0",
+    "write-excel-file": "^4.1.1"
   },
   "devDependencies": {
     "@types/leaflet": "^1.9.15",

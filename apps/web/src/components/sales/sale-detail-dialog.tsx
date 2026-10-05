@@ -15,6 +15,7 @@ import {
   UploadCloud,
   X,
   ZoomIn,
+  Trash2,
 } from 'lucide-react';
 import {
   ContractFormat,
@@ -36,6 +37,7 @@ import {
   fetchAuthenticatedFile,
   openAuthenticatedFile,
   replaceUploadedDocument,
+  deleteUploadedDocument,
   uploadFile,
 } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
@@ -278,11 +280,23 @@ function SummaryCard({ label, value }: { label: string; value: React.ReactNode }
   );
 }
 
+function FileTransferBar({ label }: { label: string }) {
+  return (
+    <div className="border-t bg-primary/5 px-3 py-2" role="status" aria-live="polite">
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="global-loading-indicator h-full w-1/3 rounded-full bg-primary" />
+      </div>
+      <p className="mt-1.5 text-xs font-medium text-primary">{label}</p>
+    </div>
+  );
+}
+
 function DocumentPreview({
   doc,
   onOpen,
   onDownload,
   onReplace,
+  onDelete,
   onZoom,
   compact,
   allowReplace = false,
@@ -291,6 +305,7 @@ function DocumentPreview({
   onOpen: () => void;
   onDownload: () => void;
   onReplace: (file: File) => Promise<void>;
+  onDelete: () => Promise<void>;
   onZoom?: (url: string) => void;
   compact?: boolean;
   allowReplace?: boolean;
@@ -299,6 +314,7 @@ function DocumentPreview({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [replacing, setReplacing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const isImage = isImageDocument(doc);
 
@@ -346,6 +362,21 @@ function DocumentPreview({
     }
   };
 
+  const handleDelete = async () => {
+    const confirmed = window.confirm(
+      `Excluir "${doc.name}"? O arquivo sai desta venda e, se ela já estiver no Luxus Task, sai de lá também.`,
+    );
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const busy = replacing || deleting;
+
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
       <input
@@ -387,7 +418,7 @@ function DocumentPreview({
                   event.stopPropagation();
                   inputRef.current?.click();
                 }}
-                disabled={replacing}
+                disabled={busy}
               >
                 {replacing ? (
                   <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -423,7 +454,7 @@ function DocumentPreview({
             <>
               <FileText className="h-10 w-10 opacity-40" />
               <span className="text-sm">Arquivo indisponível</span>
-              <Button size="sm" onClick={() => inputRef.current?.click()} disabled={replacing}>
+              <Button size="sm" onClick={() => inputRef.current?.click()} disabled={busy}>
                 {replacing ? (
                   <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                 ) : (
@@ -450,31 +481,50 @@ function DocumentPreview({
           </p>
         </div>
         <div className="flex shrink-0 gap-1.5">
-          <Button size="sm" variant="outline" onClick={onOpen} disabled={error}>
+          <Button size="sm" variant="outline" onClick={onOpen} disabled={error || busy}>
             <ExternalLink className="mr-1 h-3.5 w-3.5" />
             Abrir
           </Button>
-          <Button size="sm" variant="outline" onClick={onDownload} disabled={error}>
+          <Button size="sm" variant="outline" onClick={onDownload} disabled={error || busy}>
             <Download className="mr-1 h-3.5 w-3.5" />
             Baixar
           </Button>
-          {allowReplace && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={replacing}
-              onClick={() => inputRef.current?.click()}
-            >
-              {replacing ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <UploadCloud className="mr-1 h-3.5 w-3.5" />
-              )}
-              Trocar
-            </Button>
-          )}
         </div>
       </div>
+      {allowReplace && (
+        <div className="flex gap-1.5 border-t px-3 py-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1"
+            disabled={busy}
+            onClick={() => inputRef.current?.click()}
+          >
+            {replacing ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <UploadCloud className="mr-1 h-3.5 w-3.5" />
+            )}
+            Trocar
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1 text-destructive hover:text-destructive"
+            disabled={busy}
+            onClick={() => void handleDelete()}
+          >
+            {deleting ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+            )}
+            Excluir
+          </Button>
+        </div>
+      )}
+      {replacing && <FileTransferBar label="Enviando o arquivo novo..." />}
+      {deleting && <FileTransferBar label="Excluindo o arquivo..." />}
     </div>
   );
 }
@@ -659,6 +709,25 @@ export function SaleDetailDialog({
     } catch (err) {
       toast({
         title: 'Erro ao reanexar arquivo',
+        description: err instanceof Error ? err.message : 'Falha na requisição',
+        variant: 'destructive',
+      });
+      throw err;
+    }
+  };
+
+  const handleDeleteDocument = async (doc: SaleDocument) => {
+    try {
+      await deleteUploadedDocument(doc.id);
+      toast({
+        title: 'Anexo excluído',
+        description: 'O arquivo saiu desta venda.',
+        variant: 'success',
+      });
+      await load();
+    } catch (err) {
+      toast({
+        title: 'Erro ao excluir arquivo',
         description: err instanceof Error ? err.message : 'Falha na requisição',
         variant: 'destructive',
       });
@@ -977,6 +1046,7 @@ export function SaleDetailDialog({
                             onOpen={() => handleOpenDocument(doc)}
                             onDownload={() => handleDownloadDocument(doc)}
                             onReplace={(file) => handleReplaceDocument(doc, file)}
+                            onDelete={() => handleDeleteDocument(doc)}
                             onZoom={(url) =>
                               setLightbox({
                                 src: url,
@@ -1205,8 +1275,9 @@ export function SaleDetailDialog({
                             Anexar contrato assinado
                           </Button>
                         </div>
+                        {uploading && <FileTransferBar label="Enviando o arquivo..." />}
                         <p className="text-xs text-muted-foreground">
-                          Dá para trocar a foto do chip, do CPF ou do RG e anexar outros arquivos. A troca vale na hora para o administrador e, se a venda já estiver no Luxus Task, o arquivo novo segue para lá sem nova aprovação.
+                          Dá para trocar ou excluir a foto do chip, do CPF, do RG e os outros arquivos. A alteração vale na hora para o administrador e, se a venda já estiver no Luxus Task, segue para lá sem nova aprovação.
                         </p>
                       </div>
                     </Section>
@@ -1241,6 +1312,7 @@ export function SaleDetailDialog({
                                 onOpen={() => handleOpenDocument(doc)}
                                 onDownload={() => handleDownloadDocument(doc)}
                                 onReplace={(file) => handleReplaceDocument(doc, file)}
+                                onDelete={() => handleDeleteDocument(doc)}
                                 onZoom={(url) =>
                                   setLightbox({
                                     src: url,
@@ -1264,6 +1336,7 @@ export function SaleDetailDialog({
                                 onOpen={() => handleOpenDocument(doc)}
                                 onDownload={() => handleDownloadDocument(doc)}
                                 onReplace={(file) => handleReplaceDocument(doc, file)}
+                                onDelete={() => handleDeleteDocument(doc)}
                               />
                             ))}
                           </div>

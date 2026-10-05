@@ -473,6 +473,11 @@ export class DashboardService {
         const docLabel = sale.client.documentType === 'CNPJ' ? 'CNPJ' : 'CPF';
         detailParts.push(`${docLabel} ${formatDocument(sale.client.document)}`);
       }
+      const clientPhone = clientPhoneDigits && clientPhoneDigits !== lineDigits
+        ? formatPhone(sale.client.phone)
+        : !lineDigits && clientPhoneDigits
+          ? formatPhone(sale.client.phone)
+          : '';
       return {
         id: sale.id,
         primary: sale.protocol,
@@ -480,6 +485,13 @@ export class DashboardService {
         status: sale.status,
         value: Number(sale.value),
         date: (sale.activatedAt ?? sale.cancelledAt ?? sale.createdAt).toISOString(),
+        partnerName: sale.partner.name,
+        branchName: sale.branch?.name ?? 'Matriz',
+        clientName: sale.client.name,
+        planName: sale.plan.name,
+        lineNumber: lineDigits ? formatPhone(sale.newNumber!) : '',
+        phone: clientPhone,
+        document: sale.client.document ? formatDocument(sale.client.document) : '',
       };
     };
 
@@ -572,13 +584,18 @@ export class DashboardService {
         secondary: [partner.city, partner.state].filter(Boolean).join(' - ') || 'Localização não informada',
         status: partner.status,
         date: partner.createdAt.toISOString(),
+        city: partner.city ?? '',
+        state: partner.state ?? '',
       })),
       lines: lines.map((line) => ({
         id: line.id,
-        primary: line.number,
+        primary: formatPhone(line.number),
         secondary: `${line.operator.name} • ${line.partner?.name ?? 'Estoque geral'}`,
         status: line.status,
         date: line.createdAt.toISOString(),
+        lineNumber: formatPhone(line.number),
+        operatorName: line.operator.name,
+        partnerName: line.partner?.name ?? 'Estoque geral',
       })),
       commissions: commissions.map((commission) => ({
         id: commission.id,
@@ -587,6 +604,7 @@ export class DashboardService {
         status: commission.status,
         value: Number(commission.value),
         date: commission.createdAt.toISOString(),
+        partnerName: commission.partner.name,
       })),
       campaigns: campaigns
         .filter((campaign) => campaign.campaignId)
@@ -595,6 +613,7 @@ export class DashboardService {
           primary: campaignMap[campaign.campaignId!] ?? 'Campanha',
           secondary: `${campaign._count.id} vendas realizadas`,
           value: Number(campaign._sum.value ?? 0),
+          count: campaign._count.id,
         })),
     };
   }

@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   Head,
   Param,
@@ -93,6 +94,15 @@ export class UploadsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.uploadsService.replaceDocument(documentId, file, user);
+  }
+
+  @Delete(':documentId')
+  @ApiOperation({ summary: 'Excluir um documento já anexado' })
+  deleteDocument(
+    @Param('documentId') documentId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.uploadsService.deleteDocument(documentId, user);
   }
 
   @Head(':filename')

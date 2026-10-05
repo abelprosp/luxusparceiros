@@ -302,6 +302,32 @@ export class UploadsService {
     });
   }
 
+  private async markSaleDocumentUnfulfilledIfEmpty(saleId: string, type: DocumentType) {
+    const remaining = await this.prisma.document.count({
+      where: { saleId, type },
+    });
+    if (remaining > 0) return;
+
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { requiredDocuments: true },
+    });
+    if (!sale?.requiredDocuments) return;
+
+    const docs = sale.requiredDocuments as Array<{
+      type: string;
+      label: string;
+      fulfilled: boolean;
+    }>;
+    const updated = docs.map((doc) =>
+      doc.type === type ? { ...doc, fulfilled: false } : doc,
+    );
+    await this.prisma.sale.update({
+      where: { id: saleId },
+      data: { requiredDocuments: updated as Prisma.InputJsonValue },
+    });
+  }
+
   async replaceDocument(
     documentId: string,
     file: Express.Multer.File,
@@ -401,6 +427,99 @@ export class UploadsService {
       if (existsSync(filepath)) unlinkSync(filepath);
       throw error;
     }
+  }
+
+  async deleteDocument(documentId: string, user: AuthUser) {
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        url: true,
+        saleId: true,
+        externalId: true,
+        sale: {
+          select: {
+            partnerId: true,
+            branchId: true,
+            status: true,
+            reviewStatus: true,
+            contractStage: true,
+            taskDemandId: true,
+          },
+        },
+        client: { select: { partnerId: true, branchId: true } },
+        request: { select: { partnerId: true, branchId: true } },
+        ticket: { select: { partnerId: true } },
+      },
+    });
+    if (!document) {
+      throw new NotFoundException(MESSAGES.NOT_FOUND);
+    }
+
+    const scope = document.sale ?? document.client ?? document.request ?? document.ticket;
+    if (!scope?.partnerId) {
+      if (!isPlatformAdmin(user)) {
+        throw new ForbiddenException(MESSAGES.FORBIDDEN);
+      }
+    } else {
+      assertPartnerAccess(user, scope.partnerId);
+    }
+
+    const branchId =
+      document.sale?.branchId ??
+      document.client?.branchId ??
+      document.request?.branchId;
+    if (user.branchId && branchId && user.branchId !== branchId) {
+      throw new ForbiddenException(MESSAGES.FORBIDDEN);
+    }
+
+    if (document.sale) {
+      const saleClosed =
+        document.sale.contractStage === SaleContractStage.COMPLETED
+        || document.sale.status === SaleStatus.ACTIVATED
+        || document.sale.status === SaleStatus.CANCELLED
+        || document.sale.status === SaleStatus.REJECTED
+        || document.sale.reviewStatus === SaleReviewStatus.REJECTED
+        || document.sale.reviewStatus === SaleReviewStatus.CANCELLED;
+      if (saleClosed) {
+        throw new BadRequestException(
+          'Não é possível excluir documentos de venda concluída, cancelada ou rejeitada.',
+        );
+      }
+    }
+
+    if (document.saleId && document.sale?.taskDemandId) {
+      await this.taskIntegration.removeSaleDocumentFromTask(document.saleId, {
+        id: document.id,
+        name: document.name,
+        type: document.type,
+        externalId: document.externalId,
+      });
+    }
+
+    await this.prisma.document.delete({ where: { id: document.id } });
+    this.removeStoredFiles([{ url: document.url }]);
+
+    if (document.saleId) {
+      await this.markSaleDocumentUnfulfilledIfEmpty(document.saleId, document.type);
+      await this.prisma.sale.update({
+        where: { id: document.saleId },
+        data: {
+          timeline: {
+            create: {
+              actorId: user.id,
+              actorName: user.name,
+              action: 'Documento excluído',
+              details: document.name,
+            },
+          },
+        },
+      });
+    }
+
+    return { deleted: true };
   }
 
   async getFile(filename: string, user: AuthUser) {
