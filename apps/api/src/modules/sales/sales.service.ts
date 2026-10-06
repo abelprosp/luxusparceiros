@@ -27,6 +27,7 @@ import { NotificationsService } from '@/modules/notifications/notifications.serv
 import { PlansService } from '@/modules/plans/plans.service';
 import { EventsGateway } from '@/gateway/events.gateway';
 import { TaskIntegrationService } from '@/modules/task-integration/task-integration.service';
+import { normalizeIncomingTaskStatus } from '@/modules/task-integration/dto/task-integration.dto';
 import { UploadsService } from '@/modules/uploads/uploads.service';
 import { MESSAGES } from '@/common/constants/messages';
 import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
@@ -81,6 +82,7 @@ const STATUS_TRANSITIONS: Record<SaleStatus, SaleStatus[]> = {
 export class SalesService implements OnModuleInit, OnModuleDestroy {
   private taskSyncTimer?: NodeJS.Timeout;
   private taskSyncRunning = false;
+  private taskReconcileRunning = false;
 
   constructor(
     private prisma: PrismaService,
@@ -94,9 +96,15 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    this.taskSyncTimer = setInterval(() => void this.processTaskSyncQueue(), 30_000);
+    this.taskSyncTimer = setInterval(() => {
+      void this.processTaskSyncQueue();
+      void this.reconcileTaskProgress();
+    }, 30_000);
     this.taskSyncTimer.unref();
-    setImmediate(() => void this.processTaskSyncQueue());
+    setImmediate(() => {
+      void this.processTaskSyncQueue();
+      void this.reconcileTaskProgress();
+    });
   }
 
   onModuleDestroy() {
@@ -1251,6 +1259,57 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     return Math.min(15 * 60_000, 30_000 * 2 ** Math.min(attempts, 5));
   }
 
+  private async reconcileTaskProgress() {
+    if (this.taskReconcileRunning || !this.taskIntegration.isConfigured()) return;
+    this.taskReconcileRunning = true;
+    try {
+      const sales = await this.prisma.sale.findMany({
+        where: {
+          taskDemandId: { not: null },
+          contractStage: { not: SaleContractStage.COMPLETED },
+          status: { notIn: [SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED] },
+          OR: [
+            { taskLastSyncAt: null },
+            { taskLastSyncAt: { lt: new Date(Date.now() - 60_000) } },
+          ],
+        },
+        select: { id: true, taskStatus: true, taskResponsibleName: true },
+        orderBy: [{ taskLastSyncAt: 'asc' }, { updatedAt: 'asc' }],
+        take: 8,
+      });
+      for (const sale of sales) {
+        try {
+          const task = await this.taskIntegration.getDemand(sale.id);
+          const status = normalizeIncomingTaskStatus(task.status);
+          const responsibleName = task.responsibleName || task.responsible?.name || '';
+          const concluded = status === 'concluido' || task.workflowStage === SaleContractStage.COMPLETED;
+          const changed = concluded
+            || (status !== '' && status !== normalizeIncomingTaskStatus(sale.taskStatus))
+            || responsibleName !== (sale.taskResponsibleName || '');
+          if (!changed) {
+            await this.prisma.sale.update({
+              where: { id: sale.id },
+              data: { taskLastSyncAt: new Date() },
+            });
+            continue;
+          }
+          await this.taskIntegration.applyCallback(
+            this.taskIntegration.demandCallbackInput(sale.id, task, { includeDetails: concluded }),
+            { notify: true },
+          );
+        } catch (error) {
+          console.warn('[sales] Falha ao acompanhar a demanda no Luxus Task', sale.id, error);
+          await this.prisma.sale.update({
+            where: { id: sale.id },
+            data: { taskLastSyncAt: new Date() },
+          }).catch(() => undefined);
+        }
+      }
+    } finally {
+      this.taskReconcileRunning = false;
+    }
+  }
+
   private async processTaskSyncQueue() {
     if (this.taskSyncRunning || !this.taskIntegration.isConfigured()) return;
     this.taskSyncRunning = true;
@@ -1585,23 +1644,10 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     const alreadyCompleted = sale.contractStage === SaleContractStage.COMPLETED
       || sale.status === SaleStatus.ACTIVATED;
     const task = await this.taskIntegration.getDemand(id);
-    await this.taskIntegration.applyCallback({
-      externalRequestId: id,
-      demandId: task.id,
-      protocol: task.protocol,
-      status: task.status,
-      resolution: task.resolution,
-      observations: task.observations,
-      responsibleId: task.responsible?.id,
-      responsibleName: task.responsible?.name,
-      updatedAt: task.updatedAt,
-      workflowStage: task.workflowStage,
-      attachments: task.attachments,
-      isBeingEdited: task.isBeingEdited,
-      editorName: task.editorName,
-      editorActivity: task.editorActivity,
-      editorLastSeenAt: task.editorLastSeenAt,
-    }, { notify: !alreadyCompleted });
+    await this.taskIntegration.applyCallback(
+      this.taskIntegration.demandCallbackInput(id, task, { includeDetails: true }),
+      { notify: !alreadyCompleted },
+    );
     return this.findOne(id, user);
   }
 

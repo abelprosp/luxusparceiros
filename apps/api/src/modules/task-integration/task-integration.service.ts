@@ -12,7 +12,7 @@ import { LineStatus, SaleContractStage, SaleReviewStatus, SaleStatus, SaleTaskSy
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { CommissionsService } from '@/modules/commissions/commissions.service';
-import { TaskDemandCallbackDto, CreateTaskDemandInput } from './dto/task-integration.dto';
+import { TaskDemandCallbackDto, CreateTaskDemandInput, normalizeIncomingTaskStatus } from './dto/task-integration.dto';
 
 export interface TaskResponsible {
   id: string;
@@ -36,6 +36,8 @@ export interface CreatedTaskDemand {
   client?: TaskClient;
   updatedAt?: string;
   workflowStage?: string;
+  responsibleId?: string;
+  responsibleName?: string;
   resolution?: string;
   observations?: string[];
   attachments?: Array<{ id: string; name: string; mimeType?: string; size?: number; createdAt?: string }>;
@@ -88,6 +90,31 @@ export class TaskIntegrationService {
       undefined,
       10_000,
     );
+  }
+
+  demandCallbackInput(
+    externalRequestId: string,
+    task: CreatedTaskDemand,
+    options?: { includeDetails?: boolean },
+  ): TaskDemandCallbackDto {
+    const includeDetails = options?.includeDetails === true;
+    return {
+      externalRequestId,
+      demandId: task.id,
+      protocol: task.protocol,
+      status: normalizeIncomingTaskStatus(task.status) || task.status,
+      workflowStage: task.workflowStage,
+      resolution: includeDetails ? task.resolution : undefined,
+      observations: includeDetails ? task.observations : undefined,
+      attachments: includeDetails ? task.attachments : undefined,
+      responsibleId: task.responsibleId || task.responsible?.id,
+      responsibleName: task.responsibleName || task.responsible?.name,
+      updatedAt: task.updatedAt,
+      isBeingEdited: task.isBeingEdited,
+      editorName: task.editorName,
+      editorActivity: task.editorActivity,
+      editorLastSeenAt: task.editorLastSeenAt,
+    };
   }
 
   async addDemandComment(
@@ -567,8 +594,8 @@ export class TaskIntegrationService {
 
     const finalStage = shouldComplete ? SaleContractStage.COMPLETED : nextStage;
     const stageChanged = finalStage !== sale.contractStage;
-    const statusChanged = sale.taskStatus !== dto.status;
-    const messageChanged = sale.taskLastMessage !== (resolution ?? null);
+    const statusChanged = normalizeIncomingTaskStatus(sale.taskStatus) !== normalizeIncomingTaskStatus(dto.status);
+    const messageChanged = Boolean(resolution) && sale.taskLastMessage !== resolution;
     const workflowChanged = statusChanged || stageChanged || messageChanged || Boolean(reminderMessage);
 
     await this.prisma.sale.update({
@@ -750,7 +777,7 @@ export class TaskIntegrationService {
   private resolveSaleContractStage(dto: TaskDemandCallbackDto, current: SaleContractStage): SaleContractStage {
     if (current === SaleContractStage.COMPLETED) return current;
     const explicit = dto.workflowStage as SaleContractStage | undefined;
-    const taskStatus = (dto.status || '').trim().toLowerCase();
+    const taskStatus = normalizeIncomingTaskStatus(dto.status);
     // Concluir a demanda no Luxus Task conclui a venda no Parceiros.
     if (
       explicit === SaleContractStage.COMPLETED

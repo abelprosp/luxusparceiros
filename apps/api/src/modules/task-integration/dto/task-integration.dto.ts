@@ -43,6 +43,23 @@ function optionalNumber({ value }: { value: unknown }) {
   return value;
 }
 
+export function normalizeIncomingTaskStatus(value: unknown) {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/\s+/g, '_');
+  if (['concluido', 'concluida', 'completed', 'finalizado', 'finalizada'].includes(normalized)) {
+    return 'concluido';
+  }
+  if (['cancelado', 'cancelada', 'rejected'].includes(normalized)) return 'cancelado';
+  if (['em_aberto', 'aberto', 'aberta', 'open'].includes(normalized)) return 'em_aberto';
+  if (['em_andamento', 'andamento', 'in_progress'].includes(normalized)) return 'em_andamento';
+  if (normalized === 'standby') return 'standby';
+  return normalized;
+}
+
 export class TaskCallbackAttachmentDto {
   @IsString()
   id: string;
@@ -80,6 +97,7 @@ export class TaskDemandCallbackDto {
   @IsString()
   protocol: string;
 
+  @Transform(({ value }) => normalizeIncomingTaskStatus(value))
   @IsIn(['em_aberto', 'em_andamento', 'concluido', 'standby', 'cancelado'])
   status: string;
 
