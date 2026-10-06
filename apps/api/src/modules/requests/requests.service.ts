@@ -186,7 +186,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         const taskDemand = await this.taskIntegration.getDemand(request.id);
         await this.taskIntegration.applyCallback({
           externalRequestId: request.id,
-          demandId: taskDemand.id,
+          demandId: taskDemand.demandId || taskDemand.id || '',
           protocol: taskDemand.protocol,
           status: taskDemand.status,
           resolution: taskDemand.resolution,
@@ -827,7 +827,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     const updated = await this.prisma.request.update({
       where: { id: request.id },
       data: {
-        taskDemandId: task.id,
+        taskDemandId: task.demandId || task.id,
         taskProtocol: task.protocol,
         taskStatus: task.status,
         taskResponsibleId: task.responsible?.id ?? responsibleId,

@@ -1474,7 +1474,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       await this.prisma.sale.update({
         where: { id },
         data: {
-          taskDemandId: task.id, taskProtocol: task.protocol, taskStatus: task.status,
+          taskDemandId: task.demandId || task.id, taskProtocol: task.protocol, taskStatus: task.status,
           taskResponsibleId: task.responsible?.id ?? sale.taskResponsibleId,
           taskResponsibleName: task.responsible?.name,
           taskClientId: task.client?.id ?? sale.taskClientId,

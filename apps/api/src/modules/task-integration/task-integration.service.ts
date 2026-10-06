@@ -29,7 +29,8 @@ export interface TaskClient {
 }
 
 export interface CreatedTaskDemand {
-  id: string;
+  id?: string;
+  demandId?: string;
   protocol: string;
   status: string;
   responsible?: TaskResponsible;
@@ -100,7 +101,7 @@ export class TaskIntegrationService {
     const includeDetails = options?.includeDetails === true;
     return {
       externalRequestId,
-      demandId: task.id,
+      demandId: task.demandId || task.id || '',
       protocol: task.protocol,
       status: normalizeIncomingTaskStatus(task.status) || task.status,
       workflowStage: task.workflowStage,
