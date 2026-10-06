@@ -47,7 +47,7 @@ interface NotificationsContextValue {
   markRequestRemindersRead: (requestId: string) => Promise<void>;
 }
 
-const ALERT_EVENTS = new Set(['TASK_REMINDER', 'SALE_COMPLETED_BY_TASK']);
+const ALERT_EVENTS = new Set(['TASK_REMINDER', 'SALE_COMPLETED_BY_TASK', 'NEW_SALE_ATTACHMENTS']);
 const DISMISSED_ALERT_PREFIX = 'luxus:alert-dismissed:';
 const DISMISSED_SALE_COMPLETED_PREFIX = 'luxus:alert-dismissed-sale-completed:';
 
@@ -132,6 +132,7 @@ function buildAlertPayload(notification: NotificationItem): NotificationAlertPay
     event: typeof notification.data?.event === 'string' ? notification.data.event : undefined,
     saleId: notification.data?.saleId ? String(notification.data.saleId) : null,
     requestId: notification.data?.requestId ? String(notification.data.requestId) : null,
+    actionLabel: notification.data?.event === 'NEW_SALE_ATTACHMENTS' ? 'Ver anexos' : 'Abrir venda',
   };
 }
 

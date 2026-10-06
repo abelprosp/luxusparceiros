@@ -75,8 +75,8 @@ export class TaskIntegrationService {
     return this.request<CreatedTaskDemand>(
       '/integrations/luxus-parceiros/demandas',
       {
-        method: 'POST',
-        body: JSON.stringify(input),
+      method: 'POST',
+      body: JSON.stringify(input),
       },
       120_000,
     );
@@ -401,10 +401,10 @@ export class TaskIntegrationService {
             action: reminderMessage
               ? 'Cobrança recebida do Luxus Task'
               : statusChanged
-                ? 'Status sincronizado pelo Luxus Task'
+              ? 'Status sincronizado pelo Luxus Task'
                 : incomingFiles
                   ? `Anexos recebidos do Luxus Task (${dto.attachments?.length})`
-                  : 'Resposta sincronizada pelo Luxus Task',
+              : 'Resposta sincronizada pelo Luxus Task',
             fromStatus: existing.status,
             toStatus: status,
             details: reminderMessage || resolution,
@@ -434,15 +434,15 @@ export class TaskIntegrationService {
             },
           }
         : {
-            type: 'REQUEST' as const,
+        type: 'REQUEST' as const,
             title: statusChanged
-              ? 'Atualização do Luxus Task'
-              : 'Nova resposta do Luxus Task',
+          ? 'Atualização do Luxus Task'
+          : 'Nova resposta do Luxus Task',
             message: statusChanged
-              ? `A solicitação ${existing.protocol} agora está ${statusLabels[status] ?? 'atualizada'}.`
-              : `A solicitação ${existing.protocol} recebeu uma nova resposta.`,
+          ? `A solicitação ${existing.protocol} agora está ${statusLabels[status] ?? 'atualizada'}.`
+          : `A solicitação ${existing.protocol} recebeu uma nova resposta.`,
             data: { requestId: existing.id, path },
-          };
+      };
       await this.notifications.createForAdminUsers(notification);
       await this.notifications.create({
         userId: existing.createdById,
@@ -490,9 +490,14 @@ export class TaskIntegrationService {
     const shouldComplete = !saleLocked
       && nextStage === SaleContractStage.COMPLETED;
 
+    let newAttachmentCount = 0;
     for (const attachment of dto.attachments ?? []) {
       if (!attachment.id || !attachment.name) continue;
       const externalId = `task:${dto.demandId}:${attachment.id}`;
+      const alreadyThere = await this.prisma.document.findUnique({
+        where: { externalId },
+        select: { id: true },
+      });
       const meta = this.resolveIncomingAttachmentMeta(attachment.name, nextStage);
       let storedUrl = `/task-integration/sales/${sale.id}/attachments/${attachment.id}`;
       let storedSize = attachment.size || 0;
@@ -522,19 +527,19 @@ export class TaskIntegrationService {
         .replace(/^CONTRATO EM BRANCO\s*[—\-]\s*/i, '')
         .replace(/^CONTRATO ASSINADO\s*[—\-]\s*/i, '')
         .trim() || attachment.name;
-      await this.prisma.document.upsert({
-        where: { externalId },
-        create: {
-          saleId: sale.id,
-          externalId,
+        await this.prisma.document.upsert({
+          where: { externalId },
+          create: {
+            saleId: sale.id,
+            externalId,
           name: cleanName,
           type: meta.type,
           purpose: meta.purpose,
           url: storedUrl,
           mimeType: storedMime,
           size: storedSize,
-        },
-        update: {
+          },
+          update: {
           name: cleanName,
           type: meta.type,
           purpose: meta.purpose,
@@ -543,7 +548,20 @@ export class TaskIntegrationService {
             mimeType: storedMime,
             size: storedSize,
           } : {}),
-        },
+          },
+        });
+      if (!alreadyThere) newAttachmentCount += 1;
+    }
+
+    if (newAttachmentCount > 0) {
+      await this.notifyNewSaleAttachments({
+        saleId: sale.id,
+        partnerId: sale.partnerId,
+        protocol: sale.protocol,
+        count: newAttachmentCount,
+        source: 'task',
+      }).catch((error) => {
+        console.warn('[task-integration] Falha ao avisar anexos novos', error);
       });
     }
 
@@ -592,15 +610,15 @@ export class TaskIntegrationService {
                   : (dto.attachments?.length
                     ? `Anexos recebidos do Luxus Task (${dto.attachments.length})`
                     : 'Atualização recebida do Luxus Task'),
-              details: [
-                `Status Task: ${dto.status}`,
+          details: [
+            `Status Task: ${dto.status}`,
                 `Etapa: ${finalStage}`,
                 dto.attachments?.length
                   ? `Anexos: ${dto.attachments.map((item) => item.name).join(', ')}`
                   : '',
                 reminderMessage ? `Cobrança: ${reminderMessage}` : '',
-                resolution ? `Retorno: ${resolution}` : '',
-              ].filter(Boolean).join('\n'),
+            resolution ? `Retorno: ${resolution}` : '',
+          ].filter(Boolean).join('\n'),
             },
           },
         } : {}),
@@ -659,11 +677,11 @@ export class TaskIntegrationService {
               },
             }
           : {
-              type: 'SYSTEM' as const,
+        type: 'SYSTEM' as const,
               title: 'Venda atualizada no Luxus Task',
-              message: `${sale.protocol}: ${resolution || `status ${dto.status}`}`,
-              data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
-            };
+        message: `${sale.protocol}: ${resolution || `status ${dto.status}`}`,
+        data: { saleId: sale.id, path: `/vendas?sale=${sale.id}` },
+      };
 
       const adminNotifications = await this.notifications.createForAdminUsers(
         notification,
@@ -952,6 +970,43 @@ export class TaskIntegrationService {
       // Não bloqueia o upload local; a fila fará uma nova tentativa.
       console.warn('[task-integration] Falha ao enviar anexo ao Luxus Task', error);
     }
+  }
+
+  async notifyNewSaleAttachments(input: {
+    saleId: string;
+    partnerId: string;
+    protocol: string;
+    count: number;
+    source: 'task' | 'parceiros';
+    actor?: { id: string; role: string };
+  }) {
+    if (input.count < 1) return;
+    const payload = {
+      type: 'SYSTEM' as const,
+      title: 'Novos anexos na venda',
+      message: input.count === 1
+        ? `${input.protocol} recebeu um anexo novo.`
+        : `${input.protocol} recebeu ${input.count} anexos novos.`,
+      data: {
+        event: 'NEW_SALE_ATTACHMENTS',
+        saleId: input.saleId,
+        path: `/vendas?sale=${input.saleId}&tab=photos`,
+      },
+    };
+    const exclude = input.actor?.id ? [input.actor.id] : [];
+    const partnerSide = input.actor?.role === 'PARTNER' || input.actor?.role === 'ATTENDANT';
+    if (input.source === 'task') {
+      await Promise.all([
+        this.notifications.createForAdminUsers(payload, exclude),
+        this.notifications.createForPartnerUsers(input.partnerId, payload, exclude),
+      ]);
+      return;
+    }
+    if (partnerSide) {
+      await this.notifications.createForAdminUsers(payload, exclude);
+      return;
+    }
+    await this.notifications.createForPartnerUsers(input.partnerId, payload, exclude);
   }
 
   async removeSaleDocumentFromTask(

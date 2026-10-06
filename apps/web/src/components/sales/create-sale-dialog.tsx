@@ -89,6 +89,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
   const [value, setValue] = useState('');
   const [newNumber, setNewNumber] = useState('');
   const [isVirginChip, setIsVirginChip] = useState(true);
+  const [simType, setSimType] = useState<'CHIP' | 'ESIM'>('CHIP');
   const [chipIccid, setChipIccid] = useState('');
   const [chipPhoto, setChipPhoto] = useState<File | null>(null);
   const [cpfPhoto, setCpfPhoto] = useState<File | null>(null);
@@ -173,6 +174,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     setValue('');
     setNewNumber('');
     setIsVirginChip(true);
+    setSimType('CHIP');
     setChipIccid('');
     setChipPhoto(null);
     setCpfPhoto(null);
@@ -198,10 +200,11 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     else if (client.document.replace(/\D/g, '').length !== 11) errors.push('CPF com 11 dígitos');
     if (!client.phone.trim()) errors.push('Telefone de contato');
     else if (client.phone.replace(/\D/g, '').length < 10) errors.push('Telefone com ao menos 10 dígitos');
-    if (!chipPhoto) errors.push('Foto do chip');
+    const isEsim = simType === 'ESIM';
+    if (!isEsim && !chipPhoto) errors.push('Foto do chip');
     if (!cpfPhoto) errors.push('Foto do CPF');
     if (!rgPhoto) errors.push('Foto do RG');
-    if (isVirginChip && !chipIccid) errors.push('ICCID do chip');
+    if (!isEsim && isVirginChip && !chipIccid) errors.push('ICCID do chip');
     if (isPortability && !donorOperator) errors.push('Operadora doadora');
     if (isPortability && !portabilityNumber.trim()) errors.push('Número a ser portado');
     else if (isPortability && portabilityNumber.replace(/\D/g, '').length < 10) errors.push('Número portado com ao menos 10 dígitos');
@@ -237,7 +240,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       toast({ title: 'Preencha nome, CPF e telefone do cliente', variant: 'destructive' });
       return;
     }
-    if (!chipPhoto) {
+    if (!isEsim && !chipPhoto) {
       toast({ title: 'Anexe a foto do chip', variant: 'destructive' });
       return;
     }
@@ -249,7 +252,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       toast({ title: 'Anexe a foto do RG', variant: 'destructive' });
       return;
     }
-    if (isVirginChip) {
+    if (!isEsim && isVirginChip) {
       if (!chipIccid) {
         toast({ title: 'ICCID é obrigatório para chip virgem', variant: 'destructive' });
         return;
@@ -289,8 +292,9 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
           planId,
           value: parseFloat(value) || filteredPlans.find((p) => p.id === planId)?.price,
           newNumber,
-          isVirginChip,
-          chipIccid: isVirginChip ? normalizeIccid(chipIccid) : normalizeIccid(chipIccid) || undefined,
+          simType,
+          isVirginChip: isEsim ? false : isVirginChip,
+          chipIccid: isEsim ? undefined : (isVirginChip ? normalizeIccid(chipIccid) : normalizeIccid(chipIccid) || undefined),
           contractFormat,
           isPortability,
           portabilityNumber: isPortability ? portabilityNumber : undefined,
@@ -305,7 +309,9 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       createdSaleId = sale.id;
 
       const clientId = sale.client?.id;
-      await uploadFile(chipPhoto, DocumentType.CHIP_PHOTO, { saleId: sale.id, clientId });
+      if (!isEsim && chipPhoto) {
+        await uploadFile(chipPhoto, DocumentType.CHIP_PHOTO, { saleId: sale.id, clientId });
+      }
       await uploadFile(cpfPhoto, DocumentType.CPF, { saleId: sale.id, clientId });
       await uploadFile(rgPhoto, DocumentType.RG, { saleId: sale.id, clientId });
       await api(`/sales/${sale.id}/submit`, { method: 'POST' });
@@ -437,6 +443,37 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                   placeholder="(11) 99999-9999"
                 />
               </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Tipo de ativação *</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={simType === 'CHIP' ? 'default' : 'outline'}
+                    onClick={() => setSimType('CHIP')}
+                  >
+                    Chip
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={simType === 'ESIM' ? 'default' : 'outline'}
+                    onClick={() => {
+                      setSimType('ESIM');
+                      setIsVirginChip(false);
+                      setChipIccid('');
+                      setChipPhoto(null);
+                    }}
+                  >
+                    eSIM
+                  </Button>
+                </div>
+                {simType === 'ESIM' && (
+                  <p className="text-xs text-muted-foreground">
+                    O QR Code do eSIM entra como anexo no Luxus Task. Quando o arquivo chegar, aparece um aviso para abrir os anexos da venda.
+                  </p>
+                )}
+              </div>
+              {simType === 'CHIP' && (
+              <>
               <div className="flex items-center gap-2 sm:col-span-2">
                 <input
                   type="checkbox"
@@ -472,6 +509,8 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                   onChange={(e) => setChipPhoto(e.target.files?.[0] ?? null)}
                 />
               </div>
+              </>
+              )}
               <div className="space-y-2 sm:col-span-2">
                 <Label>Formato do contrato *</Label>
                 <Select value={contractFormat} onValueChange={(v) => setContractFormat(v as ContractFormat)}>

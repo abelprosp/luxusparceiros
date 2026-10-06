@@ -18,6 +18,7 @@ export interface NotificationAlertPayload {
   event?: string;
   saleId?: string | null;
   requestId?: string | null;
+  actionLabel?: string;
 }
 
 interface NotificationAlertModalProps {
@@ -52,7 +53,7 @@ export function NotificationAlertModal({
               if (alert?.path) onOpenSale(alert.path);
             }}
           >
-            Abrir venda
+            {alert?.actionLabel ?? 'Abrir venda'}
           </Button>
         </DialogFooter>
       </DialogContent>

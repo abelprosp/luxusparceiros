@@ -242,7 +242,7 @@ export default function VendasPage() {
     } else {
       openedFromQueryRef.current = true;
     }
-    setDetailTab('overview');
+    setDetailTab(params.get('tab') === 'photos' ? 'photos' : 'overview');
     setDetailSaleId(saleId);
   }, [items]);
 

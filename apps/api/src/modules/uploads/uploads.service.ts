@@ -95,6 +95,7 @@ export class UploadsService {
       } else {
         await this.taskIntegration.pushSaleDocumentIfSynced(relations.saleId, document);
       }
+      await this.notifySaleAttachmentIfSubmitted(relations.saleId, user);
     }
 
     return document;
@@ -280,6 +281,24 @@ export class UploadsService {
         throw new BadRequestException('Este documento solicitado já foi enviado');
       }
     }
+  }
+
+  private async notifySaleAttachmentIfSubmitted(saleId: string, user: AuthUser) {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { reviewStatus: true, partnerId: true, protocol: true },
+    });
+    if (!sale || sale.reviewStatus === SaleReviewStatus.DRAFT) return;
+    await this.taskIntegration.notifyNewSaleAttachments({
+      saleId,
+      partnerId: sale.partnerId,
+      protocol: sale.protocol,
+      count: 1,
+      source: 'parceiros',
+      actor: { id: user.id, role: user.role },
+    }).catch((error) => {
+      console.warn('[uploads] Falha ao avisar anexo novo', error);
+    });
   }
 
   private async markSaleDocumentFulfilled(saleId: string, type: DocumentType) {

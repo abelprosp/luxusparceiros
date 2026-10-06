@@ -18,7 +18,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ContractFormat, DocumentType, DonorOperator, SaleStatus } from '@prisma/client';
+import { ContractFormat, DocumentType, DonorOperator, SaleSimType, SaleStatus } from '@prisma/client';
 import { Type, Transform } from 'class-transformer';
 import { PaginationDto } from '@/common/dto/pagination.dto';
 import { CreateClientInlineDto } from './create-client-inline.dto';
@@ -117,6 +117,11 @@ export class CreateSaleDto {
   @IsOptional()
   @IsBoolean()
   isVirginChip?: boolean;
+
+  @ApiPropertyOptional({ enum: SaleSimType, description: 'Chip físico ou eSIM' })
+  @IsOptional()
+  @IsEnum(SaleSimType)
+  simType?: SaleSimType;
 
   @ApiPropertyOptional({ description: 'ICCID do chip vendido (obrigatório se chip virgem)' })
   @IsOptional()

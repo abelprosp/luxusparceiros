@@ -155,6 +155,7 @@ interface SaleDetail {
   newNumber?: string | null;
   chipIccid?: string | null;
   isVirginChip: boolean;
+  simType?: 'CHIP' | 'ESIM';
   isPortability: boolean;
   portabilityNumber?: string | null;
   donorOperator?: DonorOperator | null;
@@ -1366,7 +1367,10 @@ export function SaleDetailDialog({
 
                   <Section title="Linha">
                     <DetailRow label="Número" value={lineNumber} />
-                    <DetailRow label="Chip virgem" value={sale.isVirginChip ? 'Sim' : 'Não'} />
+                    <DetailRow label="Ativação" value={sale.simType === 'ESIM' ? 'eSIM' : 'Chip'} />
+                    {sale.simType !== 'ESIM' && (
+                      <DetailRow label="Chip virgem" value={sale.isVirginChip ? 'Sim' : 'Não'} />
+                    )}
                     {sale.isVirginChip && <DetailRow label="ICCID" value={sale.chipIccid} mono />}
                     <DetailRow label="Portabilidade" value={sale.isPortability ? 'Sim' : 'Não'} />
                     {sale.isPortability && (

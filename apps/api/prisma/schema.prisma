@@ -41,6 +41,11 @@ enum SaleStatus {
   DOCUMENTS_PENDING
 }
 
+enum SaleSimType {
+  CHIP
+  ESIM
+}
+
 enum SaleReviewStatus {
   DRAFT
   AWAITING_REVIEW
@@ -615,6 +620,7 @@ model Sale {
   commissionRate    Decimal    @default(0) @db.Decimal(5, 2)
   isPortability     Boolean    @default(false)
   isVirginChip      Boolean    @default(false)
+  simType           SaleSimType @default(CHIP)
   portabilityNumber String?
   donorOperator     DonorOperator?
   newNumber         String?

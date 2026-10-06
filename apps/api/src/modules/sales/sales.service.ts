@@ -9,6 +9,7 @@ import {
 import {
   CommissionType,
   SaleReviewStatus,
+  SaleSimType,
   SaleStatus,
   SaleTaskSyncStatus,
   SaleContractStage,
@@ -40,7 +41,7 @@ import {
   UpdateSaleDto,
   UpdateSaleStatusDto,
 } from './dto/sale.dto';
-import { getRequiredDocumentsForSale } from './sale-documents.constants';
+import { getRequiredDocumentsForSale, requiredSaleDocumentTypes } from './sale-documents.constants';
 
 const STATUS_TRANSITIONS: Record<SaleStatus, SaleStatus[]> = {
   [SaleStatus.IN_ANALYSIS]: [
@@ -303,7 +304,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       if (!campaign) throw new BadRequestException('Campanha inválida');
     }
 
-    const isVirginChip = dto.isVirginChip ?? false;
+    const isVirginChip = dto.simType === SaleSimType.ESIM ? false : (dto.isVirginChip ?? false);
     if (isVirginChip && !dto.chipIccid?.trim()) {
       throw new BadRequestException('ICCID é obrigatório para venda com chip virgem');
     }
@@ -347,11 +348,12 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         commissionValue: amount,
         isPortability: dto.isPortability ?? false,
         isVirginChip,
+        simType: dto.simType ?? SaleSimType.CHIP,
         portabilityNumber: dto.portabilityNumber,
         donorOperator: dto.donorOperator,
         newNumber: dto.newNumber,
         notes: dto.notes,
-        requiredDocuments: getRequiredDocumentsForSale() as Prisma.InputJsonValue,
+        requiredDocuments: getRequiredDocumentsForSale(dto.simType ?? SaleSimType.CHIP) as Prisma.InputJsonValue,
         reviewStatus: SaleReviewStatus.DRAFT,
         timeline: {
           create: {
@@ -599,11 +601,15 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (!sale.contractFormat) {
       throw new BadRequestException('Informe o formato do contrato: impressão ou ZapSign');
     }
-    const requiredTypes = ['CHIP_PHOTO', 'CPF', 'RG'];
+    const requiredTypes = requiredSaleDocumentTypes(sale.simType);
     const uploaded = new Set(sale.documents.map((document) => document.type));
-    const missing = requiredTypes.filter((type) => !uploaded.has(type as never));
+    const missing = requiredTypes.filter((type) => !uploaded.has(type));
     if (missing.length) {
-      throw new BadRequestException('Anexe a foto do chip, do CPF e do RG antes de enviar');
+      throw new BadRequestException(
+        sale.simType === SaleSimType.ESIM
+          ? 'Anexe a foto do CPF e do RG antes de enviar'
+          : 'Anexe a foto do chip, do CPF e do RG antes de enviar',
+      );
     }
     const previous = sale.reviewStatus;
     const updated = await this.prisma.sale.update({
@@ -1128,6 +1134,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     newNumber?: string | null;
     chipIccid?: string | null;
     isVirginChip?: boolean;
+    simType?: string | null;
     isPortability?: boolean;
     portabilityNumber?: string | null;
     donorOperator?: string | null;
@@ -1178,8 +1185,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       `Registrada por ${sale.createdBy.name}`,
       `Formato do contrato ${contract}`,
       '',
-      'LINHA CHIP',
-      `Linha do chip ${this.formatSalePhone(sale.newNumber)}`,
+      'LINHA',
+      `Ativacao ${sale.simType === 'ESIM' ? 'eSIM. Anexar o QR Code do eSIM nesta demanda.' : 'Chip fisico'}`,
+      `Linha ${this.formatSalePhone(sale.newNumber)}`,
       `Chip virgem ${sale.isVirginChip ? 'Sim' : 'Nao'}`,
       sale.isVirginChip || sale.chipIccid ? `ICCID ${sale.chipIccid || 'sem ICCID'}` : null,
       `Portabilidade ${sale.isPortability ? 'Sim' : 'Nao'}`,
@@ -1328,7 +1336,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         (document) => !document.externalId?.startsWith('task:'),
       );
       const built = this.taskIntegration.buildUploadDocumentsPayload(partnerDocuments);
-      const requiredTypes = ['CHIP_PHOTO', 'CPF', 'RG'];
+      const requiredTypes = requiredSaleDocumentTypes(sale.simType);
       const requiredMissing = built.missing.filter((item) =>
         requiredTypes.some((type) => item.startsWith(`${type}:`)),
       );
@@ -1350,7 +1358,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       )];
       const uploadedRequired = new Set(
         uploadDocuments
-          .filter((document) => requiredTypes.includes(document.type))
+          .filter((document) => (requiredTypes as string[]).includes(document.type))
           .map((document) => document.type),
       );
       const missingRequired = presentRequired.filter((type) => !uploadedRequired.has(type));

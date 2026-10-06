@@ -1,4 +1,4 @@
-import { DocumentType } from '@prisma/client';
+import { DocumentType, SaleSimType } from '@prisma/client';
 
 export type SaleRequiredDocumentItem = {
   type: DocumentType;
@@ -12,8 +12,14 @@ export const DEFAULT_SALE_REQUIRED_DOCUMENTS: SaleRequiredDocumentItem[] = [
   { type: DocumentType.RG, label: 'Foto do RG', fulfilled: false },
 ];
 
-export function getRequiredDocumentsForSale(): SaleRequiredDocumentItem[] {
-  return DEFAULT_SALE_REQUIRED_DOCUMENTS.map((document) => ({ ...document }));
+export function getRequiredDocumentsForSale(simType: SaleSimType = SaleSimType.CHIP): SaleRequiredDocumentItem[] {
+  return DEFAULT_SALE_REQUIRED_DOCUMENTS
+    .filter((document) => simType !== SaleSimType.ESIM || document.type !== DocumentType.CHIP_PHOTO)
+    .map((document) => ({ ...document }));
+}
+
+export function requiredSaleDocumentTypes(simType: SaleSimType = SaleSimType.CHIP): DocumentType[] {
+  return getRequiredDocumentsForSale(simType).map((document) => document.type);
 }
 
 export function hasSignedContract(
