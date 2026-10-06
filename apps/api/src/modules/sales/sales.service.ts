@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   CommissionType,
+  DevicePlatform,
   SaleReviewStatus,
   SaleSimType,
   SaleStatus,
@@ -304,7 +305,22 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       if (!campaign) throw new BadRequestException('Campanha inválida');
     }
 
-    const isVirginChip = dto.simType === SaleSimType.ESIM ? false : (dto.isVirginChip ?? false);
+    const isEsim = dto.simType === SaleSimType.ESIM;
+    const isVirginChip = isEsim ? false : (dto.isVirginChip ?? false);
+    const deviceImei = isEsim ? (dto.deviceImei ?? '').replace(/\D/g, '') : null;
+    const deviceEid = isEsim ? (dto.deviceEid ?? '').replace(/\D/g, '') : null;
+    const devicePlatform = isEsim ? dto.devicePlatform ?? null : null;
+    if (isEsim) {
+      if (deviceImei?.length !== 15) {
+        throw new BadRequestException('IMEI do aparelho deve ter 15 dígitos');
+      }
+      if (deviceEid?.length !== 32) {
+        throw new BadRequestException('EID do aparelho deve ter 32 dígitos');
+      }
+      if (devicePlatform !== DevicePlatform.IOS && devicePlatform !== DevicePlatform.ANDROID) {
+        throw new BadRequestException('Informe se o aparelho é iOS ou Android');
+      }
+    }
     if (isVirginChip && !dto.chipIccid?.trim()) {
       throw new BadRequestException('ICCID é obrigatório para venda com chip virgem');
     }
@@ -349,6 +365,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         isPortability: dto.isPortability ?? false,
         isVirginChip,
         simType: dto.simType ?? SaleSimType.CHIP,
+        deviceImei,
+        deviceEid,
+        devicePlatform,
         portabilityNumber: dto.portabilityNumber,
         donorOperator: dto.donorOperator,
         newNumber: dto.newNumber,
@@ -601,13 +620,18 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (!sale.contractFormat) {
       throw new BadRequestException('Informe o formato do contrato: impressão ou ZapSign');
     }
+    if (sale.simType === SaleSimType.ESIM) {
+      if (!sale.deviceImei || !sale.deviceEid || !sale.devicePlatform) {
+        throw new BadRequestException('Informe IMEI, EID e se o aparelho é iOS ou Android');
+      }
+    }
     const requiredTypes = requiredSaleDocumentTypes(sale.simType);
     const uploaded = new Set(sale.documents.map((document) => document.type));
     const missing = requiredTypes.filter((type) => !uploaded.has(type));
     if (missing.length) {
       throw new BadRequestException(
         sale.simType === SaleSimType.ESIM
-          ? 'Anexe a foto do CPF e do RG antes de enviar'
+          ? 'Anexe a foto da tela do aparelho, do CPF e do RG antes de enviar'
           : 'Anexe a foto do chip, do CPF e do RG antes de enviar',
       );
     }
@@ -1135,6 +1159,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     chipIccid?: string | null;
     isVirginChip?: boolean;
     simType?: string | null;
+    deviceImei?: string | null;
+    deviceEid?: string | null;
+    devicePlatform?: string | null;
     isPortability?: boolean;
     portabilityNumber?: string | null;
     donorOperator?: string | null;
@@ -1186,10 +1213,17 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       `Formato do contrato ${contract}`,
       '',
       'LINHA',
-      `Ativacao ${sale.simType === 'ESIM' ? 'eSIM. Anexar o QR Code do eSIM nesta demanda.' : 'Chip fisico'}`,
+      sale.simType === 'ESIM'
+        ? 'Ativacao eSIM. Anexar o QR Code do eSIM nesta demanda.'
+        : 'Ativacao Chip fisico',
       `Linha ${this.formatSalePhone(sale.newNumber)}`,
-      `Chip virgem ${sale.isVirginChip ? 'Sim' : 'Nao'}`,
-      sale.isVirginChip || sale.chipIccid ? `ICCID ${sale.chipIccid || 'sem ICCID'}` : null,
+      sale.simType === 'ESIM' ? `IMEI ${sale.deviceImei || 'sem IMEI'}` : null,
+      sale.simType === 'ESIM' ? `EID do aparelho ${sale.deviceEid || 'sem EID'}` : null,
+      sale.simType === 'ESIM'
+        ? `Sistema ${sale.devicePlatform === 'IOS' ? 'iOS' : sale.devicePlatform === 'ANDROID' ? 'Android' : 'sem sistema'}`
+        : null,
+      sale.simType === 'ESIM' ? null : `Chip virgem ${sale.isVirginChip ? 'Sim' : 'Nao'}`,
+      sale.simType !== 'ESIM' && (sale.isVirginChip || sale.chipIccid) ? `ICCID ${sale.chipIccid || 'sem ICCID'}` : null,
       `Portabilidade ${sale.isPortability ? 'Sim' : 'Nao'}`,
       sale.isPortability
         ? `Operadora doadora ${this.donorOperatorLabel(sale.donorOperator)}`

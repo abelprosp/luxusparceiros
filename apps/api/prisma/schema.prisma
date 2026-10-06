@@ -46,6 +46,11 @@ enum SaleSimType {
   ESIM
 }
 
+enum DevicePlatform {
+  IOS
+  ANDROID
+}
+
 enum SaleReviewStatus {
   DRAFT
   AWAITING_REVIEW
@@ -162,6 +167,7 @@ enum DocumentType {
   SIGNATURE
   LINE_PHOTO
   CHIP_PHOTO
+  DEVICE_SCREEN
   OTHER
 }
 
@@ -621,6 +627,9 @@ model Sale {
   isPortability     Boolean    @default(false)
   isVirginChip      Boolean    @default(false)
   simType           SaleSimType @default(CHIP)
+  deviceImei        String?
+  deviceEid         String?
+  devicePlatform    DevicePlatform?
   portabilityNumber String?
   donorOperator     DonorOperator?
   newNumber         String?

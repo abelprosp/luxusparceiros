@@ -73,6 +73,7 @@ const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   [DocumentType.SIGNATURE]: 'Assinatura',
   [DocumentType.LINE_PHOTO]: 'Foto da linha',
   [DocumentType.CHIP_PHOTO]: 'Foto do chip',
+  [DocumentType.DEVICE_SCREEN]: 'Foto da tela do aparelho',
   [DocumentType.OTHER]: 'Outro',
 };
 
@@ -81,6 +82,7 @@ const UPLOADABLE_DOCUMENT_TYPES: DocumentType[] = [
   DocumentType.RG,
   DocumentType.SELFIE,
   DocumentType.CHIP_PHOTO,
+  DocumentType.DEVICE_SCREEN,
   DocumentType.LINE_PHOTO,
   DocumentType.OTHER,
   DocumentType.CONTRACT,
@@ -156,6 +158,9 @@ interface SaleDetail {
   chipIccid?: string | null;
   isVirginChip: boolean;
   simType?: 'CHIP' | 'ESIM';
+  deviceImei?: string | null;
+  deviceEid?: string | null;
+  devicePlatform?: 'IOS' | 'ANDROID' | null;
   isPortability: boolean;
   portabilityNumber?: string | null;
   donorOperator?: DonorOperator | null;
@@ -1368,6 +1373,16 @@ export function SaleDetailDialog({
                   <Section title="Linha">
                     <DetailRow label="Número" value={lineNumber} />
                     <DetailRow label="Ativação" value={sale.simType === 'ESIM' ? 'eSIM' : 'Chip'} />
+                    {sale.simType === 'ESIM' && (
+                      <>
+                        <DetailRow label="IMEI" value={sale.deviceImei} mono />
+                        <DetailRow label="EID do aparelho" value={sale.deviceEid} mono />
+                        <DetailRow
+                          label="Sistema"
+                          value={sale.devicePlatform === 'IOS' ? 'iOS' : sale.devicePlatform === 'ANDROID' ? 'Android' : undefined}
+                        />
+                      </>
+                    )}
                     {sale.simType !== 'ESIM' && (
                       <DetailRow label="Chip virgem" value={sale.isVirginChip ? 'Sim' : 'Não'} />
                     )}

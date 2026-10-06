@@ -18,7 +18,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ContractFormat, DocumentType, DonorOperator, SaleSimType, SaleStatus } from '@prisma/client';
+import { ContractFormat, DevicePlatform, DocumentType, DonorOperator, SaleSimType, SaleStatus } from '@prisma/client';
 import { Type, Transform } from 'class-transformer';
 import { PaginationDto } from '@/common/dto/pagination.dto';
 import { CreateClientInlineDto } from './create-client-inline.dto';
@@ -122,6 +122,23 @@ export class CreateSaleDto {
   @IsOptional()
   @IsEnum(SaleSimType)
   simType?: SaleSimType;
+
+  @ApiPropertyOptional({ description: 'IMEI do aparelho, obrigatório no eSIM' })
+  @ValidateIf((o) => o.simType === SaleSimType.ESIM)
+  @IsString()
+  @IsNotEmpty()
+  deviceImei?: string;
+
+  @ApiPropertyOptional({ description: 'EID do aparelho, obrigatório no eSIM' })
+  @ValidateIf((o) => o.simType === SaleSimType.ESIM)
+  @IsString()
+  @IsNotEmpty()
+  deviceEid?: string;
+
+  @ApiPropertyOptional({ enum: DevicePlatform, description: 'Sistema do aparelho, obrigatório no eSIM' })
+  @ValidateIf((o) => o.simType === SaleSimType.ESIM)
+  @IsEnum(DevicePlatform)
+  devicePlatform?: DevicePlatform;
 
   @ApiPropertyOptional({ description: 'ICCID do chip vendido (obrigatório se chip virgem)' })
   @IsOptional()

@@ -71,6 +71,7 @@ const DOC_OPTIONS = [
   { type: DocumentType.RG, label: 'RG' },
   { type: DocumentType.SELFIE, label: 'Selfie' },
   { type: DocumentType.CHIP_PHOTO, label: 'Foto do chip' },
+  { type: DocumentType.DEVICE_SCREEN, label: 'Foto da tela do aparelho' },
   { type: DocumentType.LINE_PHOTO, label: 'Foto da linha' },
   { type: DocumentType.CONTRACT, label: 'Contrato' },
   { type: DocumentType.SIGNATURE, label: 'Assinatura' },

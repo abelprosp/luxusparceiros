@@ -90,6 +90,10 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
   const [newNumber, setNewNumber] = useState('');
   const [isVirginChip, setIsVirginChip] = useState(true);
   const [simType, setSimType] = useState<'CHIP' | 'ESIM'>('CHIP');
+  const [deviceImei, setDeviceImei] = useState('');
+  const [deviceEid, setDeviceEid] = useState('');
+  const [devicePlatform, setDevicePlatform] = useState<'IOS' | 'ANDROID' | ''>('');
+  const [screenPhoto, setScreenPhoto] = useState<File | null>(null);
   const [chipIccid, setChipIccid] = useState('');
   const [chipPhoto, setChipPhoto] = useState<File | null>(null);
   const [cpfPhoto, setCpfPhoto] = useState<File | null>(null);
@@ -175,6 +179,10 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     setNewNumber('');
     setIsVirginChip(true);
     setSimType('CHIP');
+    setDeviceImei('');
+    setDeviceEid('');
+    setDevicePlatform('');
+    setScreenPhoto(null);
     setChipIccid('');
     setChipPhoto(null);
     setCpfPhoto(null);
@@ -202,6 +210,10 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     else if (client.phone.replace(/\D/g, '').length < 10) errors.push('Telefone com ao menos 10 dígitos');
     const isEsim = simType === 'ESIM';
     if (!isEsim && !chipPhoto) errors.push('Foto do chip');
+    if (isEsim && deviceImei.length !== 15) errors.push('IMEI com 15 dígitos');
+    if (isEsim && deviceEid.length !== 32) errors.push('EID com 32 dígitos');
+    if (isEsim && !devicePlatform) errors.push('iOS ou Android');
+    if (isEsim && !screenPhoto) errors.push('Foto da tela do aparelho');
     if (!cpfPhoto) errors.push('Foto do CPF');
     if (!rgPhoto) errors.push('Foto do RG');
     if (!isEsim && isVirginChip && !chipIccid) errors.push('ICCID do chip');
@@ -242,6 +254,22 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     }
     if (!isEsim && !chipPhoto) {
       toast({ title: 'Anexe a foto do chip', variant: 'destructive' });
+      return;
+    }
+    if (isEsim && deviceImei.length !== 15) {
+      toast({ title: 'IMEI deve ter 15 dígitos', variant: 'destructive' });
+      return;
+    }
+    if (isEsim && deviceEid.length !== 32) {
+      toast({ title: 'EID do aparelho deve ter 32 dígitos', variant: 'destructive' });
+      return;
+    }
+    if (isEsim && !devicePlatform) {
+      toast({ title: 'Informe se o aparelho é iOS ou Android', variant: 'destructive' });
+      return;
+    }
+    if (isEsim && !screenPhoto) {
+      toast({ title: 'Anexe a foto da tela do aparelho', variant: 'destructive' });
       return;
     }
     if (!cpfPhoto) {
@@ -293,6 +321,9 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
           value: parseFloat(value) || filteredPlans.find((p) => p.id === planId)?.price,
           newNumber,
           simType,
+          deviceImei: isEsim ? deviceImei : undefined,
+          deviceEid: isEsim ? deviceEid : undefined,
+          devicePlatform: isEsim ? devicePlatform : undefined,
           isVirginChip: isEsim ? false : isVirginChip,
           chipIccid: isEsim ? undefined : (isVirginChip ? normalizeIccid(chipIccid) : normalizeIccid(chipIccid) || undefined),
           contractFormat,
@@ -311,6 +342,9 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       const clientId = sale.client?.id;
       if (!isEsim && chipPhoto) {
         await uploadFile(chipPhoto, DocumentType.CHIP_PHOTO, { saleId: sale.id, clientId });
+      }
+      if (isEsim && screenPhoto) {
+        await uploadFile(screenPhoto, DocumentType.DEVICE_SCREEN, { saleId: sale.id, clientId });
       }
       await uploadFile(cpfPhoto, DocumentType.CPF, { saleId: sale.id, clientId });
       await uploadFile(rgPhoto, DocumentType.RG, { saleId: sale.id, clientId });
@@ -449,7 +483,13 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                   <Button
                     type="button"
                     variant={simType === 'CHIP' ? 'default' : 'outline'}
-                    onClick={() => setSimType('CHIP')}
+                    onClick={() => {
+                      setSimType('CHIP');
+                      setDeviceImei('');
+                      setDeviceEid('');
+                      setDevicePlatform('');
+                      setScreenPhoto(null);
+                    }}
                   >
                     Chip
                   </Button>
@@ -472,6 +512,62 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                   </p>
                 )}
               </div>
+              {simType === 'ESIM' && (
+              <>
+              <div className="space-y-2">
+                <Label>IMEI *</Label>
+                <DigitCountdownInput
+                  value={deviceImei}
+                  onChange={setDeviceImei}
+                  requiredDigits={15}
+                  maxDigits={15}
+                  hintLabel="IMEI"
+                  placeholder="15 dígitos"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>EID do aparelho *</Label>
+                <DigitCountdownInput
+                  value={deviceEid}
+                  onChange={setDeviceEid}
+                  requiredDigits={32}
+                  maxDigits={32}
+                  hintLabel="EID"
+                  placeholder="32 dígitos"
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label>iOS ou Android *</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={devicePlatform === 'IOS' ? 'default' : 'outline'}
+                    onClick={() => setDevicePlatform('IOS')}
+                  >
+                    iOS
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={devicePlatform === 'ANDROID' ? 'default' : 'outline'}
+                    onClick={() => setDevicePlatform('ANDROID')}
+                  >
+                    Android
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Foto da tela do aparelho *</Label>
+                <Input
+                  type="file"
+                  accept="*/*"
+                  onChange={(e) => setScreenPhoto(e.target.files?.[0] ?? null)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Foto da tela Sobre do celular, onde aparecem o IMEI e o EID.
+                </p>
+              </div>
+              </>
+              )}
               {simType === 'CHIP' && (
               <>
               <div className="flex items-center gap-2 sm:col-span-2">

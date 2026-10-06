@@ -225,6 +225,7 @@ export enum DocumentType {
   SIGNATURE = 'SIGNATURE',
   LINE_PHOTO = 'LINE_PHOTO',
   CHIP_PHOTO = 'CHIP_PHOTO',
+  DEVICE_SCREEN = 'DEVICE_SCREEN',
   OTHER = 'OTHER',
 }
 
