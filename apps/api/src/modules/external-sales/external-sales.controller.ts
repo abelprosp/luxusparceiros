@@ -1,9 +1,11 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '@/common/decorators/public.decorator';
 import { ExternalSalesQueryDto } from './dto/external-sales.dto';
+import { ImportHistoricalSaleDto } from './dto/import-historical-sale.dto';
 import { ExternalSalesGuard } from './external-sales.guard';
 import { ExternalSalesService } from './external-sales.service';
+import { HistoricalSalesService } from './historical-sales.service';
 
 @ApiTags('Integração — consulta de vendas')
 @ApiHeader({
@@ -15,7 +17,20 @@ import { ExternalSalesService } from './external-sales.service';
 @UseGuards(ExternalSalesGuard)
 @Controller('integrations/external/sales')
 export class ExternalSalesController {
-  constructor(private readonly externalSales: ExternalSalesService) {}
+  constructor(
+    private readonly externalSales: ExternalSalesService,
+    private readonly historicalSales: HistoricalSalesService,
+  ) {}
+
+  @Post('historical')
+  @ApiOperation({
+    summary: 'Copiar uma demanda já existente do Luxus Task',
+    description:
+      'Grava a venda, o cliente e, se faltarem, o parceiro e a filial. Não cria demanda e não altera o status no Luxus Task.',
+  })
+  importHistorical(@Body() dto: ImportHistoricalSaleDto) {
+    return this.historicalSales.importOne(dto);
+  }
 
   @Get()
   @ApiOperation({
