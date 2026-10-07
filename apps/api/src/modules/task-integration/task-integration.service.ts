@@ -352,7 +352,7 @@ export class TaskIntegrationService {
       .trim();
 
     const lineDigits = String(sale.newNumber || '').replace(/\D/g, '') || 'semlinha';
-    const subject = sanitizeSubject(`${sale.client.name} ${lineDigits}`);
+    const subject = sanitizeSubject(`${sale.isUpgrade ? 'Upgrade ' : ''}${sale.client.name} ${lineDigits}`);
     const observations = sanitizeBody(description);
     return {
       id: sale.id,

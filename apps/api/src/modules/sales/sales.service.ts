@@ -15,11 +15,15 @@ import {
   SaleTaskSyncStatus,
   SaleContractStage,
   DocumentPurpose,
+  DocumentType,
   Prisma,
   UserRole,
 } from '@prisma/client';
 import { AuthUser, saleWorkflowTurn } from '@luxus/types';
 import { generateProtocol, calculatePlanCommission } from '@luxus/utils';
+import { copyFileSync, existsSync, mkdirSync } from 'fs';
+import { extname, join } from 'path';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { CommissionsService } from '@/modules/commissions/commissions.service';
@@ -216,6 +220,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         commission: true,
         documents: true,
         timeline: { orderBy: { createdAt: 'desc' } },
+        upgradeOfSale: { select: { id: true, protocol: true, plan: { select: { id: true, name: true } } } },
       },
     });
     if (!sale) throw new NotFoundException(MESSAGES.NOT_FOUND);
@@ -226,12 +231,121 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     return sale;
   }
 
+  async findPreviousByDocument(user: AuthUser, document: string, requestedPartnerId?: string) {
+    const partnerId = resolvePartnerId(user, requestedPartnerId);
+    if (!partnerId) throw new BadRequestException('Selecione o parceiro antes de buscar o CPF');
+    const digits = document.replace(/\D/g, '');
+    if (digits.length !== 11) throw new BadRequestException('Informe um CPF com 11 dígitos');
+
+    const clients = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM clients
+      WHERE "partnerId" = ${partnerId}
+      AND regexp_replace(document, '\\D', '', 'g') = ${digits}
+    `;
+    if (!clients.length) return [];
+
+    return this.prisma.sale.findMany({
+      where: {
+        partnerId,
+        clientId: { in: clients.map((client) => client.id) },
+        reviewStatus: { notIn: [SaleReviewStatus.DRAFT, SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED] },
+        status: { notIn: [SaleStatus.CANCELLED, SaleStatus.REJECTED] },
+      },
+      select: {
+        id: true,
+        protocol: true,
+        createdAt: true,
+        value: true,
+        newNumber: true,
+        simType: true,
+        isVirginChip: true,
+        chipIccid: true,
+        deviceImei: true,
+        deviceEid: true,
+        devicePlatform: true,
+        contractFormat: true,
+        isPortability: true,
+        portabilityNumber: true,
+        donorOperator: true,
+        branchId: true,
+        operatorId: true,
+        planId: true,
+        operator: { select: { id: true, name: true } },
+        plan: { select: { id: true, name: true, price: true } },
+        client: true,
+        documents: {
+          select: { id: true, name: true, type: true, mimeType: true, size: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+  }
+
   async create(dto: CreateSaleDto, user: AuthUser) {
     const partnerId = resolvePartnerId(user, dto.partnerId);
     if (!partnerId) throw new ForbiddenException('Parceiro é obrigatório');
     const branchId = resolveBranchId(user, dto.branchId);
 
-    if (!dto.clientId && !dto.client) {
+    let upgradeSource: {
+      id: string;
+      documents: Array<{
+        name: string;
+        type: DocumentType;
+        purpose: DocumentPurpose;
+        url: string;
+        mimeType: string;
+        size: number;
+      }>;
+    } | null = null;
+    let clientId = dto.clientId;
+
+    if (dto.isUpgrade) {
+      if (!dto.upgradeOfSaleId) {
+        throw new BadRequestException('Selecione a venda anterior do upgrade');
+      }
+      const source = await this.prisma.sale.findUnique({
+        where: { id: dto.upgradeOfSaleId },
+        include: { documents: true },
+      });
+      if (!source || source.partnerId !== partnerId) {
+        throw new BadRequestException('Venda anterior não encontrada para este parceiro');
+      }
+      if (
+        source.reviewStatus === SaleReviewStatus.DRAFT
+        || source.reviewStatus === SaleReviewStatus.REJECTED
+        || source.reviewStatus === SaleReviewStatus.CANCELLED
+        || source.status === SaleStatus.CANCELLED
+        || source.status === SaleStatus.REJECTED
+      ) {
+        throw new BadRequestException('A venda anterior não pode ser usada em um upgrade');
+      }
+      upgradeSource = source;
+      clientId = source.clientId;
+      if (dto.client) {
+        await this.prisma.client.update({
+          where: { id: source.clientId },
+          data: {
+            name: dto.client.name,
+            document: dto.client.document.replace(/\D/g, ''),
+            documentType: dto.client.documentType ?? 'CPF',
+            rg: dto.client.rg,
+            email: dto.client.email,
+            phone: dto.client.phone,
+            address: dto.client.address,
+            addressNumber: dto.client.addressNumber,
+            complement: dto.client.complement,
+            neighborhood: dto.client.neighborhood,
+            city: dto.client.city,
+            state: dto.client.state,
+            zipCode: dto.client.zipCode,
+          },
+        });
+      }
+    }
+
+    if (!clientId && !dto.client) {
       throw new BadRequestException('Informe o cliente ou os dados para cadastro');
     }
 
@@ -242,8 +356,6 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         throw new BadRequestException('Telefone de contato deve ser diferente da linha vendida');
       }
     }
-
-    let clientId = dto.clientId;
 
     if (!clientId && dto.client) {
       if (dto.newNumber) {
@@ -372,6 +484,8 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         commissionValue: amount,
         isPortability: dto.isPortability ?? false,
         isVirginChip,
+        isUpgrade: Boolean(upgradeSource),
+        upgradeOfSaleId: upgradeSource?.id,
         simType: dto.simType ?? SaleSimType.CHIP,
         deviceImei,
         deviceEid,
@@ -386,7 +500,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           create: {
             actorId: user.id,
             actorName: user.name,
-            action: 'Venda criada como rascunho',
+            action: upgradeSource ? 'Upgrade de plano criado como rascunho' : 'Venda criada como rascunho',
             toReviewStatus: SaleReviewStatus.DRAFT,
           },
         },
@@ -400,6 +514,17 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
+    if (upgradeSource) {
+      await this.copyUpgradeDocuments(upgradeSource.documents, sale.id, clientId, user.id);
+      const copiedTypes = new Set(upgradeSource.documents.map((document) => document.type));
+      const requiredDocuments = getRequiredDocumentsForSale(dto.simType ?? SaleSimType.CHIP)
+        .map((document) => ({ ...document, fulfilled: copiedTypes.has(document.type) }));
+      await this.prisma.sale.update({
+        where: { id: sale.id },
+        data: { requiredDocuments: requiredDocuments as Prisma.InputJsonValue },
+      });
+    }
+
     await this.auditService.log({
       userId: user.id,
       action: 'CREATE',
@@ -410,6 +535,49 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
 
     this.eventsGateway.emitToPartner(partnerId, 'sale:created', sale);
     return sale;
+  }
+
+  private async copyUpgradeDocuments(
+    documents: Array<{
+      name: string;
+      type: DocumentType;
+      purpose: DocumentPurpose;
+      url: string;
+      mimeType: string;
+      size: number;
+    }>,
+    saleId: string,
+    clientId: string,
+    uploadedBy: string,
+  ) {
+    const uploadDir = process.env.UPLOAD_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './uploads';
+    if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
+    for (const document of documents) {
+      if (!document.url) continue;
+      let url = document.url;
+      const match = document.url.match(/(?:^|\/)uploads\/([^/?#]+)$/);
+      if (match) {
+        const sourcePath = join(uploadDir, match[1]);
+        if (existsSync(sourcePath)) {
+          const filename = `${randomUUID()}${extname(match[1])}`;
+          copyFileSync(sourcePath, join(uploadDir, filename));
+          url = `/uploads/${filename}`;
+        }
+      }
+      await this.prisma.document.create({
+        data: {
+          name: document.name,
+          type: document.type,
+          purpose: document.purpose,
+          url,
+          mimeType: document.mimeType,
+          size: document.size,
+          saleId,
+          clientId,
+          uploadedBy,
+        },
+      });
+    }
   }
 
   async update(id: string, dto: UpdateSaleDto, user: AuthUser) {
@@ -1135,9 +1303,10 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     partner: { name: string };
     newNumber?: string | null;
     client: { name: string };
+    isUpgrade?: boolean;
   }) {
     const lineDigits = String(sale.newNumber || '').replace(/\D/g, '') || 'semlinha';
-    const raw = `${sale.client.name} ${lineDigits}`;
+    const raw = `${sale.isUpgrade ? 'Upgrade ' : ''}${sale.client.name} ${lineDigits}`;
     return this.sanitizeTaskSubject(raw);
   }
 
@@ -1177,6 +1346,8 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     branch?: { name: string } | null;
     operator: { name: string };
     plan: { name: string };
+    isUpgrade?: boolean;
+    upgradeOfSale?: { plan?: { name: string } | null } | null;
     campaign?: { title: string } | null;
     createdBy: { name: string; email: string };
     client: {
@@ -1210,6 +1381,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     const lines = [
       'DADOS DA VENDA Luxus Parceiros',
       `Protocolo ${sale.protocol}`,
+      sale.isUpgrade
+        ? `Upgrade de plano${sale.upgradeOfSale?.plan?.name ? ` ${sale.upgradeOfSale.plan.name}` : ''} para ${sale.plan.name}`
+        : null,
       `Parceiro ${sale.partner.name}`,
       `Loja ${sale.branch?.name ?? 'Matriz'}`,
       `Operadora ${sale.operator.name}`,
@@ -1363,7 +1537,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         partner: { select: { name: true } }, branch: { select: { name: true } },
         client: true, operator: { select: { name: true } }, plan: { select: { name: true } },
         campaign: { select: { title: true } },
-        createdBy: { select: { name: true, email: true } }, documents: true,
+        createdBy: { select: { name: true, email: true } },
+        documents: true,
+        upgradeOfSale: { select: { plan: { select: { name: true } } } },
       },
     });
     if (!sale?.taskResponsibleId || !sale.taskDeadline) {

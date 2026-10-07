@@ -151,6 +151,16 @@ export class CreateSaleDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsBoolean()
+  isUpgrade?: boolean;
+
+  @ApiPropertyOptional({ description: 'Venda anterior quando a nova venda é um upgrade de plano' })
+  @ValidateIf((o) => o.isUpgrade === true)
+  @IsUUID()
+  upgradeOfSaleId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   notes?: string;
 }

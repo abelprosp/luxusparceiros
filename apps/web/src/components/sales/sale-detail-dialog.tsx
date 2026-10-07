@@ -158,6 +158,8 @@ interface SaleDetail {
   chipIccid?: string | null;
   isVirginChip: boolean;
   simType?: 'CHIP' | 'ESIM';
+  isUpgrade?: boolean;
+  upgradeOfSale?: { id: string; protocol: string; plan?: { name: string } | null } | null;
   deviceImei?: string | null;
   deviceEid?: string | null;
   devicePlatform?: 'IOS' | 'ANDROID' | null;
@@ -1359,6 +1361,14 @@ export function SaleDetailDialog({
                     {!isPartnerScoped && <DetailRow label="Parceiro" value={sale.partner?.name} />}
                     <DetailRow label="Operadora" value={sale.operator?.name} />
                     <DetailRow label="Plano" value={sale.plan?.name} />
+                    {sale.isUpgrade && (
+                      <DetailRow
+                        label="Upgrade"
+                        value={sale.upgradeOfSale
+                          ? `${sale.upgradeOfSale.plan?.name ?? 'plano anterior'} · ${sale.upgradeOfSale.protocol}`
+                          : 'Sim'}
+                      />
+                    )}
                     <DetailRow label="Valor" value={formatCurrency(Number(sale.value))} />
                     {!isPartnerScoped && sale.commissionValue != null && (
                       <DetailRow label="Comissão" value={formatCurrency(Number(sale.commissionValue))} />

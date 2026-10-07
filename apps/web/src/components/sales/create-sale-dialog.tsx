@@ -66,6 +66,54 @@ const DONOR_OPERATORS: { value: DonorOperator; label: string }[] = [
   { value: DonorOperator.OTHER, label: 'Outras' },
 ];
 
+interface PreviousSale {
+  id: string;
+  protocol: string;
+  createdAt: string;
+  value: number | string;
+  newNumber?: string | null;
+  simType?: 'CHIP' | 'ESIM';
+  isVirginChip: boolean;
+  chipIccid?: string | null;
+  deviceImei?: string | null;
+  deviceEid?: string | null;
+  devicePlatform?: 'IOS' | 'ANDROID' | null;
+  contractFormat?: ContractFormat | null;
+  isPortability: boolean;
+  portabilityNumber?: string | null;
+  donorOperator?: DonorOperator | null;
+  branchId?: string | null;
+  operatorId: string;
+  planId: string;
+  operator?: { name: string };
+  plan?: { name: string; price?: number };
+  client: {
+    id: string;
+    name: string;
+    document: string;
+    rg?: string | null;
+    email?: string | null;
+    phone: string;
+    address?: string | null;
+    addressNumber?: string | null;
+    complement?: string | null;
+    neighborhood?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zipCode?: string | null;
+  };
+  documents: { id: string; name: string; type: DocumentType }[];
+}
+
+const PREVIOUS_DOC_LABELS: Record<string, string> = {
+  [DocumentType.CPF]: 'Foto do CPF',
+  [DocumentType.RG]: 'Foto do RG',
+  [DocumentType.CHIP_PHOTO]: 'Foto do chip',
+  [DocumentType.DEVICE_SCREEN]: 'Foto da tela do aparelho',
+  [DocumentType.CONTRACT]: 'Contrato',
+  [DocumentType.OTHER]: 'Anexo',
+};
+
 interface CreateSaleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -105,6 +153,11 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
   const [isPortability, setIsPortability] = useState(false);
   const [portabilityNumber, setPortabilityNumber] = useState('');
   const [donorOperator, setDonorOperator] = useState<DonorOperator | ''>('');
+  const [isUpgrade, setIsUpgrade] = useState(false);
+  const [upgradeCpf, setUpgradeCpf] = useState('');
+  const [previousSales, setPreviousSales] = useState<PreviousSale[]>([]);
+  const [upgradeSale, setUpgradeSale] = useState<PreviousSale | null>(null);
+  const [searchingUpgrade, setSearchingUpgrade] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -193,6 +246,82 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     setIsPortability(false);
     setPortabilityNumber('');
     setDonorOperator('');
+    setIsUpgrade(false);
+    setUpgradeCpf('');
+    setPreviousSales([]);
+    setUpgradeSale(null);
+  };
+
+  const hasPreviousDocument = (type: DocumentType) =>
+    Boolean(upgradeSale?.documents.some((document) => document.type === type));
+
+  const applyUpgradeSale = (sale: PreviousSale) => {
+    setUpgradeSale(sale);
+    setClient({
+      name: sale.client.name ?? '',
+      document: sale.client.document ?? '',
+      rg: sale.client.rg ?? '',
+      email: sale.client.email ?? '',
+      phone: sale.client.phone ?? '',
+      address: sale.client.address ?? '',
+      addressNumber: sale.client.addressNumber ?? '',
+      complement: sale.client.complement ?? '',
+      neighborhood: sale.client.neighborhood ?? '',
+      city: sale.client.city ?? '',
+      state: sale.client.state ?? '',
+      zipCode: (sale.client.zipCode ?? '').replace(/\D/g, ''),
+    });
+    setOperatorId(sale.operatorId);
+    setPlanId(sale.planId);
+    setValue(String(sale.plan?.price ?? sale.value ?? ''));
+    setNewNumber((sale.newNumber ?? '').replace(/\D/g, ''));
+    setSimType(sale.simType === 'ESIM' ? 'ESIM' : 'CHIP');
+    setDeviceImei(sale.deviceImei ?? '');
+    setDeviceEid(sale.deviceEid ?? '');
+    setDevicePlatform(sale.devicePlatform ?? '');
+    setIsVirginChip(Boolean(sale.isVirginChip));
+    setChipIccid(sale.chipIccid ?? '');
+    setChipPhoto(null);
+    setScreenPhoto(null);
+    setCpfPhoto(null);
+    setRgPhoto(null);
+    setContractFormat(sale.contractFormat ?? '');
+    setIsPortability(Boolean(sale.isPortability));
+    setPortabilityNumber((sale.portabilityNumber ?? '').replace(/\D/g, ''));
+    setDonorOperator(sale.donorOperator ?? '');
+    if (sale.branchId) setBranchId(sale.branchId);
+  };
+
+  const searchUpgradeSales = async () => {
+    if (!partnerId) {
+      toast({ title: 'Selecione o parceiro antes de buscar o CPF', variant: 'destructive' });
+      return;
+    }
+    const digits = upgradeCpf.replace(/\D/g, '');
+    if (digits.length !== 11) {
+      toast({ title: 'Informe um CPF com 11 dígitos', variant: 'destructive' });
+      return;
+    }
+    setSearchingUpgrade(true);
+    try {
+      const rows = await api<PreviousSale[]>(
+        `/sales/previous?document=${digits}&partnerId=${encodeURIComponent(partnerId)}`,
+      );
+      setPreviousSales(rows);
+      if (rows.length === 1) applyUpgradeSale(rows[0]);
+      else setUpgradeSale(null);
+      if (!rows.length) {
+        toast({ title: 'Nenhuma venda encontrada para este CPF', variant: 'destructive' });
+      }
+    } catch (error) {
+      toast({
+        title: 'Não foi possível buscar o CPF',
+        description: error instanceof Error ? error.message : 'Falha',
+        variant: 'destructive',
+      });
+    } finally {
+      setSearchingUpgrade(false);
+    }
   };
 
   const handleSave = async () => {
@@ -209,13 +338,14 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     if (!client.phone.trim()) errors.push('Telefone de contato');
     else if (client.phone.replace(/\D/g, '').length < 10) errors.push('Telefone com ao menos 10 dígitos');
     const isEsim = simType === 'ESIM';
-    if (!isEsim && !chipPhoto) errors.push('Foto do chip');
+    if (isUpgrade && !upgradeSale) errors.push('Venda anterior do upgrade');
+    if (!isEsim && !chipPhoto && !hasPreviousDocument(DocumentType.CHIP_PHOTO)) errors.push('Foto do chip');
     if (isEsim && deviceImei.length !== 15) errors.push('IMEI com 15 dígitos');
     if (isEsim && deviceEid.length !== 32) errors.push('EID com 32 dígitos');
     if (isEsim && !devicePlatform) errors.push('iOS ou Android');
-    if (isEsim && !screenPhoto) errors.push('Foto da tela do aparelho');
-    if (!cpfPhoto) errors.push('Foto do CPF');
-    if (!rgPhoto) errors.push('Foto do RG');
+    if (isEsim && !screenPhoto && !hasPreviousDocument(DocumentType.DEVICE_SCREEN)) errors.push('Foto da tela do aparelho');
+    if (!cpfPhoto && !hasPreviousDocument(DocumentType.CPF)) errors.push('Foto do CPF');
+    if (!rgPhoto && !hasPreviousDocument(DocumentType.RG)) errors.push('Foto do RG');
     if (!isEsim && isVirginChip && !chipIccid) errors.push('ICCID do chip');
     if (isPortability && !donorOperator) errors.push('Operadora doadora');
     if (isPortability && !portabilityNumber.trim()) errors.push('Número a ser portado');
@@ -252,7 +382,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       toast({ title: 'Preencha nome, CPF e telefone do cliente', variant: 'destructive' });
       return;
     }
-    if (!isEsim && !chipPhoto) {
+    if (!isEsim && !chipPhoto && !hasPreviousDocument(DocumentType.CHIP_PHOTO)) {
       toast({ title: 'Anexe a foto do chip', variant: 'destructive' });
       return;
     }
@@ -268,15 +398,15 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       toast({ title: 'Informe se o aparelho é iOS ou Android', variant: 'destructive' });
       return;
     }
-    if (isEsim && !screenPhoto) {
+    if (isEsim && !screenPhoto && !hasPreviousDocument(DocumentType.DEVICE_SCREEN)) {
       toast({ title: 'Anexe a foto da tela do aparelho', variant: 'destructive' });
       return;
     }
-    if (!cpfPhoto) {
+    if (!cpfPhoto && !hasPreviousDocument(DocumentType.CPF)) {
       toast({ title: 'Anexe a foto do CPF', variant: 'destructive' });
       return;
     }
-    if (!rgPhoto) {
+    if (!rgPhoto && !hasPreviousDocument(DocumentType.RG)) {
       toast({ title: 'Anexe a foto do RG', variant: 'destructive' });
       return;
     }
@@ -328,6 +458,8 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
           chipIccid: isEsim ? undefined : (isVirginChip ? normalizeIccid(chipIccid) : normalizeIccid(chipIccid) || undefined),
           contractFormat,
           isPortability,
+          isUpgrade: Boolean(upgradeSale),
+          upgradeOfSaleId: upgradeSale?.id,
           portabilityNumber: isPortability ? portabilityNumber : undefined,
           donorOperator: isPortability ? donorOperator : undefined,
           client: {
@@ -346,8 +478,8 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
       if (isEsim && screenPhoto) {
         await uploadFile(screenPhoto, DocumentType.DEVICE_SCREEN, { saleId: sale.id, clientId });
       }
-      await uploadFile(cpfPhoto, DocumentType.CPF, { saleId: sale.id, clientId });
-      await uploadFile(rgPhoto, DocumentType.RG, { saleId: sale.id, clientId });
+      if (cpfPhoto) await uploadFile(cpfPhoto, DocumentType.CPF, { saleId: sale.id, clientId });
+      if (rgPhoto) await uploadFile(rgPhoto, DocumentType.RG, { saleId: sale.id, clientId });
       await api(`/sales/${sale.id}/submit`, { method: 'POST' });
       toast({
         title: 'Venda enviada para análise',
@@ -397,6 +529,8 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                     onValueChange={(value) => {
                       setPartnerId(value);
                       setBranchId('');
+                      setPreviousSales([]);
+                      setUpgradeSale(null);
                     }}
                   >
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
@@ -429,6 +563,79 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                   </p>
                 </div>
               )}
+              <div className="space-y-3 sm:col-span-2 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="sale-upgrade"
+                    checked={isUpgrade}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setIsUpgrade(checked);
+                      if (!checked) {
+                        setPreviousSales([]);
+                        setUpgradeSale(null);
+                      }
+                    }}
+                  />
+                  <Label htmlFor="sale-upgrade">Upgrade</Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Use quando o cliente já tem uma linha e vai aumentar ou diminuir o plano. Os dados e os anexos da venda anterior são trazidos, e o plano pode ser trocado.
+                </p>
+                {isUpgrade && (
+                  <div className="space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                      <div className="flex-1 space-y-2">
+                        <Label>CPF da venda anterior *</Label>
+                        <DigitCountdownInput
+                          value={upgradeCpf}
+                          onChange={setUpgradeCpf}
+                          requiredDigits={11}
+                          formatDisplay={formatCpfDigits}
+                          hintLabel="CPF"
+                          placeholder="000.000.000-00"
+                        />
+                      </div>
+                      <Button type="button" variant="outline" onClick={() => void searchUpgradeSales()} disabled={searchingUpgrade}>
+                        {searchingUpgrade ? 'Buscando...' : 'Buscar'}
+                      </Button>
+                    </div>
+                    {previousSales.length > 1 && (
+                      <div className="space-y-2">
+                        {previousSales.map((sale) => (
+                          <button
+                            key={sale.id}
+                            type="button"
+                            className={`w-full rounded-md border px-3 py-2 text-left text-sm ${upgradeSale?.id === sale.id ? 'border-primary bg-primary/10' : ''}`}
+                            onClick={() => applyUpgradeSale(sale)}
+                          >
+                            <span className="font-medium">{sale.plan?.name ?? 'Plano'}</span>
+                            <span className="text-muted-foreground"> · {sale.protocol} · {sale.operator?.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {upgradeSale && (
+                      <div className="space-y-1 text-sm">
+                        <p>
+                          Venda anterior: <span className="font-medium">{upgradeSale.protocol}</span>
+                          {upgradeSale.plan?.name ? ` · plano ${upgradeSale.plan.name}` : ''}. Troque o plano abaixo.
+                        </p>
+                        {upgradeSale.documents.length > 0 && (
+                          <ul className="text-xs text-muted-foreground">
+                            {upgradeSale.documents.map((document) => (
+                              <li key={document.id}>
+                                {PREVIOUS_DOC_LABELS[document.type] ?? 'Anexo'}: {document.name}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="space-y-2">
                 <Label>Operadora *</Label>
                 <Select value={operatorId} onValueChange={(v) => { setOperatorId(v); setPlanId(''); setValue(''); }}>
@@ -556,12 +763,18 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                 </div>
               </div>
               <div className="space-y-2 sm:col-span-2">
-                <Label>Foto da tela do aparelho *</Label>
+                <Label>Foto da tela do aparelho {hasPreviousDocument(DocumentType.DEVICE_SCREEN) ? '' : '*'}</Label>
+                {hasPreviousDocument(DocumentType.DEVICE_SCREEN) ? (
+                  <p className="text-xs text-muted-foreground">
+                    A foto da venda anterior será usada: {upgradeSale?.documents.find((document) => document.type === DocumentType.DEVICE_SCREEN)?.name}
+                  </p>
+                ) : (
                 <Input
                   type="file"
                   accept="*/*"
                   onChange={(e) => setScreenPhoto(e.target.files?.[0] ?? null)}
                 />
+                )}
                 <p className="text-xs text-muted-foreground">
                   Foto da tela Sobre do celular, onde aparecem o IMEI e o EID.
                 </p>
@@ -598,12 +811,18 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                 </div>
               )}
               <div className="space-y-2 sm:col-span-2">
-                <Label>Foto do chip *</Label>
+                <Label>Foto do chip {hasPreviousDocument(DocumentType.CHIP_PHOTO) ? '' : '*'}</Label>
+                {hasPreviousDocument(DocumentType.CHIP_PHOTO) ? (
+                  <p className="text-xs text-muted-foreground">
+                    A foto da venda anterior será usada: {upgradeSale?.documents.find((document) => document.type === DocumentType.CHIP_PHOTO)?.name}
+                  </p>
+                ) : (
                 <Input
                   type="file"
                   accept="*/*"
                   onChange={(e) => setChipPhoto(e.target.files?.[0] ?? null)}
                 />
+                )}
               </div>
               </>
               )}
@@ -716,20 +935,32 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                 />
               </div>
               <div className="space-y-2 sm:col-span-2">
-                <Label>Foto do CPF *</Label>
+                <Label>Foto do CPF {hasPreviousDocument(DocumentType.CPF) ? '' : '*'}</Label>
+                {hasPreviousDocument(DocumentType.CPF) ? (
+                  <p className="text-xs text-muted-foreground">
+                    A foto da venda anterior será usada: {upgradeSale?.documents.find((document) => document.type === DocumentType.CPF)?.name}
+                  </p>
+                ) : (
                 <Input
                   type="file"
                   accept="*/*"
                   onChange={(e) => setCpfPhoto(e.target.files?.[0] ?? null)}
                 />
+                )}
               </div>
               <div className="space-y-2 sm:col-span-2">
-                <Label>Foto do RG *</Label>
+                <Label>Foto do RG {hasPreviousDocument(DocumentType.RG) ? '' : '*'}</Label>
+                {hasPreviousDocument(DocumentType.RG) ? (
+                  <p className="text-xs text-muted-foreground">
+                    A foto da venda anterior será usada: {upgradeSale?.documents.find((document) => document.type === DocumentType.RG)?.name}
+                  </p>
+                ) : (
                 <Input
                   type="file"
                   accept="*/*"
                   onChange={(e) => setRgPhoto(e.target.files?.[0] ?? null)}
                 />
+                )}
               </div>
             </div>
           </section>

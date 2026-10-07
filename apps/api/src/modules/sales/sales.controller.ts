@@ -53,6 +53,17 @@ export class SalesController {
     });
   }
 
+  @Get('previous')
+  @RequirePermissions(PERMISSIONS.SALES_READ)
+  @ApiOperation({ summary: 'Buscar vendas anteriores pelo CPF para upgrade de plano' })
+  findPrevious(
+    @CurrentUser() user: AuthUser,
+    @Query('document') document?: string,
+    @Query('partnerId') partnerId?: string,
+  ) {
+    return this.salesService.findPreviousByDocument(user, document ?? '', partnerId);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.SALES_READ)
   @ApiOperation({ summary: 'Obter venda por ID' })

@@ -49,6 +49,7 @@ interface Sale {
   taskSyncError?: string | null;
   taskDemandId?: string;
   taskHandoff?: boolean;
+  isUpgrade?: boolean;
   contractStage: SaleContractStage;
   taskIsBeingEdited?: boolean;
   taskEditorName?: string;
@@ -433,6 +434,7 @@ export default function VendasPage() {
                       <TableCell className="font-mono text-sm">
                         <div className="flex items-center gap-2">
                           <span>{s.protocol}</span>
+                          {s.isUpgrade && <span className="text-xs font-sans text-primary">Upgrade</span>}
                           {hasUnreadTaskMessage(s.id, notifications) && <TaskMessageBadge onClick={() => setMessageSale(s)} />}
                         </div>
                       </TableCell>

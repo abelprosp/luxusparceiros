@@ -626,6 +626,10 @@ model Sale {
   commissionRate    Decimal    @default(0) @db.Decimal(5, 2)
   isPortability     Boolean    @default(false)
   isVirginChip      Boolean    @default(false)
+  isUpgrade         Boolean    @default(false)
+  upgradeOfSaleId   String?
+  upgradeOfSale     Sale?      @relation("SaleUpgrade", fields: [upgradeOfSaleId], references: [id], onDelete: SetNull)
+  upgrades          Sale[]     @relation("SaleUpgrade")
   simType           SaleSimType @default(CHIP)
   deviceImei        String?
   deviceEid         String?
@@ -656,6 +660,7 @@ model Sale {
   @@index([taskSyncStatus, taskNextRetryAt])
   @@index([contractStage])
   @@index([signedContractSyncStatus, signedContractNextRetryAt])
+  @@index([upgradeOfSaleId])
   @@index([createdAt])
   @@index([protocol])
   @@map("sales")
