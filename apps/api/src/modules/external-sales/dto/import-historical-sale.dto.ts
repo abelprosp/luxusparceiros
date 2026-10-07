@@ -132,7 +132,7 @@ export class ImportHistoricalSaleDto {
   @IsNumber()
   value: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Data em que a demanda foi aberta no Luxus Task' })
   @IsDateString()
   soldAt: string;
 

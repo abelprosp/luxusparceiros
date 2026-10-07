@@ -92,7 +92,9 @@ export class HistoricalSalesService {
       saleId,
       clientId,
       admin.id,
+      soldAt,
     );
+    await this.alignDatesWithTask(saleId, clientId, soldAt, activatedAt);
 
     await this.audit.log({
       userId: admin.id,
@@ -169,6 +171,7 @@ export class HistoricalSalesService {
           clientId: clientResult.client.id,
           status: LineStatus.ACTIVATED,
           activatedAt,
+          createdAt: soldAt,
         },
       });
 
@@ -213,6 +216,7 @@ export class HistoricalSalesService {
               action: `Venda copiada do Luxus Task (${dto.taskProtocol}) sem reabrir a demanda`,
               toReviewStatus: SaleReviewStatus.APPROVED,
               details: 'Cadastro somente no Luxus Parceiros. Nenhum dado foi enviado de volta ao Luxus Task.',
+              createdAt: soldAt,
             },
           },
         },
@@ -377,6 +381,7 @@ export class HistoricalSalesService {
         address: dto.client.address?.trim() || null,
         partnerId,
         branchId,
+        createdAt: new Date(dto.soldAt),
       },
       select: { id: true, document: true },
     });
@@ -398,17 +403,52 @@ export class HistoricalSalesService {
     if (sale) throw new ConflictException(`Já existe venda para essa linha (${sale.protocol})`);
   }
 
+  private async alignDatesWithTask(saleId: string, clientId: string, soldAt: Date, activatedAt: Date) {
+    const sale = await this.prisma.sale.update({
+      where: { id: saleId },
+      data: {
+        createdAt: soldAt,
+        submittedAt: soldAt,
+        reviewedAt: activatedAt,
+        approvedAt: activatedAt,
+        activatedAt,
+        contractStageUpdatedAt: activatedAt,
+      },
+      select: { lineId: true },
+    });
+    await this.prisma.saleTimeline.updateMany({
+      where: { saleId, actorName: 'Importação histórica' },
+      data: { createdAt: soldAt },
+    });
+    await this.prisma.document.updateMany({
+      where: { saleId },
+      data: { createdAt: soldAt },
+    });
+    await this.prisma.client.updateMany({
+      where: { id: clientId, createdAt: { gt: soldAt } },
+      data: { createdAt: soldAt },
+    });
+    if (sale.lineId) {
+      await this.prisma.line.updateMany({
+        where: { id: sale.lineId, createdAt: { gt: soldAt } },
+        data: { createdAt: soldAt, activatedAt },
+      });
+    }
+  }
+
   private async storeAttachments(
     dto: ImportHistoricalSaleDto,
     saleId: string,
     clientId: string,
     uploadedBy: string,
+    soldAt: Date,
   ) {
     const uploadDir =
       this.config.get<string>('UPLOAD_DIR')
       || this.config.get<string>('RAILWAY_VOLUME_MOUNT_PATH')
       || './uploads';
     if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
+    if (!dto.attachments.length) return 0;
 
     let added = 0;
     const fulfilled = new Set<DocumentType>();
@@ -437,6 +477,7 @@ export class HistoricalSalesService {
           clientId,
           saleId,
           uploadedBy,
+          createdAt: soldAt,
         },
       });
       fulfilled.add(classified.type);
