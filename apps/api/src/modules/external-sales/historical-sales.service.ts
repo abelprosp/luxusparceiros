@@ -42,6 +42,7 @@ export class HistoricalSalesService {
     }
     const soldAt = new Date(dto.soldAt);
     const activatedAt = dto.activatedAt ? new Date(dto.activatedAt) : soldAt;
+    const concluded = this.isConcluded(dto.taskStatus);
     if (Number.isNaN(soldAt.getTime()) || Number.isNaN(activatedAt.getTime())) {
       throw new BadRequestException('Data da venda inválida');
     }
@@ -71,7 +72,7 @@ export class HistoricalSalesService {
     let branchName: string | undefined;
 
     if (!existing) {
-      const prepared = await this.prepareRecords(dto, admin.id, lineNumber, soldAt, activatedAt);
+      const prepared = await this.prepareRecords(dto, admin.id, lineNumber, soldAt, activatedAt, concluded);
       partnerCreated = prepared.partnerCreated;
       branchCreated = prepared.branchCreated;
       clientCreated = prepared.clientCreated;
@@ -94,7 +95,7 @@ export class HistoricalSalesService {
       admin.id,
       soldAt,
     );
-    await this.alignDatesWithTask(saleId, clientId, soldAt, activatedAt);
+    await this.alignDatesWithTask(saleId, clientId, soldAt, activatedAt, concluded, dto.taskResponsibleName);
 
     await this.audit.log({
       userId: admin.id,
@@ -133,6 +134,7 @@ export class HistoricalSalesService {
     lineNumber: string,
     soldAt: Date,
     activatedAt: Date,
+    concluded: boolean,
   ) {
     const plan = await this.findPlan(dto.planName, dto.operatorName);
     const partnerResult = await this.findOrCreatePartner(dto);
@@ -160,8 +162,7 @@ export class HistoricalSalesService {
           planId: plan.id,
           partnerId: partnerResult.partner.id,
           clientId: clientResult.client.id,
-          status: LineStatus.ACTIVATED,
-          activatedAt,
+          ...(concluded ? { status: LineStatus.ACTIVATED, activatedAt } : {}),
         },
         create: {
           number: lineNumber,
@@ -169,8 +170,8 @@ export class HistoricalSalesService {
           planId: plan.id,
           partnerId: partnerResult.partner.id,
           clientId: clientResult.client.id,
-          status: LineStatus.ACTIVATED,
-          activatedAt,
+          status: concluded ? LineStatus.ACTIVATED : LineStatus.RESERVED,
+          activatedAt: concluded ? activatedAt : null,
           createdAt: soldAt,
         },
       });
@@ -185,29 +186,34 @@ export class HistoricalSalesService {
           planId: plan.id,
           lineId: line.id,
           createdById: adminId,
-          status: SaleStatus.ACTIVATED,
+          status: concluded ? SaleStatus.ACTIVATED : SaleStatus.IN_ANALYSIS,
           reviewStatus: SaleReviewStatus.APPROVED,
           submittedAt: soldAt,
-          reviewedAt: activatedAt,
+          reviewedAt: concluded ? activatedAt : soldAt,
           reviewedById: adminId,
           taskDemandId: dto.taskDemandId,
           taskProtocol: dto.taskProtocol,
-          taskStatus: 'concluido',
+          taskStatus: concluded ? 'concluido' : (dto.taskStatus || 'em_andamento'),
+          taskResponsibleName: dto.taskResponsibleName?.trim() || null,
           taskSyncStatus: SaleTaskSyncStatus.SYNCED,
           taskLastSyncAt: new Date(),
           taskSyncError: null,
-          contractStage: SaleContractStage.COMPLETED,
-          contractStageUpdatedAt: activatedAt,
+          contractStage: concluded ? SaleContractStage.COMPLETED : SaleContractStage.TASK_PROCESSING,
+          contractStageUpdatedAt: concluded ? activatedAt : soldAt,
           signedContractSyncStatus: SaleTaskSyncStatus.NOT_READY,
           value: dto.value,
           commissionRate,
           commissionValue: amount,
           isVirginChip: false,
+          isUpgrade: Boolean(dto.isUpgrade),
           newNumber: lineNumber,
-          notes: `Cópia histórica da demanda ${dto.taskProtocol}. A demanda permanece como está no Luxus Task e não foi reaberta.`,
+          notes: [
+            `Cópia histórica da demanda ${dto.taskProtocol}. A demanda permanece como está no Luxus Task e não foi reaberta.`,
+            dto.extraNote?.trim(),
+          ].filter(Boolean).join('\n'),
           requiredDocuments: requiredDocuments as unknown as Prisma.InputJsonValue,
-          approvedAt: activatedAt,
-          activatedAt,
+          approvedAt: concluded ? activatedAt : soldAt,
+          activatedAt: concluded ? activatedAt : null,
           createdAt: soldAt,
           timeline: {
             create: {
@@ -377,7 +383,7 @@ export class HistoricalSalesService {
         documentType: DocumentType.CPF,
         rg: dto.client.rg?.trim() || null,
         email: dto.client.email?.trim() || null,
-        phone: onlyDigits(dto.client.phone),
+        phone: onlyDigits(dto.client.phone).length >= 8 ? onlyDigits(dto.client.phone) : 'sem telefone',
         address: dto.client.address?.trim() || null,
         partnerId,
         branchId,
@@ -403,16 +409,32 @@ export class HistoricalSalesService {
     if (sale) throw new ConflictException(`Já existe venda para essa linha (${sale.protocol})`);
   }
 
-  private async alignDatesWithTask(saleId: string, clientId: string, soldAt: Date, activatedAt: Date) {
+  private isConcluded(status?: string) {
+    const value = (status || 'concluido').trim().toLowerCase();
+    return value === 'concluido' || value === 'concluída' || value === 'completed' || value === 'finalizado';
+  }
+
+  private async alignDatesWithTask(
+    saleId: string,
+    clientId: string,
+    soldAt: Date,
+    activatedAt: Date,
+    concluded: boolean,
+    responsibleName?: string,
+  ) {
     const sale = await this.prisma.sale.update({
       where: { id: saleId },
       data: {
         createdAt: soldAt,
         submittedAt: soldAt,
-        reviewedAt: activatedAt,
-        approvedAt: activatedAt,
-        activatedAt,
-        contractStageUpdatedAt: activatedAt,
+        reviewedAt: concluded ? activatedAt : soldAt,
+        approvedAt: concluded ? activatedAt : soldAt,
+        activatedAt: concluded ? activatedAt : null,
+        status: concluded ? SaleStatus.ACTIVATED : SaleStatus.IN_ANALYSIS,
+        contractStage: concluded ? SaleContractStage.COMPLETED : SaleContractStage.TASK_PROCESSING,
+        contractStageUpdatedAt: concluded ? activatedAt : soldAt,
+        taskStatus: concluded ? 'concluido' : 'em_andamento',
+        ...(responsibleName?.trim() ? { taskResponsibleName: responsibleName.trim() } : {}),
       },
       select: { lineId: true },
     });
@@ -431,7 +453,7 @@ export class HistoricalSalesService {
     if (sale.lineId) {
       await this.prisma.line.updateMany({
         where: { id: sale.lineId, createdAt: { gt: soldAt } },
-        data: { createdAt: soldAt, activatedAt },
+        data: concluded ? { createdAt: soldAt, activatedAt } : { createdAt: soldAt },
       });
     }
   }

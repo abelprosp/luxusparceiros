@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsNumber,
@@ -58,10 +59,10 @@ export class HistoricalClientDto {
   @IsEmail()
   email?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  @MinLength(8)
-  phone: string;
+  phone?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -140,6 +141,26 @@ export class ImportHistoricalSaleDto {
   @IsOptional()
   @IsDateString()
   activatedAt?: string;
+
+  @ApiPropertyOptional({ description: 'Status atual da demanda no Luxus Task. Não altera a demanda.' })
+  @IsOptional()
+  @IsString()
+  taskStatus?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  taskResponsibleName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isUpgrade?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  extraNote?: string;
 
   @ApiProperty({ type: [HistoricalAttachmentDto] })
   @IsArray()
