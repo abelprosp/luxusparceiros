@@ -144,6 +144,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       limit: number;
       search?: string;
       status?: SaleStatus;
+      progress?: 'completed' | 'in_progress';
+      createdFrom?: string;
+      createdTo?: string;
       partnerId?: string;
       branchId?: string;
       campaignId?: string;
@@ -158,6 +161,41 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (branchId) where.branchId = branchId;
     if (params.campaignId) where.campaignId = params.campaignId;
     if (params.status) where.status = params.status;
+    if (params.progress === 'completed') {
+      where.AND = [
+        ...((where.AND as Prisma.SaleWhereInput[]) || []),
+        {
+          OR: [
+            { contractStage: SaleContractStage.COMPLETED },
+            { status: SaleStatus.ACTIVATED },
+          ],
+        },
+      ];
+    } else if (params.progress === 'in_progress') {
+      where.AND = [
+        ...((where.AND as Prisma.SaleWhereInput[]) || []),
+        { contractStage: { not: SaleContractStage.COMPLETED } },
+        { status: { notIn: [SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED] } },
+        {
+          OR: [
+            { taskDemandId: { not: null } },
+            { taskHandoff: true },
+            { taskSyncStatus: { in: [
+              SaleTaskSyncStatus.PENDING,
+              SaleTaskSyncStatus.PROCESSING,
+              SaleTaskSyncStatus.SYNCED,
+              SaleTaskSyncStatus.RETRY,
+            ] } },
+            { reviewStatus: SaleReviewStatus.APPROVED },
+          ],
+        },
+      ];
+    }
+    if (params.createdFrom || params.createdTo) {
+      where.createdAt = {};
+      if (params.createdFrom) where.createdAt.gte = new Date(`${params.createdFrom}T00:00:00.000-03:00`);
+      if (params.createdTo) where.createdAt.lte = new Date(`${params.createdTo}T23:59:59.999-03:00`);
+    }
     // Filtro "turn" legado ignorado — após envio a demanda fica com o Luxus Task.
     if (params.syncError) {
       where.AND = [

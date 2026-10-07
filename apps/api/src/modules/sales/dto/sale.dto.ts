@@ -298,6 +298,21 @@ export class SalesQueryDto extends PaginationDto {
   @Transform(({ value }) => value === true || value === 'true' || value === '1')
   syncError?: boolean;
 
+  @ApiPropertyOptional({ enum: ['completed', 'in_progress'] })
+  @IsOptional()
+  @IsIn(['completed', 'in_progress'])
+  progress?: 'completed' | 'in_progress';
+
+  @ApiPropertyOptional({ description: 'Data inicial da venda (YYYY-MM-DD)' })
+  @IsOptional()
+  @IsDateString()
+  createdFrom?: string;
+
+  @ApiPropertyOptional({ description: 'Data final da venda (YYYY-MM-DD)' })
+  @IsOptional()
+  @IsDateString()
+  createdTo?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()

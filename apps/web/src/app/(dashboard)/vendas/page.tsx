@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, ShoppingCart, Check, X, FileText, MoreHorizontal, Upload, Eye, Pencil, Trash2, MessageSquare, AlertTriangle, ImageIcon, Send } from 'lucide-react';
-import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_REVIEW_STATUS_LABELS, SALE_STATUS_LABELS, saleContractStageLabel, saleTaskUserName } from '@luxus/types';
+import { SaleContractStage, SaleReviewStatus, SaleStatus, DocumentType, PERMISSIONS, SALE_REVIEW_STATUS_LABELS, saleContractStageLabel, saleTaskUserName } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { api, getPaginated } from '@/lib/api';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -109,7 +109,11 @@ export default function VendasPage() {
   const [items, setItems] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [progressFilter, setProgressFilter] = useState('all');
+  const [partnerFilter, setPartnerFilter] = useState('all');
+  const [partners, setPartners] = useState<Array<{ id: string; name: string }>>([]);
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
   const [syncErrorOnly, setSyncErrorOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -169,13 +173,20 @@ export default function VendasPage() {
     setDetailSaleId(saleId);
   };
 
+  const listFilters = {
+    search: search || undefined,
+    progress: progressFilter !== 'all' ? progressFilter : undefined,
+    partnerId: !isPartner && partnerFilter !== 'all' ? partnerFilter : undefined,
+    createdFrom: createdFrom || undefined,
+    createdTo: createdTo || undefined,
+    syncError: syncErrorOnly || undefined,
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await getPaginated<Sale>('/sales', {
-        search: search || undefined,
-        status: statusFilter !== 'all' ? statusFilter : undefined,
-        syncError: syncErrorOnly || undefined,
+        ...listFilters,
         page,
         limit: 15,
       });
@@ -189,7 +200,7 @@ export default function VendasPage() {
         variant: 'destructive',
       });
     } finally { setLoading(false); }
-  }, [search, statusFilter, syncErrorOnly, page, toast]);
+  }, [search, progressFilter, partnerFilter, createdFrom, createdTo, syncErrorOnly, page, toast, isPartner]);
 
   const loadAllForExport = useCallback(async () => {
     const rows: Sale[] = [];
@@ -197,9 +208,7 @@ export default function VendasPage() {
     let exportTotalPages = 1;
     while (exportPage <= exportTotalPages) {
       const res = await getPaginated<Sale>('/sales', {
-        search: search || undefined,
-        status: statusFilter !== 'all' ? statusFilter : undefined,
-        syncError: syncErrorOnly || undefined,
+        ...listFilters,
         page: exportPage,
         limit: 100,
       });
@@ -208,9 +217,16 @@ export default function VendasPage() {
       exportPage += 1;
     }
     return rows;
-  }, [search, statusFilter, syncErrorOnly]);
+  }, [search, progressFilter, partnerFilter, createdFrom, createdTo, syncErrorOnly, isPartner]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (isPartner) return;
+    getPaginated<{ id: string; name: string }>('/partners', { limit: 100, status: 'ACTIVE' })
+      .then((res) => setPartners(res.data))
+      .catch(() => {});
+  }, [isPartner]);
 
   useEffect(() => {
     setItems((prev) => prev.map((sale) => {
@@ -344,20 +360,36 @@ export default function VendasPage() {
   return (
     <DashboardLayout title="Vendas" description={isPartner ? 'Suas vendas registradas' : 'Listagem e gestão de vendas'}>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-3 sm:flex-1 sm:flex-row">
+        <div className="flex flex-col gap-3 sm:flex-1 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="relative flex-1 sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Protocolo, cliente..." className="pl-9" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
           </div>
-          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
-            <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Status" /></SelectTrigger>
+          <Select value={progressFilter} onValueChange={(v) => { setProgressFilter(v); setPage(1); }}>
+            <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Andamento" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
-              {Object.values(SaleStatus).map((s) => (
-                <SelectItem key={s} value={s}>{SALE_STATUS_LABELS[s] ?? s}</SelectItem>
-              ))}
+              <SelectItem value="in_progress">Em andamento</SelectItem>
+              <SelectItem value="completed">Concluído</SelectItem>
             </SelectContent>
           </Select>
+          {!isPartner && (
+            <Select value={partnerFilter} onValueChange={(v) => { setPartnerFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-full sm:w-52"><SelectValue placeholder="Parceiro" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os parceiros</SelectItem>
+                {partners.map((partner) => (
+                  <SelectItem key={partner.id} value={partner.id}>{partner.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">De</span>
+            <Input type="date" className="w-[150px]" value={createdFrom} onChange={(e) => { setCreatedFrom(e.target.value); setPage(1); }} />
+            <span className="text-sm text-muted-foreground">Até</span>
+            <Input type="date" className="w-[150px]" value={createdTo} onChange={(e) => { setCreatedTo(e.target.value); setPage(1); }} />
+          </div>
           <Button
             type="button"
             variant={syncErrorOnly ? 'destructive' : 'outline'}
