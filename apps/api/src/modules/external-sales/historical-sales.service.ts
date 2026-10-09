@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   BranchStatus,
@@ -20,7 +20,7 @@ import { calculatePlanCommission, generateProtocol } from '@luxus/utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { getRequiredDocumentsForSale } from '@/modules/sales/sale-documents.constants';
-import { ImportHistoricalSaleDto } from './dto/import-historical-sale.dto';
+import { ImportHistoricalSaleDto, RehomeHistoricalSaleDto } from './dto/import-historical-sale.dto';
 import { branchDisplayName, classifyHistoricalAttachment, onlyDigits } from './historical-sale.util';
 
 /**
@@ -125,6 +125,114 @@ export class HistoricalSalesService {
       clientCreated,
       attachmentsAdded,
       temporaryPassword,
+    };
+  }
+
+  /**
+   * Tira a venda do parceiro errado e entrega para a empresa do título da demanda.
+   * Não escreve no Luxus Task.
+   */
+  async rehome(dto: RehomeHistoricalSaleDto) {
+    const sale = await this.prisma.sale.findFirst({
+      where: { taskProtocol: dto.taskProtocol },
+      select: {
+        id: true,
+        protocol: true,
+        partnerId: true,
+        branchId: true,
+        clientId: true,
+        lineId: true,
+        simCardId: true,
+        notes: true,
+      },
+    });
+    if (!sale) throw new NotFoundException('Venda histórica não encontrada para essa demanda');
+
+    const admin = await this.prisma.user.findFirst({
+      where: { role: UserRole.ADMIN, isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!admin) throw new BadRequestException('Não há administrador ativo para registrar a correção');
+
+    const partnerResult = await this.findOrCreatePartner({
+      partner: dto.partner,
+    } as ImportHistoricalSaleDto);
+    const branchResult = await this.findOrCreateBranch(
+      partnerResult.partner.id,
+      dto.branchName,
+      partnerResult.partner,
+    );
+
+    const note = dto.note?.trim();
+    const notes = !note || sale.notes?.includes(note)
+      ? sale.notes
+      : [sale.notes?.trim(), note].filter(Boolean).join('\n');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.sale.update({
+        where: { id: sale.id },
+        data: {
+          partnerId: partnerResult.partner.id,
+          branchId: branchResult.branch.id,
+          ...(notes ? { notes } : {}),
+        },
+      });
+      await tx.client.update({
+        where: { id: sale.clientId },
+        data: { partnerId: partnerResult.partner.id, branchId: branchResult.branch.id },
+      });
+      if (sale.lineId) {
+        await tx.line.update({
+          where: { id: sale.lineId },
+          data: { partnerId: partnerResult.partner.id },
+        });
+      }
+      if (sale.simCardId) {
+        await tx.simCard.update({
+          where: { id: sale.simCardId },
+          data: { partnerId: partnerResult.partner.id },
+        });
+      }
+      await tx.commission.updateMany({
+        where: { saleId: sale.id },
+        data: { partnerId: partnerResult.partner.id },
+      });
+    });
+
+    if (sale.branchId && sale.branchId !== branchResult.branch.id) {
+      const [remainingSales, branchUsers, remainingClients] = await Promise.all([
+        this.prisma.sale.count({ where: { branchId: sale.branchId } }),
+        this.prisma.user.count({ where: { branchId: sale.branchId } }),
+        this.prisma.client.count({ where: { branchId: sale.branchId } }),
+      ]);
+      if (remainingSales === 0 && branchUsers === 0 && remainingClients === 0) {
+        await this.prisma.branch.delete({ where: { id: sale.branchId } });
+      }
+    }
+
+    await this.audit.log({
+      userId: admin.id,
+      action: 'UPDATE',
+      module: 'sales',
+      entityId: sale.id,
+      entityType: 'Sale',
+      newData: {
+        historicalRehome: true,
+        taskProtocol: dto.taskProtocol,
+        fromPartnerId: sale.partnerId,
+        toPartnerId: partnerResult.partner.id,
+        partnerCreated: partnerResult.created,
+      },
+    });
+
+    return {
+      saleId: sale.id,
+      protocol: sale.protocol,
+      partnerId: partnerResult.partner.id,
+      partnerName: partnerResult.partner.name,
+      partnerCreated: partnerResult.created,
+      branchName: branchResult.branch.name,
+      temporaryPassword: partnerResult.temporaryPassword,
     };
   }
 

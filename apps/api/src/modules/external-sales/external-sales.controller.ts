@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/co
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '@/common/decorators/public.decorator';
 import { ExternalSalesQueryDto } from './dto/external-sales.dto';
-import { ImportHistoricalSaleDto } from './dto/import-historical-sale.dto';
+import { ImportHistoricalSaleDto, RehomeHistoricalSaleDto } from './dto/import-historical-sale.dto';
 import { ExternalSalesGuard } from './external-sales.guard';
 import { ExternalSalesService } from './external-sales.service';
 import { HistoricalSalesService } from './historical-sales.service';
@@ -30,6 +30,16 @@ export class ExternalSalesController {
   })
   importHistorical(@Body() dto: ImportHistoricalSaleDto) {
     return this.historicalSales.importOne(dto);
+  }
+
+  @Post('historical/rehome')
+  @ApiOperation({
+    summary: 'Mover uma venda histórica para o parceiro certo',
+    description:
+      'Corrige parceiro e filial no Parceiros. Não cria demanda e não altera o status no Luxus Task.',
+  })
+  rehomeHistorical(@Body() dto: RehomeHistoricalSaleDto) {
+    return this.historicalSales.rehome(dto);
   }
 
   @Get()

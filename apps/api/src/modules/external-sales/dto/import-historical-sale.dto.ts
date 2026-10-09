@@ -38,6 +38,29 @@ export class HistoricalPartnerDto {
   phone?: string;
 }
 
+export class RehomeHistoricalSaleDto {
+  @ApiProperty({ description: 'Protocolo da demanda no Luxus Task, como LUX-2026-00000' })
+  @IsString()
+  @MinLength(3)
+  taskProtocol: string;
+
+  @ApiProperty({ description: 'Filial que deve ficar com a venda' })
+  @IsString()
+  @MinLength(2)
+  branchName: string;
+
+  @ApiProperty({ type: HistoricalPartnerDto })
+  @ValidateNested()
+  @Type(() => HistoricalPartnerDto)
+  partner: HistoricalPartnerDto;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
 export class HistoricalClientDto {
   @ApiProperty()
   @IsString()
