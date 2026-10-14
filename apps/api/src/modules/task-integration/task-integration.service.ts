@@ -10,6 +10,7 @@ import { basename, extname, join } from 'path';
 import { randomUUID } from 'crypto';
 import { LineStatus, SaleContractStage, SaleReviewStatus, SaleStatus, SaleTaskSyncStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { TelefoniaIntakeService } from '@/modules/telefonia-intake/telefonia-intake.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { CommissionsService } from '@/modules/commissions/commissions.service';
 import { TaskDemandCallbackDto, CreateTaskDemandInput, normalizeIncomingTaskStatus } from './dto/task-integration.dto';
@@ -55,6 +56,7 @@ export class TaskIntegrationService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly commissions: CommissionsService,
+    private readonly telefoniaIntake: TelefoniaIntakeService,
   ) {}
 
   isConfigured(): boolean {
@@ -654,6 +656,9 @@ export class TaskIntegrationService {
     });
 
     if (shouldComplete) {
+      void this.telefoniaIntake?.enqueue(sale.id)?.catch((error) => {
+        console.warn('[task-integration] Falha ao agendar envio ao telefonia-2', error);
+      });
       await this.markSaleLineAsSold(sale.lineId, sale.newNumber, sale.partnerId).catch((error) => {
         console.warn('[task-integration] Falha ao marcar linha como vendida', error);
       });

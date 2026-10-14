@@ -645,6 +645,12 @@ model Sale {
   contestReason     String?
   requiredDocuments Json?
   notes             String?
+  telefoniaSyncStatus SaleTaskSyncStatus @default(NOT_READY)
+  telefoniaSyncError String?
+  telefoniaSyncAttempts Int @default(0)
+  telefoniaNextRetryAt DateTime?
+  telefoniaLastSyncAt DateTime?
+  telefoniaCustomerId String?
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
@@ -660,6 +666,7 @@ model Sale {
   @@index([taskSyncStatus, taskNextRetryAt])
   @@index([contractStage])
   @@index([signedContractSyncStatus, signedContractNextRetryAt])
+  @@index([telefoniaSyncStatus, telefoniaNextRetryAt])
   @@index([upgradeOfSaleId])
   @@index([createdAt])
   @@index([protocol])

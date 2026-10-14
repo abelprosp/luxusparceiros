@@ -73,6 +73,7 @@ test('callback concluído atualiza somente a solicitação vinculada', async () 
   };
   const notifications = {
     createForPartnerUsers: async (...args) => partnerNotifications.push(args),
+    createForAdminUsers: async () => {},
     create: async (args) => userNotifications.push(args),
   };
   const service = new TaskIntegrationService(
@@ -104,6 +105,7 @@ test('concluir a demanda no Task ativa a venda e gera a comissão', async () => 
   const updates = [];
   const importedDocuments = [];
   let commissions = 0;
+  const queued = [];
   const sale = {
     id: '11111111-1111-4111-8111-111111111111', protocol: 'VND-TESTE',
     partnerId: '33333333-3333-4333-8333-333333333333',
@@ -118,13 +120,14 @@ test('concluir a demanda no Task ativa a venda e gera a comissão', async () => 
       findUnique: async () => sale,
       update: async (args) => { updates.push(args); return { ...sale, ...args.data }; },
     },
-    document: { upsert: async (args) => importedDocuments.push(args) },
+    document: { findUnique: async () => null, upsert: async (args) => importedDocuments.push(args) },
     notification: { findFirst: async () => null },
   };
   const service = new TaskIntegrationService(
     { get: () => undefined }, prisma,
     { createForAdminUsers: async () => {}, createForPartnerUsers: async () => {}, create: async () => {} },
     { createFromSale: async () => { commissions += 1; } },
+    { enqueue: async (id) => { queued.push(id); } },
   );
   await service.applyCallback({
     externalRequestId: sale.id, demandId: sale.taskDemandId,
@@ -136,11 +139,13 @@ test('concluir a demanda no Task ativa a venda e gera a comissão', async () => 
   assert.equal(updates[0].data.status, 'ACTIVATED');
   assert.equal(importedDocuments[0].create.purpose, 'SIGNED_CONTRACT');
   assert.equal(commissions, 1);
+  assert.deepEqual(queued, [sale.id]);
 });
 
 test('status concluido do Task conclui a venda mesmo com etapa antiga no payload', async () => {
   const updates = [];
   let commissions = 0;
+  const queued = [];
   const sale = {
     id: '11111111-1111-4111-8111-111111111111', protocol: 'VND-TESTE',
     partnerId: '33333333-3333-4333-8333-333333333333',
@@ -155,13 +160,14 @@ test('status concluido do Task conclui a venda mesmo com etapa antiga no payload
       findUnique: async () => sale,
       update: async (args) => { updates.push(args); return { ...sale, ...args.data }; },
     },
-    document: { upsert: async () => {} },
+    document: { findUnique: async () => null, upsert: async () => {} },
     notification: { findFirst: async () => null },
   };
   const service = new TaskIntegrationService(
     { get: () => undefined }, prisma,
     { createForAdminUsers: async () => {}, createForPartnerUsers: async () => {}, create: async () => {} },
     { createFromSale: async () => { commissions += 1; } },
+    { enqueue: async (id) => { queued.push(id); } },
   );
   await service.applyCallback({
     externalRequestId: sale.id, demandId: sale.taskDemandId,
@@ -170,6 +176,7 @@ test('status concluido do Task conclui a venda mesmo com etapa antiga no payload
   assert.equal(updates[0].data.status, 'ACTIVATED');
   assert.equal(updates[0].data.contractStage, 'COMPLETED');
   assert.equal(commissions, 1);
+  assert.deepEqual(queued, [sale.id]);
 });
 
 test('callback materializa bytes do anexo do Task sem depender de outro download', async () => {
@@ -192,7 +199,7 @@ test('callback materializa bytes do anexo do Task sem depender de outro download
       findUnique: async () => sale,
       update: async () => sale,
     },
-    document: { upsert: async (args) => importedDocuments.push(args) },
+    document: { findUnique: async () => null, upsert: async (args) => importedDocuments.push(args) },
   };
   const service = new TaskIntegrationService(
     { get: (key) => key === 'UPLOAD_DIR' ? uploadDir : undefined },
