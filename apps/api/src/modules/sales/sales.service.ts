@@ -520,6 +520,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         value: saleValue,
         commissionRate,
         commissionValue: amount,
+        billedByLuxus: dto.billedByLuxus,
         isPortability: dto.isPortability ?? false,
         isVirginChip,
         isUpgrade: Boolean(upgradeSource),
@@ -655,6 +656,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       lineId,
       campaignId,
       value,
+      billedByLuxus,
       isPortability,
       isVirginChip,
       portabilityNumber,
@@ -753,6 +755,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         ...(lineId !== undefined && { lineId }),
         ...(campaignId !== undefined && { campaignId }),
         ...(value !== undefined && { value }),
+        ...(billedByLuxus !== undefined && { billedByLuxus }),
         ...(commission && {
           commissionRate: commission.commissionRate,
           commissionValue: commission.amount,

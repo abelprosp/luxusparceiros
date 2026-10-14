@@ -10,18 +10,18 @@ const {
 
 test('a url do telefonia-2 aceita a origem ou o caminho completo', () => {
   assert.equal(
-    telefoniaIntakeUrl('https://telefonia.exemplo.com/'),
-    'https://telefonia.exemplo.com/v1/integrations/luxus-parceiros/sales',
+    telefoniaIntakeUrl('https://telefonia.exemplo.com/api'),
+    'https://telefonia.exemplo.com/api/v1/intake/customers',
   );
   assert.equal(
-    telefoniaIntakeUrl('https://telefonia.exemplo.com/v1/integrations/luxus-parceiros/sales'),
-    'https://telefonia.exemplo.com/v1/integrations/luxus-parceiros/sales',
+    telefoniaIntakeUrl('https://telefonia.exemplo.com/api/v1/intake/customers'),
+    'https://telefonia.exemplo.com/api/v1/intake/customers',
   );
 });
 
 test('o valor em decimal vira número', () => {
   assert.equal(moneyAmount({ toString: () => '59.90' }), 59.9);
-  assert.equal(moneyAmount(null), null);
+  assert.equal(moneyAmount(null), 0);
 });
 
 test('a venda concluída monta o cadastro sem exigir telefone ou endereço estruturado', () => {
@@ -66,6 +66,7 @@ test('a venda concluída monta o cadastro sem exigir telefone ou endereço estru
     contentBase64: 'YQ==',
   }], ['Anexo não enviado: selfie.jpg.']);
 
+  assert.equal(payload.sourceSystem, 'luxus-parceiros');
   assert.equal(payload.sale.id, 'sale-1');
   assert.equal(payload.sale.protocol, 'VND-1');
   assert.equal(payload.sale.lineNumber, '51985370873');
@@ -73,7 +74,10 @@ test('a venda concluída monta o cadastro sem exigir telefone ou endereço estru
   assert.equal(payload.sale.upgradeOfProtocol, 'VND-0');
   assert.equal(payload.sale.value, 79.9);
   assert.match(payload.sale.notes, /Anexo não enviado/);
-  assert.equal(payload.client.phone, 'sem telefone');
+  assert.match(payload.sale.notes, /Telefone de origem/);
+  assert.equal(payload.client.phone, '');
+  assert.equal(payload.client.email, '');
+  assert.equal(payload.client.documentType, 'CPF');
   assert.equal(payload.client.address, 'Mauro Vieira 500');
   assert.equal(payload.attachments[0].type, 'CONTRACT');
 });
@@ -83,6 +87,12 @@ test('a conclusão da venda agenda o telefonia-2 sem desfazer a conclusão', () 
     join(__dirname, '../src/modules/task-integration/task-integration.service.ts'),
     'utf8',
   );
+  const sender = readFileSync(
+    join(__dirname, '../src/modules/telefonia-intake/telefonia-intake.service.ts'),
+    'utf8',
+  );
+  assert.match(sender, /X-API-Key/);
+  assert.match(sender, /billedByLuxus: true/);
   assert.match(source, /telefoniaIntake\?\.enqueue\(sale\.id\)\?\.catch/);
   assert.match(source, /Falha ao agendar envio ao telefonia-2/);
 });

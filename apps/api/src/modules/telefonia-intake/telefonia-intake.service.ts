@@ -10,8 +10,9 @@ import {
   TelefoniaAttachmentSource,
 } from './telefonia-intake.payload';
 
-const MAX_FILE_BYTES = 12_000_000;
-const MAX_TOTAL_BYTES = 18_000_000;
+const MAX_FILE_BYTES = 8_000_000;
+const MAX_TOTAL_BYTES = 16_000_000;
+const ACCEPTED_MIME = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
 
 @Injectable()
 export class TelefoniaIntakeService implements OnModuleInit, OnModuleDestroy {
@@ -39,7 +40,11 @@ export class TelefoniaIntakeService implements OnModuleInit, OnModuleDestroy {
 
   async enqueue(saleId: string) {
     await this.prisma.sale.updateMany({
-      where: { id: saleId, telefoniaSyncStatus: { not: SaleTaskSyncStatus.SYNCED } },
+      where: {
+        id: saleId,
+        billedByLuxus: true,
+        telefoniaSyncStatus: { not: SaleTaskSyncStatus.SYNCED },
+      },
       data: {
         telefoniaSyncStatus: SaleTaskSyncStatus.PENDING,
         telefoniaNextRetryAt: new Date(),
@@ -80,7 +85,10 @@ export class TelefoniaIntakeService implements OnModuleInit, OnModuleDestroy {
         where: {
           status: SaleStatus.ACTIVATED,
           contractStage: SaleContractStage.COMPLETED,
-          telefoniaSyncStatus: { in: [SaleTaskSyncStatus.PENDING, SaleTaskSyncStatus.RETRY] },
+          billedByLuxus: true,
+          telefoniaSyncStatus: {
+            in: [SaleTaskSyncStatus.NOT_READY, SaleTaskSyncStatus.PENDING, SaleTaskSyncStatus.RETRY],
+          },
           OR: [{ telefoniaNextRetryAt: null }, { telefoniaNextRetryAt: { lte: new Date() } }],
         },
         select: { id: true },
@@ -101,7 +109,10 @@ export class TelefoniaIntakeService implements OnModuleInit, OnModuleDestroy {
         id,
         status: SaleStatus.ACTIVATED,
         contractStage: SaleContractStage.COMPLETED,
-        telefoniaSyncStatus: { in: [SaleTaskSyncStatus.PENDING, SaleTaskSyncStatus.RETRY] },
+        billedByLuxus: true,
+        telefoniaSyncStatus: {
+          in: [SaleTaskSyncStatus.NOT_READY, SaleTaskSyncStatus.PENDING, SaleTaskSyncStatus.RETRY],
+        },
       },
       data: {
         telefoniaSyncStatus: SaleTaskSyncStatus.PROCESSING,
@@ -141,11 +152,16 @@ export class TelefoniaIntakeService implements OnModuleInit, OnModuleDestroy {
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
-          'X-Parceiros-Key': this.apiKey,
+          'X-API-Key': this.apiKey,
         },
         body: JSON.stringify(payload),
       });
-      const body = await response.json().catch(() => null) as { customerId?: string; message?: string; messages?: Array<{ message?: string }> } | null;
+      const body = await response.json().catch(() => null) as {
+        customer_id?: string;
+        customerId?: string;
+        message?: string;
+        messages?: Array<{ message?: string }>;
+      } | null;
       if (!response.ok) {
         const message = body?.messages?.map((item) => item.message).filter(Boolean).join(' ')
           || body?.message
@@ -160,7 +176,7 @@ export class TelefoniaIntakeService implements OnModuleInit, OnModuleDestroy {
           telefoniaSyncError: null,
           telefoniaLastSyncAt: new Date(),
           telefoniaNextRetryAt: null,
-          telefoniaCustomerId: body?.customerId || null,
+          telefoniaCustomerId: body?.customer_id || body?.customerId || null,
           timeline: {
             create: {
               action: 'Cliente enviado ao telefonia-2',
@@ -219,7 +235,11 @@ export class TelefoniaIntakeService implements OnModuleInit, OnModuleDestroy {
         notes.push(`Anexo não enviado: ${document.name}. O arquivo não estava disponível no Parceiros.`);
         continue;
       }
-      if (file.byteLength > MAX_FILE_BYTES || total + file.byteLength > MAX_TOTAL_BYTES) {
+      if (!ACCEPTED_MIME.has((document.mimeType || '').toLowerCase())) {
+        notes.push(`Anexo não enviado: ${document.name}. O telefonia-2 aceita PDF, JPEG, PNG e WebP.`);
+        continue;
+      }
+      if (file.byteLength > MAX_FILE_BYTES || total + file.byteLength > MAX_TOTAL_BYTES || attachments.length >= 10) {
         notes.push(`Anexo não enviado: ${document.name}. Passou do tamanho aceito pelo telefonia-2.`);
         continue;
       }

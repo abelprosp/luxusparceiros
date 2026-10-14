@@ -1,15 +1,20 @@
-const INTAKE_PATH = '/v1/integrations/luxus-parceiros/sales';
+const INTAKE_PATH = '/v1/intake/customers';
+const PREVIOUS_INTAKE_PATH = '/v1/integrations/luxus-parceiros/sales';
 
 export function telefoniaIntakeUrl(raw: string) {
   const trimmed = raw.trim().replace(/\/+$/, '');
   if (trimmed.endsWith(INTAKE_PATH)) return trimmed;
-  return `${trimmed}${INTAKE_PATH}`;
+  const base = trimmed.endsWith(PREVIOUS_INTAKE_PATH)
+    ? trimmed.slice(0, -PREVIOUS_INTAKE_PATH.length)
+    : trimmed;
+  return `${base}${INTAKE_PATH}`;
 }
 
 export function moneyAmount(value: { toString(): string } | number | null | undefined) {
-  if (value == null || value === '') return null;
+  if (value == null || value === '') return 0;
   const amount = Number(value.toString());
-  return Number.isFinite(amount) ? amount : null;
+  if (!Number.isFinite(amount) || amount < 0) return 0;
+  return Math.round(amount * 100) / 100;
 }
 
 export type TelefoniaSaleSource = {
@@ -65,10 +70,43 @@ export type TelefoniaAttachmentSource = {
   contentBase64: string;
 };
 
+const VALID_UF = new Set([
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
+  'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+]);
+const ACCEPTED_MIME = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
+
 function iso(value: Date | string | null | undefined) {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
+function digits(value: string | null | undefined) {
+  return (value ?? '').replace(/\D/g, '');
+}
+
+function phoneOrBlank(value: string | null | undefined) {
+  const normalized = digits(value);
+  return normalized.length >= 10 && normalized.length <= 15 ? normalized : '';
+}
+
+function emailOrBlank(value: string | null | undefined) {
+  const email = (value ?? '').trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : '';
+}
+
+function clip(value: string | null | undefined, max: number) {
+  return [...(value ?? '').trim()].slice(0, max).join('');
+}
+
+function identityDocument(document: string | null | undefined, documentType: string | null | undefined) {
+  const normalized = digits(document);
+  const declared = (documentType ?? '').trim().toUpperCase();
+  if (normalized.length === 11) return { document: normalized, documentType: 'CPF' };
+  if (normalized.length === 14) return { document: normalized, documentType: 'CNPJ' };
+  if (declared === 'CPF' || declared === 'CNPJ') return { document: normalized, documentType: declared };
+  return { document: normalized, documentType: declared };
 }
 
 export function buildTelefoniaSalePayload(
@@ -76,56 +114,79 @@ export function buildTelefoniaSalePayload(
   attachments: TelefoniaAttachmentSource[],
   extraNotes: string[] = [],
 ) {
-  const notes = [sale.notes?.trim(), ...extraNotes.map((note) => note.trim())].filter(Boolean).join('\n');
+  const preserved: string[] = [];
+  const phone = phoneOrBlank(sale.client.phone);
+  if ((sale.client.phone ?? '').trim() && !phone) preserved.push(`Telefone de origem: ${sale.client.phone?.trim()}`);
+  const email = emailOrBlank(sale.client.email);
+  if ((sale.client.email ?? '').trim() && !email) preserved.push(`E-mail de origem: ${sale.client.email?.trim()}`);
+  const zipCode = digits(sale.client.zipCode);
+  const state = (sale.client.state ?? '').trim().toUpperCase();
+  const clientDocument = identityDocument(sale.client.document, sale.client.documentType);
+  const lineNumber = phoneOrBlank(sale.newNumber?.trim() || sale.line?.number);
+  const portabilityNumber = phoneOrBlank(sale.portabilityNumber);
+  const iccid = digits(sale.chipIccid?.trim() || sale.simCard?.iccid);
+  const imei = digits(sale.deviceImei);
+  const eid = digits(sale.deviceEid);
+  const soldAt = iso(sale.createdAt) || iso(sale.activatedAt) || new Date().toISOString();
+  let concludedAt = iso(sale.activatedAt);
+  if (concludedAt && concludedAt < soldAt) concludedAt = soldAt;
+  const notes = [sale.notes?.trim(), ...extraNotes.map((note) => note.trim()), ...preserved]
+    .filter(Boolean)
+    .join('\n');
   return {
+    sourceSystem: 'luxus-parceiros',
     sale: {
       id: sale.id,
       protocol: sale.protocol,
       taskProtocol: sale.taskProtocol ?? '',
-      soldAt: iso(sale.createdAt),
-      concludedAt: iso(sale.activatedAt),
+      soldAt,
+      concludedAt: concludedAt || undefined,
       value: moneyAmount(sale.value),
       commissionValue: moneyAmount(sale.commissionValue),
-      operatorName: sale.operator?.name ?? '',
-      planName: sale.plan?.name ?? '',
-      lineNumber: sale.newNumber?.trim() || sale.line?.number?.trim() || '',
+      operatorName: clip(sale.operator?.name, 256),
+      planName: clip(sale.plan?.name, 256),
+      lineNumber,
       simType: sale.simType ?? '',
       isVirginChip: Boolean(sale.isVirginChip),
-      iccid: sale.chipIccid?.trim() || sale.simCard?.iccid?.trim() || '',
-      deviceImei: sale.deviceImei ?? '',
-      deviceEid: sale.deviceEid ?? '',
+      iccid: iccid.length >= 19 && iccid.length <= 22 ? iccid : '',
+      deviceImei: imei.length === 15 ? imei : '',
+      deviceEid: eid.length === 32 ? eid : '',
       devicePlatform: sale.devicePlatform ?? '',
-      isPortability: Boolean(sale.isPortability),
-      portabilityNumber: sale.portabilityNumber ?? '',
+      isPortability: Boolean(sale.isPortability) && Boolean(portabilityNumber) && Boolean(sale.donorOperator?.trim()),
+      portabilityNumber,
       donorOperator: sale.donorOperator ?? '',
-      isUpgrade: Boolean(sale.isUpgrade),
+      isUpgrade: Boolean(sale.isUpgrade) && Boolean(sale.upgradeOfSale?.protocol?.trim()),
       upgradeOfProtocol: sale.upgradeOfSale?.protocol ?? '',
       contractFormat: sale.contractFormat ?? '',
-      partnerName: sale.partner?.name ?? '',
-      branchName: sale.branch?.name ?? '',
-      notes,
+      partnerName: clip(sale.partner?.name, 256),
+      branchName: clip(sale.branch?.name, 256),
+      notes: clip(notes, 4000),
     },
     client: {
-      name: sale.client.name ?? '',
-      document: sale.client.document ?? '',
-      documentType: sale.client.documentType ?? '',
-      rg: sale.client.rg ?? '',
-      email: sale.client.email ?? '',
-      phone: sale.client.phone ?? '',
-      address: sale.client.address ?? '',
-      addressNumber: sale.client.addressNumber ?? '',
-      complement: sale.client.complement ?? '',
-      neighborhood: sale.client.neighborhood ?? '',
-      city: sale.client.city ?? '',
-      state: sale.client.state ?? '',
-      zipCode: sale.client.zipCode ?? '',
+      name: clip(sale.client.name, 256),
+      document: clientDocument.document,
+      documentType: clientDocument.documentType,
+      ...(clientDocument.documentType === 'CNPJ' ? { legalName: clip(sale.client.name, 256) } : {}),
+      rg: clientDocument.documentType === 'CPF' ? clip(sale.client.rg, 256) : '',
+      email,
+      phone,
+      address: clip(sale.client.address, 256),
+      addressNumber: clip(sale.client.addressNumber, 16),
+      complement: clip(sale.client.complement, 128),
+      neighborhood: clip(sale.client.neighborhood, 128),
+      city: clip(sale.client.city, 128),
+      state: VALID_UF.has(state) ? state : '',
+      zipCode: zipCode.length === 8 ? zipCode : '',
     },
-    attachments: attachments.map((attachment) => ({
-      id: attachment.id,
-      type: attachment.type || 'OTHER',
-      name: attachment.name || attachment.id,
-      mimeType: attachment.mimeType || 'application/octet-stream',
-      contentBase64: attachment.contentBase64,
-    })),
+    attachments: attachments
+      .filter((attachment) => ACCEPTED_MIME.has((attachment.mimeType || '').toLowerCase()))
+      .slice(0, 10)
+      .map((attachment) => ({
+        id: attachment.id,
+        type: clip(attachment.type || 'OTHER', 64),
+        name: clip((attachment.name || attachment.id).replace(/[\\/\r\n]/g, '-'), 256),
+        mimeType: (attachment.mimeType || '').toLowerCase(),
+        contentBase64: attachment.contentBase64,
+      })),
   };
 }

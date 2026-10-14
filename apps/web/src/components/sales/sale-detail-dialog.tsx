@@ -167,6 +167,7 @@ interface SaleDetail {
   portabilityNumber?: string | null;
   donorOperator?: DonorOperator | null;
   contractFormat?: ContractFormat | null;
+  billedByLuxus?: boolean;
   rejectionReason?: string | null;
   contestReason?: string | null;
   notes?: string | null;
@@ -1414,6 +1415,10 @@ export function SaleDetailDialog({
                         />
                       </>
                     )}
+                    <DetailRow
+                      label="Cobrança"
+                      value={sale.billedByLuxus === false ? 'Não será feita pela Luxus' : 'Será feita pela Luxus'}
+                    />
                     {sale.contractFormat && (
                       <DetailRow
                         label="Contrato"

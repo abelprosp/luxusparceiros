@@ -1,0 +1,1 @@
+ALTER TABLE "sales" ADD COLUMN "billedByLuxus" BOOLEAN NOT NULL DEFAULT true;

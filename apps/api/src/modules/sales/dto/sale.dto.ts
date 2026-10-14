@@ -58,6 +58,10 @@ export class CreateSaleDto {
   @Type(() => CreateClientInlineDto)
   client?: CreateClientInlineDto;
 
+  @ApiProperty({ description: 'Quando verdadeiro, a Luxus cobra e a venda concluída entra no telefonia-2' })
+  @IsBoolean()
+  billedByLuxus: boolean;
+
   @ApiProperty()
   @IsUUID()
   operatorId: string;

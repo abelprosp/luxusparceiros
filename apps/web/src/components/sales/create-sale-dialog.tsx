@@ -147,6 +147,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
   const [cpfPhoto, setCpfPhoto] = useState<File | null>(null);
   const [rgPhoto, setRgPhoto] = useState<File | null>(null);
   const [contractFormat, setContractFormat] = useState<ContractFormat | ''>('');
+  const [billedByLuxus, setBilledByLuxus] = useState<boolean | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const validationRef = useRef<HTMLDivElement>(null);
   const [client, setClient] = useState(emptyClient);
@@ -241,6 +242,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     setCpfPhoto(null);
     setRgPhoto(null);
     setContractFormat('');
+    setBilledByLuxus(null);
     setValidationErrors([]);
     setClient(emptyClient);
     setIsPortability(false);
@@ -331,6 +333,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
     if (!planId) errors.push('Plano');
     if (!newNumber.trim()) errors.push('Número da linha');
     else if (newNumber.replace(/\D/g, '').length < 10) errors.push('Linha com ao menos 10 dígitos');
+    if (billedByLuxus === null) errors.push('Cobrança pela Luxus');
     if (!contractFormat) errors.push('Formato do contrato');
     if (!client.name.trim()) errors.push('Nome do cliente');
     if (!client.document.trim()) errors.push('CPF do cliente');
@@ -457,6 +460,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
           isVirginChip: isEsim ? false : isVirginChip,
           chipIccid: isEsim ? undefined : (isVirginChip ? normalizeIccid(chipIccid) : normalizeIccid(chipIccid) || undefined),
           contractFormat,
+          billedByLuxus,
           isPortability,
           isUpgrade: Boolean(upgradeSale),
           upgradeOfSaleId: upgradeSale?.id,
@@ -826,6 +830,35 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
               </div>
               </>
               )}
+              <div className="space-y-3 sm:col-span-2 rounded-lg border p-3">
+                <Label>Cobrança *</Label>
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="billed-by-luxus"
+                    className="mt-1"
+                    checked={billedByLuxus === true}
+                    onChange={() => setBilledByLuxus(true)}
+                  />
+                  <span>
+                    <span className="font-medium">A cobrança será feita pela Luxus</span>
+                    <span className="block text-xs text-muted-foreground">Quando a venda for concluída, o cliente entra no telefonia-2.</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="billed-by-luxus"
+                    className="mt-1"
+                    checked={billedByLuxus === false}
+                    onChange={() => setBilledByLuxus(false)}
+                  />
+                  <span>
+                    <span className="font-medium">A cobrança não será feita pela Luxus</span>
+                    <span className="block text-xs text-muted-foreground">Esta venda não entra no telefonia-2.</span>
+                  </span>
+                </label>
+              </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label>Formato do contrato *</Label>
                 <Select value={contractFormat} onValueChange={(v) => setContractFormat(v as ContractFormat)}>
