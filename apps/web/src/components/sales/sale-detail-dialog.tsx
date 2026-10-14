@@ -1417,7 +1417,7 @@ export function SaleDetailDialog({
                     )}
                     <DetailRow
                       label="Cobrança"
-                      value={sale.billedByLuxus === false ? 'Não será feita pela Luxus' : 'Será feita pela Luxus'}
+                      value={sale.billedByLuxus === false ? 'Não vai para o sistema de faturamento da Luxus' : 'Vai para o sistema de faturamento da Luxus'}
                     />
                     {sale.contractFormat && (
                       <DetailRow

@@ -842,7 +842,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                   />
                   <span>
                     <span className="font-medium">A cobrança será feita pela Luxus</span>
-                    <span className="block text-xs text-muted-foreground">Quando a venda for concluída, o cliente entra no telefonia-2.</span>
+                    <span className="block text-xs text-muted-foreground">Esta venda vai para o sistema de faturamento da Luxus.</span>
                   </span>
                 </label>
                 <label className="flex items-start gap-2 text-sm">
@@ -855,7 +855,7 @@ export function CreateSaleDialog({ open, onOpenChange, onSuccess }: CreateSaleDi
                   />
                   <span>
                     <span className="font-medium">A cobrança não será feita pela Luxus</span>
-                    <span className="block text-xs text-muted-foreground">Esta venda não entra no telefonia-2.</span>
+                    <span className="block text-xs text-muted-foreground">Esta venda não vai para o sistema de faturamento da Luxus.</span>
                   </span>
                 </label>
               </div>
