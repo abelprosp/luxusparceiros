@@ -484,7 +484,7 @@ export class DashboardService {
         secondary: detailParts.join(' • '),
         status: sale.status,
         value: Number(sale.value),
-        date: (sale.activatedAt ?? sale.cancelledAt ?? sale.createdAt).toISOString(),
+        date: (sale.cancelledAt ?? sale.createdAt).toISOString(),
         partnerName: sale.partner.name,
         branchName: sale.branch?.name ?? 'Matriz',
         clientName: sale.client.name,
@@ -543,7 +543,7 @@ export class DashboardService {
           status: true,
           createdAt: true,
           partner: { select: { name: true } },
-          sale: { select: { protocol: true } },
+          sale: { select: { protocol: true, createdAt: true } },
         },
       }),
       this.prisma.sale.groupBy({
@@ -603,7 +603,7 @@ export class DashboardService {
         secondary: commission.partner.name,
         status: commission.status,
         value: Number(commission.value),
-        date: commission.createdAt.toISOString(),
+        date: commission.sale.createdAt.toISOString(),
         partnerName: commission.partner.name,
       })),
       campaigns: campaigns
@@ -624,11 +624,8 @@ export class DashboardService {
     };
 
     if (since) {
-      // Receita do mês = vendas ativadas no período (não pela data de cadastro).
-      where.OR = [
-        { activatedAt: { gte: since } },
-        { activatedAt: null, createdAt: { gte: since } },
-      ];
+      // Vendas antigas concluídas tarde no Task contam no mês em que foram vendidas.
+      where.createdAt = { gte: since };
     }
     if (filters.partnerId) {
       where.partnerId = filters.partnerId;
@@ -655,18 +652,7 @@ export class DashboardService {
       reviewStatus: {
         notIn: [SaleReviewStatus.REJECTED, SaleReviewStatus.CANCELLED],
       },
-      ...(since
-        ? {
-            OR: [
-              { activatedAt: { gte: since } },
-              { activatedAt: null, createdAt: { gte: since } },
-              {
-                status: { in: IN_PROGRESS_SALE_STATUSES },
-                createdAt: { gte: since },
-              },
-            ],
-          }
-        : {}),
+      ...(since ? { createdAt: { gte: since } } : {}),
     };
 
     if (filters.partnerId) {
@@ -775,14 +761,7 @@ export class DashboardService {
     const where: Prisma.CommissionWhereInput = {
       sale: {
         status: realizedSaleStatusFilter(),
-        ...(since
-          ? {
-              OR: [
-                { activatedAt: { gte: since } },
-                { activatedAt: null, createdAt: { gte: since } },
-              ],
-            }
-          : {}),
+        ...(since ? { createdAt: { gte: since } } : {}),
         ...(branchId && { branchId }),
         ...(filters.campaignId && { campaignId: filters.campaignId }),
         ...(filters.operatorId && { operatorId: filters.operatorId }),
@@ -808,14 +787,13 @@ export class DashboardService {
         ...this.buildSaleWhere(filters, since),
         ...(branchId && { branchId }),
       },
-      select: { createdAt: true, activatedAt: true, value: true },
+      select: { createdAt: true, value: true },
       orderBy: { createdAt: 'asc' },
     });
 
     const grouped: Record<string, number> = {};
     for (const sale of sales) {
-      const when = sale.activatedAt ?? sale.createdAt;
-      const date = when.toISOString().split('T')[0];
+      const date = sale.createdAt.toISOString().split('T')[0];
       grouped[date] = (grouped[date] ?? 0) + Number(sale.value);
     }
 
