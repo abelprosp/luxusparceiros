@@ -1,145 +1,139 @@
 # Luxus Parceiros
 
-Plataforma para gestão da operação comercial da Luxus Telefonia: parceiros, filiais, usuários, planos, estoque, clientes, vendas, portabilidade, comissões, campanhas, atendimento, financeiro e auditoria.
+Plataforma web (com aplicativo móvel) que a Luxus Telefonia (Grupo Luxus) usa para organizar a operação comercial feita por parceiros revendedores: parceiros, filiais, usuários, clientes, vendas com documentação, estoque, planos, comissões, campanhas, financeiro, chamados, demandas e auditoria. O sistema está em produção na Railway, com o domínio web `parceiros.grupoluxus.com.br`, e em desenvolvimento contínuo.
 
-O repositório é um monorepo TypeScript preparado para desenvolvimento local e produção com Docker, além de deploy separado da API e do frontend na Railway.
+> Histórico completo de versões, decisões técnicas e pendências: [docs/HISTORICO-DE-VERSOES.md](docs/HISTORICO-DE-VERSOES.md).
+> Documentação de todos os sistemas: repositório privado `redobrai-del/documentacao-sistemas`.
 
 ## Funcionalidades
 
 ### Operação comercial
 
-- Cadastro de parceiros, matriz, filiais e usuários vinculados.
-- Isolamento de dados por parceiro e por filial aplicado na API.
-- Planos e operadoras compartilhados entre matriz e filiais do mesmo parceiro.
-- Estoque de linhas e chips, movimentações, transferências e leitura de ICCID.
-- Clientes e vendas com documentos, portabilidade e histórico de situação.
-- Venda rejeitada permanece consultável, mas não entra nos resultados realizados.
-- Somente vendas `APPROVED` e `ACTIVATED` contam nos indicadores, rankings e comissões realizadas.
+- Cadastro de parceiros (matriz) e filiais (lojas), cada um com seus usuários. Vários cadastros de parceiro podem compartilhar o mesmo CNPJ; a tela de Parceiros destaca quando isso acontece.
+- Isolamento de dados aplicado na API: um parceiro nunca enxerga dados de outro, e usuários de filial enxergam apenas a própria loja.
+- Planos e operadoras compartilhados entre a matriz e as filiais do mesmo parceiro.
+- Estoque de linhas e chips, movimentações, transferências e leitura do ICCID pela câmera (web e aplicativo).
+- Clientes com edição e exclusão, inclusive em lote, dentro do escopo do usuário.
+- Vendas dos tipos linha nova, portabilidade (com operadora doadora), eSIM (com IMEI, EID, sistema do aparelho e foto da tela) e upgrade de plano a partir de uma venda anterior (copia cliente e documentos).
+- Documentos da venda (RG, CPF, selfie, contrato, foto do chip etc.) com lista de obrigatórios que depende do tipo de venda. Anexos de qualquer tipo de arquivo, até 50 MB, podem ser incluídos, trocados ou excluídos enquanto a venda estiver aberta.
+- Opção "cobrança pela Luxus" em cada venda, que define se ela vai para o sistema de faturamento da Luxus depois de concluída.
+- Edição da venda enquanto ela não estiver finalizada, com registro no histórico, e campos com contador que mostra quantos dígitos faltam (por exemplo RG e UF).
+- Importação de vendas por planilha `.xlsx` (botão "Importar" em Vendas), em dois modos: "vendas novas", que seguem o fluxo normal até o Luxus Task, e "vendas já concluídas no Luxus Task" (somente administrador). Cada linha é validada isoladamente, até 300 linhas por arquivo.
+- Exportação da lista de vendas e filtros por andamento, intervalo de datas e parceiro.
+
+### Fluxo da venda com o Luxus Task
+
+1. O parceiro ou a filial cadastra a venda, que entra em análise.
+2. O administrador analisa a venda e a envia ao Luxus Task, escolhendo responsável, cliente e prazo (o prazo não pode ser anterior a hoje).
+3. A equipe de operação executa a ativação no Task. O Parceiros espelha o andamento (quem está com a demanda, últimas mensagens, lembretes) e troca anexos com o Task nos dois sentidos.
+4. A venda só é concluída quando o Task conclui a demanda. Nesse momento a venda passa a `ACTIVATED`, gera comissão e, se tiver cobrança pela Luxus, entra na fila de envio ao telefonia-2.
+
+A aprovação interna e a finalização forçada que existiram no Parceiros foram desativadas; o Task é a fonte de verdade da conclusão (ver Versão 29 do histórico).
 
 ### Gestão e acompanhamento
 
-- Dashboard administrativo e dashboard do parceiro.
-- Cards, gráficos e rankings com abertura dos registros que formam cada indicador.
-- Filtros por período, parceiro, filial, campanha, operadora e região, conforme permissão.
-- Exportação protegida do dashboard em PDF, CSV compatível com Excel e TXT.
-- Ordenação crescente e decrescente ao clicar nos cabeçalhos das tabelas.
-- Campanhas, metas, comissões, financeiro, solicitações e chamados em Kanban.
-- Notificações e atualizações em tempo real com Socket.IO.
-- Auditoria de ações relevantes.
+- Dashboard administrativo e dashboard do parceiro, com períodos de mês, 30 dias, 60 dias e histórico. Vendas realizadas, receita, comissões e gráfico usam a data de criação da venda; cancelamentos usam a data do cancelamento.
+- Somente vendas com status `ACTIVATED` contam como venda realizada em indicadores, rankings, campanhas e comissões.
+- Cada indicador abre os registros que o compõem. O dashboard exporta planilha Excel com abas; as tabelas exportam PDF, CSV e TXT com colunas alinhadas.
+- Campanhas e metas, comissões, financeiro, chamados com prazo (SLA) e Demandas (antigas Solicitações, restritas ao administrador e integradas ao Luxus Task).
+- Notificações em tempo real com Socket.IO e janela de aviso para lembretes e conclusões vindos do Task.
+- Auditoria das ações relevantes e histórico de atividades.
+- Mapa de parceiros com Leaflet e busca de endereço por CEP.
 
 ### Experiência e conta
 
-- Temas claro, escuro e sistema.
-- Menu responsivo para desktop e celular.
-- Menu lateral com indicação de itens abaixo da área visível e preservação do scroll ao navegar.
-- Foto de perfil com upload, enquadramento, zoom e posicionamento.
-- Alteração de senha e preferências do usuário.
+- Temas claro, escuro e sistema; menu lateral expansível e menu móvel em painel lateral.
+- Foto de perfil com recorte, zoom e posicionamento; alteração de senha.
+- Sessão persistente com renovação automática do token.
+- Página "Guia de uso" (`/guia-de-uso`) com instruções por perfil e página "Esqueci minha senha".
 
-## Arquitetura
+## Stack
+
+| Camada | Tecnologias |
+| --- | --- |
+| Monorepo | pnpm 9.15 (workspaces) e Turborepo 2; Node.js 20 ou superior; TypeScript 5.7 |
+| API (`apps/api`) | NestJS 10, Prisma 6 com PostgreSQL 16, JWT com refresh token (Passport), Socket.IO 4 (namespace `/events`), Swagger, class-validator, Helmet e rate limiting (`@nestjs/throttler`) |
+| Web (`apps/web`) | Next.js 14, React 18, Tailwind CSS 3, Radix UI (estilo shadcn/ui), Recharts, Leaflet, jsPDF, write-excel-file e read-excel-file, ZXing (leitor de ICCID) |
+| Aplicativo (`apps/mobile`) | Expo 52 (React Native 0.76), Expo Router, Secure Store, biometria (`expo-local-authentication`) e câmera |
+| Pacotes compartilhados | `packages/types` (tipos, enums, rótulos e permissões), `packages/utils` (utilitários) e `packages/ui` (componentes base) |
+| Infraestrutura | Docker (`docker/api.Dockerfile` e `docker/web.Dockerfile`), Docker Compose com NGINX para ambiente local e Railway em produção |
+
+Sobre o Redis: o Docker Compose sobe um Redis 7 e o `.env.example` traz `REDIS_URL`, mas o código atual da API não usa Redis (a biblioteca `ioredis` está apenas declarada como dependência). Ele não é necessário para rodar o sistema hoje.
+
+## Estrutura de pastas
 
 ```text
-luxusparceiros/
+Luxus Parceiros/
 ├── apps/
-│   ├── api/                 # NestJS, Prisma, PostgreSQL, Redis e Socket.IO
-│   ├── web/                 # Next.js 14, Tailwind CSS, Radix UI e Recharts
-│   └── mobile/              # Expo/React Native
-├── packages/
-│   ├── types/               # Tipos, enums e contratos compartilhados
-│   ├── utils/               # Funções utilitárias compartilhadas
-│   └── ui/                  # Base de componentes compartilháveis
-├── docker/                  # Dockerfiles, NGINX e scripts de inicialização
-├── docs/                    # Relatórios e documentação complementar
-├── docker-compose.yml       # Ambiente local completo
-├── railway.toml             # Serviço da API na Railway
-└── railway.web.toml         # Serviço web na Railway
+│   ├── api/                     # API NestJS
+│   │   ├── prisma/              # schema.prisma, migrations (22), seed.ts e scripts de manutenção
+│   │   ├── src/modules/         # um módulo por domínio (ver tabela abaixo)
+│   │   ├── src/common/          # escopo por parceiro/filial, constantes e utilitários
+│   │   ├── src/gateway/         # Socket.IO (namespace /events)
+│   │   └── test/                # testes automatizados (node:test sobre o código compilado)
+│   ├── web/                     # Next.js 14
+│   │   └── src/app/(dashboard)/ # telas autenticadas
+│   └── mobile/                  # aplicativo Expo
+├── packages/                    # types, utils e ui compartilhados
+├── docker/                      # Dockerfiles, nginx.conf e api-entrypoint.sh
+├── docs/                        # histórico de versões e relatórios
+├── docker-compose.yml           # ambiente local completo
+├── railway.toml                 # serviço da API na Railway
+└── railway.web.toml             # serviço web na Railway
 ```
 
-| Camada | Tecnologias principais |
-| --- | --- |
-| API | NestJS, Prisma, PostgreSQL 16, Redis 7, JWT, Socket.IO |
-| Web | Next.js 14, React 18, Tailwind CSS, Radix UI, Recharts, jsPDF |
-| Mobile | Expo, Expo Router, Secure Store e biometria |
-| Infraestrutura | Docker Compose, NGINX e Railway |
+Módulos da API (`apps/api/src/modules`): `auth`, `users` (inclui perfil), `partners`, `branches`, `clients`, `operators`, `plans`, `lines`, `sim-cards`, `stock`, `sales` (inclui importação por planilha), `commissions`, `campaigns`, `financial`, `requests` (Demandas), `tickets` (chamados), `notifications`, `audit`, `dashboard`, `uploads`, `task-integration` (Luxus Task), `external-sales` (API externa e cópia histórica do Task) e `telefonia-intake` (envio ao telefonia-2).
 
-## Execução recomendada com Docker
+Telas da web (`apps/web/src/app/(dashboard)`): dashboard, vendas, clientes, parceiros, filiais, estoque, planos, operadoras, comissões, campanhas, financeiro, chamados, solicitações (menu "Demandas"), usuários, auditoria, perfil, configurações e guia de uso. Fora da área autenticada ficam `login` e `forgot-password`.
 
-### Requisitos
+Outros arquivos na raiz: `HISTORICO_DE_VERSOES.txt` (histórico com numeração 0.1.0 a 1.12.0), `DOCUMENTACAO_COMPLETA.txt`, `RELATORIO_TECNICO.md` e `Luxus Parceiros.docx` (manual de processos). A pasta `__pycache__/` na raiz não faz parte do sistema e pode ser ignorada.
 
-- Docker Desktop com o mecanismo de contêineres Linux em execução.
-- Git.
-- Portas `80`, `3000`, `3001`, `5432` e `6379` livres.
+## Como rodar localmente
 
-Não é necessário instalar Node.js, PostgreSQL ou Redis no computador para executar o ambiente Docker.
+### Opção 1: Docker (recomendada)
 
-### Primeira execução
+Pré-requisitos: Docker Desktop com contêineres Linux em execução e Git. Não é preciso instalar Node.js nem PostgreSQL. As portas `3000`, `3001`, `5432`, `6379` e `8088` (NGINX) precisam estar livres em `127.0.0.1`.
 
-1. Copie as variáveis de exemplo:
+1. Copie as variáveis de exemplo e troque `JWT_SECRET`, `JWT_REFRESH_SECRET` e `POSTGRES_PASSWORD` por valores próprios:
 
    ```powershell
    Copy-Item .env.example .env
    ```
 
-2. Troque `JWT_SECRET`, `JWT_REFRESH_SECRET` e a senha do PostgreSQL no `.env`.
+2. Ajuste os endereços da web para a porta do NGINX. O NGINX local escuta em `127.0.0.1:8088` (variável `NGINX_PORT`), mas os valores padrão de `NEXT_PUBLIC_API_URL` e `NEXT_PUBLIC_WS_URL` ainda apontam para `http://localhost` (porta 80). No `.env`, use `NEXT_PUBLIC_API_URL=http://localhost:8088`, `NEXT_PUBLIC_WS_URL=http://localhost:8088/events` e inclua `http://localhost:8088` em `CORS_ORIGINS`. Como alternativa, aponte as duas variáveis diretamente para a API em `http://localhost:3001`.
 
 3. Construa e inicie o ambiente:
 
    ```powershell
    docker compose up -d --build
-   ```
-
-4. Confira a saúde dos serviços:
-
-   ```powershell
    docker compose ps
    ```
 
-### Endereços locais
-
 | Serviço | Endereço |
 | --- | --- |
-| Aplicação via NGINX | http://localhost |
+| Aplicação via NGINX | http://localhost:8088 (ou a porta definida em `NGINX_PORT`) |
 | Web direto | http://localhost:3000 |
 | API direta | http://localhost:3001/api |
 | Swagger | http://localhost:3001/api/docs |
-| Healthcheck | http://localhost:3001/api/health |
+| Verificação de saúde | http://localhost:3001/api/health |
 
-### Comandos Docker úteis
+Comandos úteis:
 
 ```powershell
-# Acompanhar os logs
-docker compose logs -f api web
-
-# Reconstruir após uma alteração
-docker compose up -d --build api web
-
-# Parar sem apagar banco ou uploads
-docker compose down
-
-# Ver os serviços e healthchecks
-docker compose ps
+docker compose logs -f api web        # acompanhar logs
+docker compose up -d --build api web  # reconstruir após alteração
+docker compose down                   # parar sem apagar banco nem uploads
 ```
 
-Os dados do PostgreSQL e os uploads usam volumes persistentes. Não execute `docker compose down -v` sem ter certeza, pois essa opção remove os volumes locais.
+Os contêineres se chamam `luxus-parceiros-*` e usam os volumes `postgres_data`, `redis_data` e `uploads_data`. Não rode `docker compose down -v` sem certeza, porque isso apaga os volumes locais (banco e documentos).
 
-## Credenciais locais de demonstração
+Ao iniciar, a API roda `prisma migrate deploy` e, se `RUN_DB_SEED=true` (padrão no Docker local), o seed idempotente de demonstração, que cria usuários de exemplo (administradores e um parceiro), operadoras, planos e dados básicos. Os e-mails e a senha inicial desses usuários estão em `apps/api/prisma/seed.ts`; use-os somente em ambiente local.
 
-Disponíveis quando `RUN_DB_SEED=true`:
+Observação: o `docker-compose.yml` não repassa à API as variáveis `LUXUS_TASK_TIMEOUT_MS` e `TELEFONIA_INTAKE_*`. Para testar a integração com o telefonia-2 no Docker local, é preciso acrescentá-las ao serviço `api`.
 
-| Perfil | E-mail | Senha inicial |
-| --- | --- | --- |
-| Administrador | `admin@luxus.com.br` | `Luxus@2024` |
-| Administrador alternativo | `admin@luxusparceiros.com` | `Luxus@2024` |
-| Parceiro | `parceiro@demotelecom.com.br` | `Luxus@2024` |
+### Opção 2: sem Docker
 
-Essas credenciais são somente para ambiente local. Em produção, mantenha `RUN_DB_SEED=false`, use senhas próprias e segredos fortes.
-
-## Desenvolvimento sem Docker
-
-### Requisitos
-
-- Node.js 20 ou superior.
-- pnpm 9, habilitado pelo Corepack.
-- PostgreSQL e Redis acessíveis pelas URLs do `.env`.
+Pré-requisitos: Node.js 20 ou superior, pnpm 9 (via Corepack) e um PostgreSQL 16 acessível pela `DATABASE_URL` do `.env`.
 
 ```powershell
 corepack enable
@@ -151,294 +145,148 @@ pnpm db:seed
 pnpm dev
 ```
 
-Para trabalhar em um serviço específico:
+O seed (`pnpm db:seed`) executa `dist/prisma/seed.js`; se ele não existir, compile a API antes com `pnpm --filter @luxus/api build`. Para trabalhar em um app específico:
 
 ```powershell
-pnpm --filter @luxus/api dev
-pnpm --filter @luxus/web dev
-pnpm --filter @luxus/mobile dev
+pnpm --filter @luxus/api dev     # API em watch (porta 3001)
+pnpm --filter @luxus/web dev     # web em http://localhost:3000
+pnpm --filter @luxus/mobile dev  # Expo
 ```
+
+### Scripts da raiz
+
+| Script | O que faz |
+| --- | --- |
+| `pnpm dev` | Sobe em paralelo todos os apps que têm script `dev` |
+| `pnpm build` | Compila `types`, `utils`, `ui`, API e web, nessa ordem |
+| `pnpm lint` | Verificação de tipos e lint de todos os pacotes |
+| `pnpm test` | Compila a API e roda os testes de `apps/api/test` |
+| `pnpm db:generate`, `db:migrate`, `db:seed`, `db:studio` | Prisma Client, migrations de desenvolvimento, seed e Prisma Studio |
+| `pnpm db:cleanup` | Remove dados de demonstração (`prisma/cleanup-demo-data.ts`) |
+| `pnpm docker:up`, `docker:down`, `docker:build` | Atalhos do Docker Compose |
+
+Na API também existe `prisma:fix-sale-branch`, que corrige a filial de vendas antigas a partir de quem as criou.
+
+### Testes
+
+`pnpm test` roda os testes listados no script `test` de `apps/api/package.json` (isolamento por parceiro, documentos obrigatórios, status realizados, filtros do dashboard, edição e exclusão segura, fluxo de análise, integração com o Task, notificações de suporte, cópia histórica e telefonia-2). O arquivo `test/sales-import.test.js` existe, mas não está na lista do script; para rodá-lo é preciso incluí-lo ou executá-lo manualmente. Antes de enviar para a `main`, rode `pnpm build`: o deploy na Railway é automático e um erro de TypeScript derruba a publicação.
 
 ## Variáveis de ambiente
 
-Use `.env.example` como referência. As principais variáveis são:
+O arquivo de exemplo é `.env.example` na raiz. Nunca versione o `.env` nem valores reais.
 
-| Variável | Uso |
-| --- | --- |
-| `DATABASE_URL` | Conexão PostgreSQL usada pelo Prisma |
-| `REDIS_URL` | Cache, filas e integração em tempo real |
-| `JWT_SECRET` | Assinatura do token de acesso |
-| `JWT_REFRESH_SECRET` | Assinatura do token de renovação |
-| `CORS_ORIGINS` | Origens web autorizadas, separadas por vírgula |
-| `NEXT_PUBLIC_API_URL` | URL pública da API, sem `/api` no final |
-| `NEXT_PUBLIC_WS_URL` | URL pública da API com `/events` |
-| `UPLOAD_DIR` | Diretório persistente dos arquivos |
-| `UPLOAD_MAX_SIZE` | Tamanho máximo geral em bytes |
-| `RUN_DB_SEED` | Executa o seed idempotente ao iniciar a API |
+| Variável | Onde é usada | Descrição |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | Docker Compose | Senha do PostgreSQL local |
+| `DATABASE_URL` | API (Prisma) | Conexão com o PostgreSQL |
+| `REDIS_URL` | Docker Compose | Endereço do Redis; hoje não é lido pelo código da API |
+| `JWT_SECRET`, `JWT_EXPIRES_IN` | API | Segredo e validade do token de acesso (padrão 15 minutos) |
+| `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRES_IN` | API | Segredo e validade do token de renovação. Sem a variável, o código usa 365 dias; o `.env.example` e o Docker Compose sugerem 7 dias |
+| `API_PORT`, `PORT` | API | Porta da API; `PORT` (definida pela Railway) tem prioridade |
+| `API_URL` | `.env.example` | Endereço da API para referência local; não é lido pelo código atual |
+| `CORS_ORIGINS` | API e Socket.IO | Origens do frontend autorizadas, separadas por vírgula |
+| `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` | Web (no build) | Endereço da API (com ou sem `/api` no final) e do Socket.IO (`.../events`). Ficam visíveis no navegador; não coloque segredos nelas |
+| `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_WS_URL` | Aplicativo | Mesmos endereços para o Expo (use o IP da máquina na rede local). Ficam embutidas no aplicativo |
+| `RUN_DB_SEED` | Entrypoint da API | `true` roda o seed de demonstração ao iniciar; mantenha `false` em produção |
+| `UPLOAD_DIR`, `UPLOAD_MAX_SIZE` | API | Pasta dos arquivos e tamanho máximo em bytes (padrão 50 MB) |
+| `RAILWAY_VOLUME_MOUNT_PATH` | API | Usada como pasta de uploads quando `UPLOAD_DIR` não está definida |
+| `THROTTLE_TTL`, `THROTTLE_LIMIT` | API | Janela (segundos) e número máximo de requisições do rate limiting |
+| `LUXUS_TASK_API_URL`, `LUXUS_TASK_INTEGRATION_KEY`, `LUXUS_TASK_TIMEOUT_MS` | API | Endereço da API do Luxus Task, chave compartilhada (a mesma configurada no Task) e tempo limite das chamadas |
+| `EXTERNAL_SALES_API_KEY` | API | Chave exigida pela API externa de vendas e pela cópia histórica |
+| `TELEFONIA_INTAKE_URL`, `TELEFONIA_INTAKE_API_KEY`, `TELEFONIA_INTAKE_TIMEOUT_MS` | API | Origem do telefonia-2 (o caminho `/v1/intake/customers` é acrescentado), chave e tempo limite do envio. Sem URL ou chave, o envio fica aguardando |
+| `NGINX_PORT` | Docker Compose | Porta local do NGINX (padrão 8088) |
 
-Nunca versione o arquivo `.env` nem segredos reais.
+## Autenticação e permissões
 
-## Banco de dados e Prisma
+- Login por e-mail e senha (hash bcrypt), com token de acesso JWT de curta duração e refresh token revogável. A web guarda a sessão no armazenamento local do navegador e renova o token automaticamente (`apps/web/src/lib/api.ts`). O aplicativo usa Secure Store e biometria.
+- Perfis (`UserRole`): `ADMIN` e `SUPERVISOR` (administração), `PARTNER` (dados do próprio parceiro), `ATTENDANT` (usuário de filial, limitado à loja) e `FINANCIAL` (comissões e financeiro). Permissões granulares por perfil ficam em `packages/types` e são conferidas na API e na web (`apps/web/src/lib/rbac.ts`).
+- Visão global somente para `ADMIN`/`SUPERVISOR` sem vínculo com parceiro (`isPlatformAdmin`). Um administrador vinculado a um parceiro fica restrito a ele.
 
-O schema fica em `apps/api/prisma/schema.prisma` e as migrations em `apps/api/prisma/migrations`.
+Regras obrigatórias para qualquer nova consulta na API:
 
-```powershell
-# Gerar o Prisma Client
-pnpm db:generate
+1. Não confiar no `partnerId` enviado pelo navegador; usar os helpers de `apps/api/src/common/utils/partner-scope.ts`, que forçam o parceiro do usuário autenticado.
+2. Aplicar também o filtro por `branchId` para usuários de filial (`branch-scope.ts`).
+3. Ocultar elementos no frontend não substitui a autorização na API.
 
-# Criar/aplicar migration durante o desenvolvimento
-pnpm db:migrate
-
-# Popular dados iniciais
-pnpm db:seed
-
-# Abrir o Prisma Studio
-pnpm db:studio
-```
-
-Toda alteração de schema deve vir acompanhada de migration. Evite editar migrations que já foram aplicadas em produção.
-
-## API e módulos
-
-Todas as rotas usam o prefixo `/api`. A documentação completa e interativa está no Swagger.
-
-| Módulo | Prefixo |
-| --- | --- |
-| Autenticação | `/api/auth` |
-| Perfil | `/api/profile` |
-| Uploads | `/api/uploads` |
-| Parceiros | `/api/partners` |
-| Filiais | `/api/branches` |
-| Usuários | `/api/users` |
-| Clientes | `/api/clients` |
-| Vendas | `/api/sales` |
-| Operadoras | `/api/operators` |
-| Planos | `/api/plans` |
-| Linhas | `/api/lines` |
-| Estoque | `/api/stock` |
-| Comissões | `/api/commissions` |
-| Campanhas | `/api/campaigns` |
-| Chamados | `/api/tickets` |
-| Solicitações | `/api/requests` |
-| Financeiro | `/api/financial` |
-| Dashboard | `/api/dashboard` |
-| Notificações | `/api/notifications` |
-| Auditoria | `/api/audit` |
-
-### Uploads
-
-- Formatos gerais permitidos: JPG, PNG, WebP e PDF.
-- Foto de perfil: JPG, PNG ou WebP, com limite de 5 MB.
-- O frontend recorta a foto em 512×512 antes de enviar.
-- Os arquivos são servidos pela API e exigem autenticação.
-- Documentos cujo arquivo físico foi perdido exibem a ação `Reanexar arquivo`; o sistema
-  preserva o registro original e bloqueia a substituição quando o arquivo ainda existe.
-- Em Docker, o volume `uploads_data` preserva os arquivos entre reconstruções.
-- Na Railway, conecte um volume ao serviço da API e use exatamente o ponto de montagem
-  `/app/uploads`. A API também reconhece automaticamente `RAILWAY_VOLUME_MOUNT_PATH`.
-
-## Perfis e isolamento de dados
-
-| Perfil | Responsabilidade geral |
-| --- | --- |
-| `ADMIN` | Administração global ou limitada ao parceiro ao qual estiver vinculado |
-| `SUPERVISOR` | Gestão operacional conforme permissões |
-| `PARTNER` | Dados do parceiro comercial vinculado |
-| `ATTENDANT` | Operação limitada à filial vinculada |
-| `FINANCIAL` | Comissões e rotinas financeiras conforme escopo |
-
-Regras obrigatórias para qualquer nova consulta:
-
-1. Não confiar em `partnerId` enviado pelo navegador.
-2. Forçar o `partnerId` do usuário autenticado quando ele estiver vinculado.
-3. Aplicar também `branchId` para usuários de filial.
-4. Permitir visão global apenas aos perfis administrativos sem vínculo comercial.
-5. Aplicar o isolamento na API; ocultar elementos no frontend não substitui autorização.
-
-Utilize os helpers de escopo existentes em `apps/api/src/common/utils/partner-scope.ts`.
-
-## Regras importantes de negócio
-
-- Matriz e filiais compartilham planos e operadoras do parceiro mestre.
-- Um parceiro não pode visualizar lojas, vendas ou relatórios de concorrentes.
-- Portabilidade pode ser cadastrada antes do contrato assinado; o documento entra no momento correto do fluxo.
-- Vendas rejeitadas continuam disponíveis para consulta e correção.
-- Indicadores de venda realizada consideram apenas `APPROVED` e `ACTIVATED`.
-- Exportações e detalhes do dashboard respeitam o mesmo escopo do usuário autenticado.
-
-## Como editar com segurança
-
-### Backend
-
-Cada domínio normalmente contém controller, service, DTOs e módulo em `apps/api/src/modules/<dominio>`.
-
-- Valide entradas com `class-validator` nos DTOs.
-- Documente endpoints com decorators do Swagger.
-- Mantenha regras e consultas no service, não no controller.
-- Use transações Prisma quando uma operação altera várias entidades dependentes.
-- Registre ações sensíveis no módulo de auditoria.
-- Não retorne senha, refresh token ou dados de outro parceiro.
-
-### Frontend
-
-- Páginas autenticadas ficam em `apps/web/src/app/(dashboard)`.
-- Componentes reutilizáveis ficam em `apps/web/src/components`.
-- Chamadas autenticadas devem passar pelo cliente em `apps/web/src/lib/api.ts`.
-- Tipos usados por mais de um app devem ficar em `packages/types`.
-- Preserve estados de carregamento, vazio, erro e confirmação nas operações assíncronas.
-- Tabelas usam o componente compartilhado para manter a ordenação padronizada.
-
-### Antes de entregar uma alteração
-
-```powershell
-pnpm test
-pnpm build
-git diff --check
-docker compose up -d --build api web
-docker compose ps
-```
-
-Teste pelo menos um administrador, um parceiro e, quando aplicável, um usuário de filial.
-
-## Testes automatizados
-
-```powershell
-# Testes da API
-pnpm test
-
-# Build e validação TypeScript de todos os pacotes
-pnpm build
-```
-
-Os testes atuais cobrem regras críticas como isolamento por parceiro, documentos obrigatórios, status realizados e filtros do dashboard. Novas regras de negócio devem receber testes de regressão.
+Outras proteções: Helmet, CORS restrito, rate limiting, `ValidationPipe` que rejeita campos não declarados nos DTOs, limite de 50 MB no corpo das requisições e nos uploads, arquivos servidos somente com autenticação, e auditoria. Fotos de perfil aceitam apenas imagens. As integrações servidor-a-servidor usam chaves em cabeçalho HTTP.
 
 ## Tempo real
 
-Namespace Socket.IO: `/events`.
+O Socket.IO fica no namespace `/events` e exige o token JWT na conexão. Cada usuário entra na sala `user:<id>` e, se tiver parceiro, na sala `partner:<id>`. Eventos emitidos hoje: `sale:created`, `sale:updated`, `request:created`, `request:updated`, `request:comment`, `ticket:created`, `ticket:updated`, `ticket:message`, `ticket:deleted`, `commission:created`, `commission:approved`, `commission:paid`, `notification:new`, `notification:read` e `notification:read-all`. O evento antigo `notification` continua sendo emitido porque o aplicativo móvel ainda o escuta.
 
-- `dashboard:update`
-- `sale:updated`
-- `commission:updated`
-- `notification:new`
-- `ticket:updated`
-- `stock:updated`
+## Deploy
 
-## Integração com o Luxus Task
+Produção na Railway, com dois serviços ligados a este repositório e um PostgreSQL. Cada push na `main` do remoto `origin` dispara nova publicação.
 
-O menu “Demandas” é o ponto único para novos atendimentos. O usuário escolhe um
-responsável ativo do Luxus Task e a API cria a demanda externa com o usuário
-técnico `LUXUSPARCEIROS`. O Task continua aceitando demandas próprias sem
-qualquer alteração no fluxo existente.
+| Serviço | Configuração | Dockerfile | Verificação de saúde |
+| --- | --- | --- | --- |
+| API | `railway.toml` | `docker/api.Dockerfile` | `/api/health` |
+| Web | `railway.web.toml` (definir em Settings, Config-as-code) | `docker/web.Dockerfile` | `/login` |
 
-Ao atualizar ou concluir uma demanda integrada, o Task envia status e resposta
-de volta ao Parceiros. O detalhe também faz reconciliação por consulta e oferece
-nova tentativa quando a criação externa falha. Chamados antigos permanecem
-disponíveis em “Chamados anteriores”.
+- API: variáveis mínimas `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET` e `CORS_ORIGINS` (incluindo o domínio web), além das variáveis das integrações. Mantenha `RUN_DB_SEED=false`. O contêiner roda `prisma migrate deploy` a cada inicialização (`docker/api-entrypoint.sh`).
+- Volume obrigatório: conecte um volume persistente somente ao serviço da API, montado em `/app/uploads`. Sem ele, os documentos se perdem a cada publicação.
+- Web: defina `NEXT_PUBLIC_API_URL` (domínio da API) e `NEXT_PUBLIC_WS_URL` (domínio da API com `/events`) como variáveis de build; elas são embutidas no build.
+- Domínio web: `parceiros.grupoluxus.com.br`. O endereço público da API não está registrado neste repositório; o código do Luxus Task usa como padrão `https://luxusparceiros-production-df5d.up.railway.app`, o que indica ser a API de produção (a confirmar no painel da Railway).
 
-Configuração da API do Parceiros:
+Remotos Git: `origin` (`abelprosp/luxusparceiros`, de onde a Railway publica) e `redobrai` (`redobrai-del/luxus-parceiros`, cópia mantida pela REDOBRAI). Confira com `git remote -v` para onde está enviando.
 
-```env
-LUXUS_TASK_API_URL=https://API-DO-LUXUS-TASK
-LUXUS_TASK_INTEGRATION_KEY=SEGREDO-COMPARTILHADO
-```
+Se o healthcheck falhar, confira se cada serviço usa o arquivo de configuração correto, as variáveis `PORT`, `DATABASE_URL` e `CORS_ORIGINS`, e os logs de inicialização. Se um deploy não for disparado após uma falha, use o redeploy do painel em vez de commits vazios.
 
-### API externa — consulta de vendas (sistemas terceiros)
+## Integrações
 
-Para um sistema externo consultar vendas de parceiros, configure na API:
+### Luxus Task (sistema de demandas da operação)
 
-```env
-EXTERNAL_SALES_API_KEY=SEGREDO-LONGO-ALEATORIO
-```
+Módulo `apps/api/src/modules/task-integration`. O Parceiros cria demandas no Task com o usuário técnico `LUXUSPARCEIROS`, envia dados e anexos (em base64) das vendas aprovadas e das Demandas, e recebe de volta status, respostas, anexos e a conclusão por callback. Vendas e demandas usam fila com nova tentativa automática, porque o Task pode demorar a responder.
 
-Rotas (prefixo `/api`):
+| Rota (prefixo `/api`) | Uso |
+| --- | --- |
+| `POST /integrations/luxus-task/callback` | Callback do Task (protegido pela chave compartilhada) |
+| `GET /integrations/luxus-task/sales/:saleId`, `.../documents`, `.../documents/:documentId` | Consulta de resumo e documentos da venda pelo Task |
+| `GET /task-integration/responsibles`, `GET /task-integration/clients` | Listas de responsáveis e clientes do Task usadas nas telas |
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET | `/integrations/external/sales` | Lista paginada |
-| GET | `/integrations/external/sales/:idOrProtocol` | Detalhe por UUID ou protocolo |
+Se o Task ficar fora do ar, as vendas não concluem (não há mais finalização forçada no Parceiros).
 
-Header obrigatório: `x-api-key: <EXTERNAL_SALES_API_KEY>`  
-(também aceita `x-integration-key`).
+### telefonia-2 / Luxus Connect (faturamento)
 
-Query params da listagem: `page`, `limit` (máx. 100), `search`, `status`, `partnerId`, `branchId`, `createdFrom`, `createdTo`, `onlyActivated`.
+Módulo `apps/api/src/modules/telefonia-intake`. Vendas concluídas com cobrança pela Luxus entram em uma fila processada a cada 20 segundos e são enviadas para `/v1/intake/customers` do telefonia-2, com o cabeçalho `X-API-Key`. O envio nunca desfaz a conclusão da venda; dados fora do padrão vão para as observações.
 
-Exemplo:
+### API externa de vendas (sistemas terceiros)
 
-```bash
-curl -H "x-api-key: SUA-CHAVE" \
-  "https://SEU-DOMINIO/api/integrations/external/sales?onlyActivated=true&page=1&limit=50"
-```
+Módulo `apps/api/src/modules/external-sales`, autenticado pelo cabeçalho `x-api-key` (ou `x-integration-key`) comparado com `EXTERNAL_SALES_API_KEY`.
 
-Antes do deploy, aplique a migration
-`20260728120000_luxus_task_integration`.
+| Rota (prefixo `/api`) | Uso |
+| --- | --- |
+| `GET /integrations/external/sales` | Lista paginada. Filtros: `page`, `limit` (máximo 100), `search`, `status`, `partnerId`, `branchId`, `createdFrom`, `createdTo`, `onlyActivated` |
+| `GET /integrations/external/sales/:idOrProtocol` | Detalhe por identificador ou protocolo |
+| `POST /integrations/external/sales/historical` | Copia para o Parceiros uma demanda já existente no Task, sem alterá-la |
+| `POST /integrations/external/sales/historical/rehome` | Move uma venda histórica copiada para o parceiro correto |
 
-No ranking, parceiros recebem somente a própria posição. Detalhes e exportações
-continuam obrigatoriamente limitados à empresa e filial da sessão.
+### Outros
 
-## Deploy na Railway
+- Busca de endereço por CEP (`apps/web/src/lib/cep.ts`) e mapa de parceiros com Leaflet.
 
-O projeto utiliza dois serviços ligados ao mesmo repositório, além do PostgreSQL.
+## Pontos de atenção
 
-### API
+Resumo; detalhes na seção 7 de [docs/HISTORICO-DE-VERSOES.md](docs/HISTORICO-DE-VERSOES.md).
 
-- Config-as-code: `railway.toml`.
-- Dockerfile: `docker/api.Dockerfile`.
-- Healthcheck: `/api/health`.
-- Variáveis mínimas: `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET` e `CORS_ORIGINS`.
-- Configure `RUN_DB_SEED=false` após a preparação inicial.
-- Adicione um volume persistente ao serviço da API, com ponto de montagem `/app/uploads`.
-  Não conecte esse volume ao frontend `web`.
+- Credenciais de demonstração: se o seed já rodou em produção, as contas de exemplo existem lá. Confirme `RUN_DB_SEED=false` e que essas contas foram removidas ou tiveram a senha trocada.
+- Refresh token com validade padrão de 365 dias no código quando `JWT_REFRESH_EXPIRES_IN` não está definida.
+- Dependência do Luxus Task para concluir vendas, sem procedimento de contingência documentado.
+- Aplicativo móvel sem mudanças desde 24/08/2026: eSIM, upgrade, importação e cobrança pela Luxus podem não existir nele.
+- Docker local com endereços padrão da web apontando para a porta 80, enquanto o NGINX usa a 8088 (ver "Como rodar localmente").
+- Redis declarado na infraestrutura, mas não usado pelo código.
+- Duas numerações de versão (`docs/HISTORICO-DE-VERSOES.md` e `HISTORICO_DE_VERSOES.txt`) e muitas branches antigas já mescladas.
 
-### Web
+## Convenções
 
-- Config-as-code: `railway.web.toml`.
-- Dockerfile: `docker/web.Dockerfile`.
-- Healthcheck: `/login`.
-- Defina `NEXT_PUBLIC_API_URL` e `NEXT_PUBLIC_WS_URL` durante o build.
-
-### Domínios
-
-1. Gere ou associe um domínio ao serviço da API.
-2. Gere ou associe o domínio web, por exemplo `parceiros.grupoluxus.com.br`.
-3. Inclua o domínio web em `CORS_ORIGINS` na API.
-4. Aponte `NEXT_PUBLIC_API_URL` para o domínio da API, sem `/api` ao final.
-5. Faça novo deploy dos dois serviços e confirme os healthchecks.
-
-## Solução de problemas
-
-### Docker não inicia no Windows
-
-- Abra o Docker Desktop e aguarde o status “Engine running”.
-- Confirme que o mecanismo de contêineres Linux está ativo.
-- Execute `docker version` e `docker compose ps`.
-- Se o Docker solicitar atualização do componente WSL, isso é requisito do mecanismo interno do Docker Desktop; não altera o Windows para Linux.
-
-### Railway falha no healthcheck
-
-- Verifique se o serviço usa o arquivo correto: `railway.toml` para API e `railway.web.toml` para web.
-- Confira `PORT`, `DATABASE_URL`, domínio público, CORS e logs de inicialização.
-- A API deve responder em `/api/health`; o web deve responder em `/login`.
-
-### Foto ou documento desaparece após deploy
-
-- Confirme que existe um volume persistente no serviço da API.
-- Confira se o ponto de montagem é `/app/uploads`.
-- Arquivos no sistema efêmero da Railway são perdidos quando a instância é substituída.
-- Registros antigos podem continuar no banco mesmo quando o arquivo físico já foi perdido;
-  nesse caso, o documento original precisa ser anexado novamente.
-
-## Segurança
-
-- JWT de curta duração e refresh token revogável.
-- Hash de senha com bcrypt.
-- RBAC com permissões granulares.
-- Helmet, CORS e rate limiting.
-- Validação de tamanho, extensão e MIME type dos uploads.
-- Auditoria das ações administrativas.
-- Isolamento por parceiro e filial no backend.
-
-Antes de produção, execute auditoria de dependências e planeje as atualizações de versões principais com testes de regressão.
+- Commits no formato `tipo: descrição` (por exemplo `feat: ...`, `fix: ...`, `docs: ...`), com mensagens descritivas.
+- Nunca commitar `.env`, planilhas, documentos de clientes ou dados pessoais. A pasta `uploads/` local é ignorada pelo Git.
+- Toda alteração no `schema.prisma` deve vir com migration; não edite migrations já aplicadas em produção.
+- Na API, cada domínio tem controller, service, DTOs (validados com class-validator e documentados no Swagger) e módulo; regras ficam no service, e ações sensíveis são auditadas.
+- Na web, chamadas autenticadas passam por `apps/web/src/lib/api.ts`; tipos usados por mais de um app ficam em `packages/types`.
+- Antes de publicar, rode `pnpm build` e `pnpm test` e teste com um administrador, um parceiro e um usuário de filial.
+- Ao publicar, acrescente a nova versão em `docs/HISTORICO-DE-VERSOES.md`.
 
 ## Licença
 
-Software proprietário — Luxus Telefonia © 2026.
+Software proprietário da Luxus Telefonia.
