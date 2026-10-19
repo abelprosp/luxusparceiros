@@ -25,6 +25,7 @@ import { EditSaleDialog } from '@/components/sales/edit-sale-dialog';
 import { ApproveSaleForTaskDialog } from '@/components/sales/approve-sale-for-task-dialog';
 import { SendSaleToTaskDialog } from '@/components/sales/send-sale-to-task-dialog';
 import { SalesExportButton } from '@/components/sales/sales-export-button';
+import { SalesImportButton } from '@/components/sales/sales-import-button';
 import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { useAuth } from '@/hooks/useAuth';
@@ -405,6 +406,7 @@ export default function VendasPage() {
             </Button>
           )}
           <CreateSaleButton onSuccess={load} />
+          {hasPermission(user, PERMISSIONS.SALES_WRITE) && <SalesImportButton onSuccess={load} />}
           {!isPartner && (
             <SalesExportButton loadSales={loadAllForExport} includePartnerColumns={!isPartner} />
           )}

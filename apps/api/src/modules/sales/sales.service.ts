@@ -115,7 +115,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (this.taskSyncTimer) clearInterval(this.taskSyncTimer);
   }
 
-  private async resolveCommission(partnerId: string, planId: string, saleValue: number) {
+  async resolveCommission(partnerId: string, planId: string, saleValue: number) {
     const partnerPlan = await this.prisma.partnerPlan.findUnique({
       where: { partnerId_planId: { partnerId, planId } },
     });

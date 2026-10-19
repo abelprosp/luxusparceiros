@@ -7,6 +7,7 @@ import { TaskIntegrationModule } from '@/modules/task-integration/task-integrati
 import { UploadsModule } from '@/modules/uploads/uploads.module';
 import { SalesController } from './sales.controller';
 import { SalesService } from './sales.service';
+import { SalesImportService } from './sales-import.service';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { SalesService } from './sales.service';
     UploadsModule,
   ],
   controllers: [SalesController],
-  providers: [SalesService],
+  providers: [SalesService, SalesImportService],
   exports: [SalesService],
 })
 export class SalesModule {}

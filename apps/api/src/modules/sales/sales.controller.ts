@@ -4,6 +4,8 @@ import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
 import { SalesService } from './sales.service';
+import { SalesImportService } from './sales-import.service';
+import { ImportSalesDto } from './dto/import-sales.dto';
 import {
   ContestSaleDto,
   BulkDeleteSalesDto,
@@ -24,7 +26,17 @@ import {
 @ApiBearerAuth()
 @Controller('sales')
 export class SalesController {
-  constructor(private salesService: SalesService) {}
+  constructor(
+    private salesService: SalesService,
+    private salesImportService: SalesImportService,
+  ) {}
+
+  @Post('import')
+  @RequirePermissions(PERMISSIONS.SALES_WRITE)
+  @ApiOperation({ summary: 'Importar vendas em massa a partir da planilha padrão' })
+  importSales(@Body() dto: ImportSalesDto, @CurrentUser() user: AuthUser) {
+    return this.salesImportService.import(dto, user);
+  }
 
   @Post('bulk-delete')
   @RequirePermissions(PERMISSIONS.SALES_DELETE)

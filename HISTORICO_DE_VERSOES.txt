@@ -1,0 +1,496 @@
+HISTÓRICO DE VERSÕES — LUXUS PARCEIROS
+======================================
+
+Atualizado em: 19/10/2026
+Versão atual: 1.12.0
+Repositório: https://github.com/abelprosp/luxusparceiros (branch main)
+Sistema web: https://parceiros.grupoluxus.com.br
+
+Este arquivo registra cada versão do sistema e cada troca feita: qual era o
+problema, por que foi resolvido daquele jeito e o que foi usado. Os códigos
+entre colchetes (ex.: [0b16b67]) são os commits no GitHub; com eles dá para
+abrir a mudança exata com "git show <código>".
+
+A numeração de versões foi organizada a partir do histórico do Git. A
+DOCUMENTACAO_COMPLETA.txt marca a versão 1.0.0 em 28/07/2026, data da
+integração com o Luxus Task; as versões anteriores aparecem como 0.x.
+
+
+TECNOLOGIAS USADAS NO PROJETO (VISÃO GERAL)
+-------------------------------------------
+
+- Monorepo com pnpm workspaces e Turborepo (apps/api, apps/web, apps/mobile,
+  packages/types, packages/utils, packages/ui).
+- API: NestJS (TypeScript), Prisma ORM 6 com PostgreSQL, class-validator nos
+  DTOs, JWT para login, Socket.IO para avisos em tempo real, Swagger.
+- Web: Next.js 14 (React), Tailwind CSS, componentes no estilo shadcn/ui
+  (Radix), lucide-react nos ícones, Leaflet no mapa de parceiros.
+- Planilhas: write-excel-file (gera .xlsx) e read-excel-file (lê .xlsx).
+- Mobile: Expo / React Native.
+- Publicação: Docker (api.Dockerfile, web.Dockerfile, Nginx) na Railway, com
+  deploy automático a cada push na main. As migrações do banco rodam no
+  início do container (docker/api-entrypoint.sh: prisma migrate deploy).
+- Testes da API: node:test sobre o código compilado (apps/api/test).
+- Integrações: Luxus Task (demandas), telefonia-2 / sistema de faturamento
+  da Luxus (vendas concluídas cobradas pela Luxus), API externa de consulta.
+
+
+ÍNDICE
+------
+
+0.1.0   30/06 a 07/07/2026  Base do sistema e primeiro deploy na Railway
+0.2.0   07/07/2026          Portal do parceiro, filiais, notificações e visual
+0.3.0   10/07/2026          Portabilidade, leitor de ICCID, solicitações, mapa
+0.4.0   21 a 23/07/2026     Isolamento, dashboard correto e documentos seguros
+1.0.0   28/07/2026          Integração com o Luxus Task e demandas unificadas
+1.1.0   30 e 31/07/2026     Sessão, menu, chamados, guia de uso
+1.2.0   04 a 07/08/2026     Aprovação de vendas pelo Luxus Task e contratos
+1.3.0   10 a 12/08/2026     Anexos nos dois sentidos, edição e reenvio de sync
+1.4.0   17 a 27/08/2026     API externa, prazos e Task assumindo a demanda
+1.5.0   31/08 a 09/09/2026  Manual, dashboard por 30 dias, clientes em lote
+1.6.0   15/09/2026          Envio ao Luxus Task em modo "handoff"
+1.7.0   22 a 29/09/2026     Exportações, anexos de até 50 MB, períodos
+1.8.0   01 a 06/10/2026     Conclusão automática pelo Task, eSIM, anexos
+1.9.0   07 a 09/10/2026     Upgrade de plano, cópia histórica, filtros
+1.10.0  14/10/2026          Envio ao sistema de faturamento (telefonia-2)
+1.11.0  19/10/2026          Dashboard conta a venda pela data da venda
+1.12.0  19/10/2026          Importação de vendas por planilha, guia, histórico
+
+
+==============================================================================
+0.1.0 — 30/06 a 07/07/2026 — Base do sistema e primeiro deploy
+==============================================================================
+
+1) Código inicial do monorepo [86cbaca, a48af7a]
+   Problema: não existia sistema para os parceiros da Luxus registrarem
+   vendas, clientes, estoque, comissões e chamados.
+   Por quê: centralizar a operação comercial dos parceiros em um só lugar,
+   com cada empresa vendo só o que é dela.
+   O que foi usado: API NestJS + Prisma/PostgreSQL, painel Next.js, app
+   Expo, pacotes compartilhados de tipos e utilitários, Docker e Railway.
+   Módulos criados: autenticação, usuários, parceiros, filiais, clientes,
+   operadoras, planos, linhas, chips (SIM cards), estoque, vendas,
+   comissões, financeiro, campanhas, solicitações, chamados, notificações,
+   auditoria e dashboard.
+
+2) Correções do primeiro deploy na Railway [7915f57, bb407bb, 82b349a,
+   e092b29, 841bfd0, 7dd34d2]
+   Problema: o deploy falhava. O .gitignore escondia a pasta do módulo de
+   uploads; o container baixava o Prisma 7 (incompatível); a API não passava
+   no healthcheck; faltavam dependências no container final.
+   Por quê: sem isso a API não subia em produção.
+   O que foi usado: ajuste do .gitignore, build de @luxus/types e
+   @luxus/utils antes da API e da Web, Prisma 6 fixado, entrypoint próprio
+   (docker/api-entrypoint.sh), "pnpm deploy" para empacotar node_modules,
+   PORT explícito, railway.toml e railway.web.toml, .dockerignore.
+
+3) Rota raiz e dados iniciais [6436a17, d09481b, d5691b3, 114c161, e8651a4]
+   Problema: abrir a URL da API dava 404 sem explicação; o banco novo vinha
+   vazio.
+   Por quê: facilitar o diagnóstico e ter operadoras, planos, filiais e
+   chips de exemplo para começar.
+   O que foi usado: root.controller.ts com resposta informativa; seed do
+   Prisma (prisma/seed.ts) executado no entrypoint.
+
+
+==============================================================================
+0.2.0 — 07/07/2026 — Portal do parceiro, filiais, notificações e visual
+==============================================================================
+
+1) Web alinhada ao app para o perfil parceiro [79a17ea]
+   Problema: o parceiro via menus e ações de administrador.
+   Por quê: cada perfil deve ver só a sua operação.
+   O que foi usado: controle de acesso por perfil (lib/rbac.ts), telas de
+   clientes, filiais e perfil, dashboard próprio do parceiro. O seed deixou
+   de rodar a cada deploy para não recriar dados.
+
+2) Ajustes de parceiros, estoque, linhas, planos e vendas [358f3c9,
+   8672cac, 495fead, 8bf9d61, 7ce01e9, d09ea2b]
+   Problema: filtro de status de parceiros e campanhas quebrava; estoque
+   não carregava; faltavam reenvio de documentos e planos por parceiro.
+   O que foi usado: DTOs de consulta com validação, novas rotas de estoque e
+   linhas, vínculo parceiro x plano, tela de reenvio de documentos da venda,
+   página "Esqueci minha senha".
+
+3) Login de usuários de filial e notificações [06709e5]
+   Problema: filiais não tinham login próprio e não havia avisos no sistema.
+   Por quê: a filial precisa trabalhar isolada, e todos precisam saber quando
+   algo muda.
+   O que foi usado: migração branch_user_login, escopo por filial
+   (common/utils/branch-scope.ts), sino de notificações com Socket.IO, tela
+   de detalhe da venda.
+
+4) Identidade visual e layout no celular [7ee9c9a, 0b3c4cf, 1c945b4,
+   49058ea, 14ec222, 6479262]
+   O que foi feito: logos claro/escuro, nova tela de login, mapa de parceiros
+   (Leaflet), menu lateral e menu móvel, cartões de lista para celular,
+   edição de chamados, página de configurações.
+
+
+==============================================================================
+0.3.0 — 10/07/2026 — Portabilidade, leitor de ICCID, solicitações, mapa
+==============================================================================
+
+[3062f8d, 627da5c, 62f191e, 3543152, d1e58b5]
+   Problema: a venda não registrava portabilidade (operadora doadora), o
+   ICCID era digitado à mão e as solicitações eram limitadas.
+   O que foi usado: campo donorOperator (migração sale_donor_operator),
+   leitor de código do chip pela câmera (web e app), histórico de atividades
+   (ActivityLog), busca de endereço pelo CEP (lib/cep.ts), coordenadas dos
+   parceiros no mapa (migração partner_coordinates), solicitações com fluxo
+   completo e anexos.
+
+
+==============================================================================
+0.4.0 — 21 a 23/07/2026 — Isolamento, dashboard correto, documentos seguros
+==============================================================================
+
+1) Isolamento, portabilidade e Docker (#4) [066791f]
+   Problema: risco de um parceiro enxergar dados de outro; ajustes no fluxo de
+   portabilidade e na imagem Docker.
+   O que foi usado: filtros por parceiro/filial em todos os serviços.
+
+2) Contagem de vendas no dashboard (#5) [2d1eade]
+   Problema: o dashboard somava vendas que ainda não tinham sido feitas de
+   fato (em análise, rejeitadas).
+   Por quê: o número precisa refletir só vendas realizadas.
+   O que foi usado: filtro por vendas aprovadas/ativadas, teste automático.
+
+3) Dashboard, perfil e documentação (#6) [739dc7b]
+   O que foi feito: detalhes clicáveis nos indicadores, exportação do
+   dashboard (PDF, CSV, TXT), ordenação nas tabelas, aviso "Mais opções" no
+   menu e o relatório docs/RELATORIO-MELHORIAS-2026-07-22.md.
+
+4) Contrato só na aprovação (#7) [1429504] e status sem quebra (#8) [fa7aa5c]
+   Problema: o contrato era cobrado cedo demais; selos de status quebravam
+   linha.
+
+5) Documentos que sumiam (#9, #10) [3f49ecb, 0bb7a24]
+   Problema: arquivos enviados se perdiam a cada novo deploy e o download
+   falhava.
+   Por quê: o disco do container é apagado a cada publicação.
+   O que foi usado: armazenamento em volume persistente da Railway e opção de
+   reanexar documentos perdidos.
+
+
+==============================================================================
+1.0.0 — 28/07/2026 — Integração com o Luxus Task e demandas unificadas
+==============================================================================
+
+[a5d82a2, 6d2d5c3, d28774b, a652469, 2c26693, 381471c, ce045e5]
+   Problema: as demandas operacionais eram tratadas fora do sistema, sem
+   ligação com o Luxus Task.
+   Por quê: o time de operação trabalha no Luxus Task; o Parceiros precisa
+   enviar a demanda e acompanhar o andamento.
+   O que foi usado: módulo task-integration (chamadas HTTP ao Luxus Task),
+   demandas criadas com cliente, responsável e prazo, envio em segundo plano
+   (fila com nova tentativa) para não estourar o tempo de resposta, demandas
+   restritas ao administrador, edição de venda com anexo de contrato, janelas
+   que não fecham por clique acidental.
+   Documentação: DOCUMENTACAO_COMPLETA.txt (versão 1.0.0).
+
+
+==============================================================================
+1.1.0 — 30 e 31/07/2026 — Sessão, menu, chamados e guia de uso
+==============================================================================
+
+[d1af3a6, 8fea2cb, 0776fa9, 26fe52a, 38a0a79, e1213c7]
+   Problema: a sessão caía com frequência; o suporte era pouco visível;
+   respostas de chamados e solicitações falhavam; não havia guia de uso;
+   telas pareciam travadas enquanto carregavam.
+   O que foi usado: sessão persistente com renovação do token, menu lateral
+   expansível, botão destacado "Abrir chamado", página Guia de uso por perfil,
+   fluxo completo de status dos chamados e indicador de carregamento global.
+
+
+==============================================================================
+1.2.0 — 04 a 07/08/2026 — Aprovação de vendas pelo Luxus Task e contratos
+==============================================================================
+
+1) Venda aprovada vai ao Luxus Task (#24, #25, #28) [8aaa318, 382bccd,
+   1616b54, aa60261]
+   Problema: aprovar a venda não gerava nada no Luxus Task e a venda não era
+   ativada quando o Task terminava.
+   O que foi usado: fluxo de análise (rascunho, aguardando análise, em
+   análise, aprovada) com envio da demanda ao Task, retorno do Task por
+   callback e sugestão automática de responsável, cliente e prazo.
+
+2) Exclusão segura (#26) [cb8cdff] e ciclo de contratos (#27) [3ef1b58]
+   O que foi feito: exclusão de vendas e chamados com confirmação e
+   auditoria; etapas do contrato (em branco, assinatura, validação).
+
+3) Anexos nos dois sentidos [399614f, 419590d]
+   Problema: anexos do Task não chegavam ao Parceiros e vice-versa.
+   O que foi usado: callback recebendo os anexos e envio dos novos uploads à
+   demanda integrada; notificação a quem abriu a venda.
+
+4) Vários acessos com o mesmo CNPJ [cbc32b9, 939fb39]
+   Problema: um mesmo CNPJ não podia ter mais de um parceiro cadastrado.
+   O que foi usado: remoção da unicidade do documento e aviso na tela;
+   ajuste do seed.
+
+
+==============================================================================
+1.3.0 — 10 a 12/08/2026 — Anexos nos dois sentidos, edição e reenvio de sync
+==============================================================================
+
+1) "De quem é a vez" e erros de sincronização visíveis [ce6328a]
+   O que foi feito: filtro e selo da vez, botão de reenvio, origem dos
+   anexos, linha do tempo e avisos na troca de vez.
+
+2) Transferência real dos arquivos [7363793, 10188af, 6abe2d6, dd7193c,
+   456bdd2, 768a5b3, 42a15f8, b63701e, c581d93, 603fc61]
+   Problema: o Task recebia só o nome dos anexos; o callback dava erro 400
+   por campos extras; arquivos voltavam para a origem.
+   O que foi usado: arquivos enviados em base64; contrato do Task gravado em
+   /uploads; erro explícito quando o arquivo não está no disco; fila de nova
+   tentativa incluindo vendas já ligadas; Express incluído na imagem de
+   produção (limite maior do corpo da requisição); botão de reenvio de
+   anexos.
+
+3) Contrato assinado e troca de vez [a1929a3, 8749283]
+
+4) Vendas de filial marcadas como Matriz [6dd0bec]
+   Problema: vendas feitas por usuários de filial apareciam como Matriz no
+   dashboard.
+   O que foi usado: correção ao criar a venda e script para corrigir as
+   vendas antigas.
+
+5) Editar a venda e reenviar ao Task [960b3b9, 3df8096, 5f0867f]
+   Problema: um CPF errado travava a venda.
+   O que foi usado: edição até a conclusão (registrada no histórico),
+   contador de dígitos nos campos numéricos, RG de 7 a 11 caracteres e UF
+   com 2 letras. O botão "Contestar" virou "Editar".
+
+6) Favicon da marca [db8799c]
+
+
+==============================================================================
+1.4.0 — 17 a 27/08/2026 — API externa, prazos e Task assumindo a demanda
+==============================================================================
+
+1) Infraestrutura [de0aeba, a1d3272]
+   O que foi feito: ajuste do nest-cli; containers Docker isolados e porta
+   do Nginx configurável.
+
+2) Pedido de vez com justificativa [1875db1]
+   Problema: era possível trocar a vez de uma venda já concluída.
+
+3) API externa de consulta de vendas [85b5e4e]
+   Por quê: sistemas de terceiros precisavam consultar vendas sem acessar o
+   painel.
+   O que foi usado: módulo external-sales protegido por chave de API.
+
+4) Resolver no Parceiros sem depender do Task [62d88de, 806ef79, dcd2ed4]
+   O que foi feito: finalizar venda travada no Task, reabrir venda concluída
+   e mostrar quem está na vez.
+
+5) Sincronização confiável com o Task [dc356b0, 48d10ab, d668da9, 5880c6e,
+   0b1a95d]
+   Problema: sync falhava por protocolo duplicado, marcava sucesso sem
+   enviar RG/CPF e não mandava todos os dados da venda.
+   O que foi usado: recuperação do vínculo da demanda, sync que só marca
+   sucesso com todos os arquivos, limite do corpo em 50 MB, assunto e
+   observações com linha, endereço e telefone, botão Sincronizar que espera
+   o resultado e rota GET /sales/:id com o resumo para o Task.
+
+6) Prazos [c663149, 324b6db, fac9eb7, aea2ac5]
+   Problema: era possível aprovar com prazo no passado, e o prazo chegava ao
+   Task com um dia a menos.
+   Por quê: o fuso horário convertia o fim do dia para UTC e mudava a data.
+   O que foi usado: validação na API e no formulário (sugestão de +7 dias),
+   edição do prazo e envio como data pura (aaaa-mm-dd).
+
+7) Fluxo simplificado: o Task assume a demanda [a5fb268, c864e2f, 51f4ceb,
+   69045f7, 0eec543, 81814bf]
+   Problema: o vai-e-volta de "vez" entre os sistemas confundia.
+   Por quê: o Luxus Task passa a conduzir tudo depois do envio e o Parceiros
+   só espelha.
+   O que foi usado: remoção da troca de vez e do contrato em branco,
+   conclusão automática pelo callback, resumo do Task na venda, avisos em
+   tempo real que podem ser marcados como lidos.
+
+
+==============================================================================
+1.5.0 — 31/08 a 09/09/2026 — Manual, dashboard por 30 dias, clientes em lote
+==============================================================================
+
+1) Manual de processos [e5b19d0] (documento Word com os processos).
+
+2) Receita e comissões no dashboard [585adf2, e045457, 8848d23]
+   Problema: receita e comissões não batiam e excluir parceiro dava erro.
+   O que foi usado: receita e comissão pela data de ativação, últimos 30 dias
+   como padrão, cartões de vendas em andamento e canceladas, exclusão de
+   parceiro em cascata, linha marcada como vendida ao concluir. Ajuste de
+   build (Array.from em vez de espalhar um Set).
+   Observação: a regra de data foi trocada na versão 1.11.0.
+
+3) Anexos em vendas abertas [d101c8d]
+4) Parceiro edita e exclui clientes em lote [4472efe, 2a44c9f]
+   Observação: clientes de teste podem ser excluídos com suas vendas; só
+   bloqueia quando há comissão paga.
+
+
+==============================================================================
+1.6.0 — 15/09/2026 — Envio ao Luxus Task em modo "handoff"
+==============================================================================
+
+[0cd35d7, 0c3c0fc, 934f404]
+   Problema: era preciso mandar ao Task vendas em andamento ou já concluídas,
+   e o título e as observações chegavam bagunçados (o e-mail
+   "alexya@gmail.com" virava "alexyaalmeida89 gmail com").
+   O que foi usado: envio em que o Task assume a finalização sem retorno,
+   título "cliente + linha", data do dia, dados nas observações e limpeza de
+   texto que preserva @ e pontuação de e-mail.
+
+
+==============================================================================
+1.7.0 — 22 a 29/09/2026 — Exportações, anexos de até 50 MB, períodos
+==============================================================================
+
+[40df1c6, f71bdd8, a1f4dfb, eb71e5b, 7fb40b1, 3a0cbdd]
+   - Relatório do dashboard com linha, telefone e CPF/CNPJ.
+   - Botão Exportar nas vendas (PDF, CSV, TXT).
+   - Anexos de qualquer tipo até 50 MB; se o anexo falhar, o rascunho da
+     venda é descartado (para não ficar venda pela metade).
+   - Períodos do dashboard: mês, 30 dias, 60 dias e histórico, iguais nos
+     indicadores, no gráfico e na exportação.
+   - Correção de tipagem que quebrava o build e novo deploy.
+
+
+==============================================================================
+1.8.0 — 01 a 06/10/2026 — Conclusão automática pelo Task, eSIM, anexos
+==============================================================================
+
+[5b726da, 66c1ea0, cc13232, 52df8c3, 54a7880, 8749cae, 4ff44d0, dff5ad9]
+   - A venda conclui quando o Luxus Task conclui a demanda (inclusive as que
+     já estavam concluídas lá).
+   - Trocar, acrescentar e excluir anexos antes e durante o Task, refletindo
+     no Task.
+   - Excel do dashboard com abas e colunas (biblioteca write-excel-file).
+   - Venda de eSIM: pede IMEI (15 dígitos), EID (32 dígitos), sistema do
+     aparelho e foto da tela; aviso quando chegam anexos novos.
+
+
+==============================================================================
+1.9.0 — 07 a 09/10/2026 — Upgrade de plano, cópia histórica, filtros
+==============================================================================
+
+[e3d99c0, b0ad00b, 7170bf5, 059ca2d, 56adc8b, b24ef85, 8baa2ee]
+   - Upgrade de plano a partir de uma venda anterior (copia cliente e
+     documentos).
+   - Cópia de vendas que já estavam no Luxus Task para o Parceiros, sem
+     reabrir nem alterar a demanda; usa a data de abertura do Task e respeita
+     demandas ainda abertas (HistoricalSalesService).
+   - Filtros de vendas por andamento, data e parceiro.
+   - Mover uma venda histórica para o parceiro dono.
+
+
+==============================================================================
+1.10.0 — 14/10/2026 — Envio ao sistema de faturamento da Luxus (telefonia-2)
+==============================================================================
+
+1) Vendas concluídas vão ao telefonia-2 [0348c68, 77987f3]
+   Problema: as vendas concluídas precisavam entrar no sistema de faturamento
+   da Luxus (Luxus Connect / telefonia-2). A primeira rota usada dava 404.
+   Por quê: o operador do telefonia-2 publicou a porta de entrada
+   /api/v1/intake/customers, autenticada pelo cabeçalho X-API-Key.
+   O que foi usado: módulo telefonia-intake na API, com fila e nova
+   tentativa; o envio não desfaz a conclusão da venda. O pacote enviado segue
+   as regras do telefonia-2: telefone de 10 a 15 dígitos, ICCID de 19 a 22,
+   IMEI de 15, EID de 32, anexos PDF/JPEG/PNG/WebP de até 8 MB cada (16 MB
+   no total, máximo 10). Telefone ou e-mail inválido vai nas observações em
+   vez de bloquear. A mesma venda reenviada não duplica (o telefonia-2
+   responde "replayed"). Configuração na Railway: TELEFONIA_INTAKE_URL e a
+   chave do operador.
+
+2) Escolha da cobrança em cada venda [77987f3]
+   Problema: nem toda venda é cobrada pela Luxus; as que não são não devem
+   ir ao faturamento.
+   O que foi usado: campo billedByLuxus na venda (migração
+   20261014170000_sale_billed_by_luxus, padrão "sim"). Vendas novas são
+   obrigadas a escolher no cadastro; as antigas e as em andamento ficaram
+   como "cobrança pela Luxus". Só vendas com cobrança pela Luxus entram na
+   fila do telefonia-2. As vendas já concluídas foram enviadas.
+
+3) Texto da escolha [fb32503]
+   Problema: o texto citava "telefonia-2", nome interno que o usuário não
+   entende.
+   O que foi feito: "A cobrança será feita pela Luxus — esta venda vai para
+   o sistema de faturamento da Luxus" e "A cobrança não será feita pela
+   Luxus — esta venda não vai para o sistema de faturamento da Luxus".
+
+
+==============================================================================
+1.11.0 — 19/10/2026 — Dashboard conta a venda pela data da venda
+==============================================================================
+
+[0b16b67]
+   Problema: uma venda feita em 06/07/2026 aparecia no dashboard como venda
+   de 08/10/2026 e não batia com o relatório de vendas.
+   Por quê: o dashboard contava pela data de conclusão no Task. Vendas
+   antigas concluídas tarde inflavam o mês da conclusão.
+   O que foi usado: no dashboard.service.ts, vendas realizadas, projeção,
+   comissão e gráfico passaram a usar a data de criação da venda
+   (createdAt), que é a data da venda. Cancelamentos continuam pela data do
+   cancelamento. Teste automático "venda concluída tarde conta no mês em que
+   foi vendida".
+
+
+==============================================================================
+1.12.0 — 19/10/2026 — Importação de vendas por planilha, guia e histórico
+==============================================================================
+
+1) Importação em massa por planilha Excel
+   Problema: cadastrar muitas vendas uma a uma era lento, e havia vendas já
+   concluídas no Luxus Task que ainda não estavam no Parceiros.
+   Por quê: permitir que o parceiro ou o administrador baixe uma planilha
+   padrão, preencha as vendas e envie tudo de uma vez.
+   Como funciona:
+   - Em Vendas, botão "Importar". Escolhe-se o tipo:
+     a) "Vendas novas (vão para aprovação)": cada linha vira uma venda em
+        "Aguardando análise". O administrador aprova e ela segue para o
+        Luxus Task, como no cadastro normal. A planilha não leva fotos, então
+        o administrador pode pedir os documentos na análise. Disponível para
+        administrador, parceiro e filial.
+     b) "Vendas já concluídas no Luxus Task" (só administrador): cada linha
+        vira uma venda concluída, ligada ao protocolo do Task, com comissão e
+        contando no dashboard pela data da venda. Nada é enviado nem alterado
+        no Luxus Task. Se a cobrança for da Luxus, a venda segue para o
+        sistema de faturamento.
+   - "Baixar planilha" gera o arquivo .xlsx com as abas: Vendas (para
+     preencher), Instruções (o que vai em cada coluna, se é obrigatória e
+     um exemplo), Planos (operadora, plano e preço) e, para o administrador,
+     Parceiros e lojas. Assim os nomes são escritos iguais ao cadastro.
+   - Proteções: cada linha é validada sozinha e as linhas com erro não
+     impedem as outras; o resultado mostra a linha e o motivo. Bloqueia
+     linha vendida que já tem venda ativa, protocolo do Task já importado,
+     linha ou protocolo repetido na mesma planilha, linha igual ao telefone
+     de contato, datas impossíveis ou no futuro. Cliente com o mesmo CPF no
+     mesmo parceiro é reaproveitado. Máximo de 300 vendas por arquivo.
+   - Cuidados com o Excel: CPF digitado como número recupera o zero da
+     frente; ICCID e EID digitados como número (o Excel corta depois de 15
+     dígitos) são recusados com o pedido para formatar a coluna como Texto.
+   O que foi usado:
+   - Web: write-excel-file para gerar a planilha e read-excel-file (nova
+     dependência) para ler o arquivo no navegador
+     (apps/web/src/lib/sales-import.ts e
+     apps/web/src/components/sales/sales-import-button.tsx).
+   - API: rota POST /api/sales/import (permissão de criar vendas). A
+     validação de cada linha fica em sales-import.parse.ts; a gravação em
+     sales-import.service.ts. As vendas novas reaproveitam o mesmo cadastro
+     da tela (SalesService.create), com as mesmas regras de eSIM,
+     portabilidade, plano do parceiro e comissão. As concluídas seguem o
+     modelo da cópia histórica (versão 1.9.0) e geram a comissão.
+   - Testes: apps/api/test/sales-import.test.js.
+
+2) Guia de uso atualizado
+   O que mudou: novas seções "Análise e envio de vendas", "Importar vendas
+   por planilha" e "Dashboard e relatórios" para o administrador; passos de
+   importação para parceiro e filial; explicação da escolha de cobrança e
+   da regra de data do dashboard.
+
+3) Este arquivo (HISTORICO_DE_VERSOES.txt)
+   Por quê: ter em um só lugar tudo o que foi feito, por que e com o quê.
+   A cada nova mudança, acrescente uma versão no fim, seguindo o mesmo
+   formato: Problema, Por quê, O que foi usado.

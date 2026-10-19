@@ -1,10 +1,12 @@
 'use client';
 
 import {
+  BarChart3,
   Bell,
   BookOpen,
   CheckCircle2,
   CircleHelp,
+  FileSpreadsheet,
   FileText,
   Headphones,
   ShieldCheck,
@@ -58,7 +60,55 @@ const commonSections: GuideSection[] = [
   },
 ];
 
+const billingStep =
+  'Em toda venda nova, marque a Cobrança: “feita pela Luxus” manda a venda concluída para o sistema de faturamento da Luxus; “não feita pela Luxus” não manda.';
+
+const dashboardStep =
+  'No Dashboard, a venda conta no mês em que foi feita (data da venda), mesmo que o Luxus Task conclua depois. Cancelamentos contam pela data do cancelamento.';
+
+const importNewSteps = [
+  'Em Vendas, clique em “Importar” e escolha “Vendas novas (vão para aprovação)”.',
+  'Clique em “Baixar planilha”: ela traz a aba Vendas, as instruções de cada coluna e a lista de planos.',
+  'Preencha uma venda por linha a partir da linha 2, sem mudar os títulos. Colunas com * são obrigatórias, inclusive “Cobrança pela Luxus” (Sim ou Não).',
+  'Envie o arquivo e clique em “Importar”. Cada venda entra direto em análise; o administrador pode pedir as fotos (chip, CPF, RG), que a planilha não leva.',
+  'Se alguma linha der erro, o sistema mostra o número da linha e o motivo. Corrija só essas linhas, apague as que já entraram e envie de novo.',
+];
+
 const adminSections: GuideSection[] = [
+  {
+    title: 'Análise e envio de vendas',
+    description: 'Do rascunho do parceiro até a conclusão no Luxus Task.',
+    icon: ShoppingCart,
+    steps: [
+      'Vendas enviadas pelos parceiros (ou importadas por planilha) aparecem como Aguardando análise.',
+      'Confira cliente, plano, linha, formato do contrato e anexos. Se faltar algo, peça correção ou documentos.',
+      'Ao aprovar, escolha cliente, responsável e prazo: a venda segue para o Luxus Task.',
+      'A venda só fica concluída quando a demanda for concluída no Luxus Task.',
+      billingStep,
+    ],
+  },
+  {
+    title: 'Importar vendas por planilha',
+    description: 'Cadastre muitas vendas de uma vez com a planilha padrão.',
+    icon: FileSpreadsheet,
+    steps: [
+      'Em Vendas, clique em “Importar” e escolha o tipo: “Vendas novas (vão para aprovação)” ou “Vendas já concluídas no Luxus Task”.',
+      'Baixe a planilha do tipo escolhido. Ela traz instruções e as listas de planos, parceiros e lojas, para escrever os nomes iguais ao cadastro.',
+      'Vendas novas: entram em análise e seguem o fluxo normal até o Luxus Task.',
+      'Vendas concluídas: informe o protocolo do Luxus Task e a data da venda. Entram como concluídas, com comissão, e nada é alterado no Luxus Task. Um protocolo só pode ser importado uma vez.',
+      'Linhas com erro não impedem as outras. O resultado mostra a linha e o motivo de cada erro.',
+    ],
+  },
+  {
+    title: 'Dashboard e relatórios',
+    description: 'Números de vendas, comissão e projeção.',
+    icon: BarChart3,
+    steps: [
+      dashboardStep,
+      'Use os filtros de período, parceiro e loja antes de exportar o relatório em Excel.',
+      'Comissão e projeção seguem a mesma data da venda usada na contagem.',
+    ],
+  },
   {
     title: 'Parceiros, filiais e usuários',
     description: 'Administre a estrutura comercial em cascata.',
@@ -107,10 +157,18 @@ const partnerSections: GuideSection[] = [
     description: 'Cadastre e acompanhe cada venda até a conclusão.',
     icon: ShoppingCart,
     steps: [
-      'Preencha cliente, plano, linha e documentos e envie para análise.',
+      'Preencha cliente, plano, linha, formato do contrato e documentos e envie para análise.',
+      billingStep,
       'Depois que o administrador encaminhar ao Luxus Task, acompanhe só o status.',
       'A venda aparece como concluída quando a demanda for concluída no Luxus Task.',
+      dashboardStep,
     ],
+  },
+  {
+    title: 'Importar vendas por planilha',
+    description: 'Cadastre várias vendas de uma vez.',
+    icon: FileSpreadsheet,
+    steps: importNewSteps,
   },
   {
     title: 'Abrir e acompanhar chamado',
@@ -132,8 +190,15 @@ const attendantSections: GuideSection[] = [
     steps: [
       'Consulte clientes e registre vendas usando os dados corretos.',
       'Confira documentos e informações antes de concluir o cadastro.',
+      billingStep,
       'Use o sino para acompanhar retornos que dependem de ação.',
     ],
+  },
+  {
+    title: 'Importar vendas por planilha',
+    description: 'Cadastre várias vendas de uma vez.',
+    icon: FileSpreadsheet,
+    steps: importNewSteps,
   },
 ];
 
