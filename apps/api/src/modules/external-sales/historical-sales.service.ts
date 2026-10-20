@@ -144,6 +144,7 @@ export class HistoricalSalesService {
         lineId: true,
         simCardId: true,
         notes: true,
+        status: true,
       },
     });
     if (!sale) throw new NotFoundException('Venda histórica não encontrada para essa demanda');
@@ -168,6 +169,9 @@ export class HistoricalSalesService {
     const notes = !note || sale.notes?.includes(note)
       ? sale.notes
       : [sale.notes?.trim(), note].filter(Boolean).join('\n');
+    const isOpen = !([SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED] as SaleStatus[])
+      .includes(sale.status);
+    const billedByLuxus = isOpen ? await this.partnerBilledByLuxus(partnerResult.partner.id) : undefined;
     await this.prisma.$transaction(async (tx) => {
       await tx.sale.update({
         where: { id: sale.id },
@@ -175,6 +179,7 @@ export class HistoricalSalesService {
           partnerId: partnerResult.partner.id,
           branchId: branchResult.branch.id,
           ...(notes ? { notes } : {}),
+          ...(billedByLuxus !== undefined && { billedByLuxus }),
         },
       });
       await tx.client.update({
@@ -261,6 +266,7 @@ export class HistoricalSalesService {
     const amount = calculatePlanCommission(dto.value, commissionType, commissionValue);
     const commissionRate = commissionType === 'PERCENTAGE' ? commissionValue : 0;
     const requiredDocuments = getRequiredDocumentsForSale();
+    const billedByLuxus = await this.partnerBilledByLuxus(partnerResult.partner.id);
 
     const created = await this.prisma.$transaction(async (tx) => {
       const line = await tx.line.upsert({
@@ -287,6 +293,7 @@ export class HistoricalSalesService {
       const sale = await tx.sale.create({
         data: {
           protocol: generateProtocol('VND'),
+          billedByLuxus,
           partnerId: partnerResult.partner.id,
           branchId: branchResult.branch.id,
           clientId: clientResult.client.id,
@@ -374,6 +381,14 @@ export class HistoricalSalesService {
       );
     }
     return plans[0];
+  }
+
+  private async partnerBilledByLuxus(partnerId: string) {
+    const partner = await this.prisma.partner.findUnique({
+      where: { id: partnerId },
+      select: { billedByLuxus: true },
+    });
+    return partner?.billedByLuxus ?? false;
   }
 
   private async findOrCreatePartner(dto: ImportHistoricalSaleDto) {

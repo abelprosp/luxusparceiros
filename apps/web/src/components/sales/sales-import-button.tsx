@@ -28,7 +28,7 @@ import {
 
 interface NamedItem { id: string; name: string }
 interface PlanItem extends NamedItem { price: number | string; operatorId: string; operator?: { name: string } }
-interface PartnerItem extends NamedItem { document: string }
+interface PartnerItem extends NamedItem { document: string; billedByLuxus?: boolean }
 interface BranchItem extends NamedItem { parentPartnerId: string }
 
 async function fetchAll<T>(path: string): Promise<T[]> {
@@ -96,6 +96,7 @@ export function SalesImportButton({ onSuccess }: { onSuccess: () => void }) {
           .map((partner) => ({
             name: partner.name,
             document: partner.document,
+            billedByLuxus: partner.billedByLuxus === true,
             branches: branches.filter((branch) => branch.parentPartnerId === partner.id).map((branch) => branch.name),
           }))
           .sort((a, b) => a.name.localeCompare(b.name)),

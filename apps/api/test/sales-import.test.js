@@ -20,7 +20,6 @@ const baseRow = {
   lineNumber: '51988887777',
   simType: 'Chip',
   contractFormat: 'Impressão',
-  billedByLuxus: 'Sim',
 };
 
 test('planilha aceita valores e datas no formato brasileiro', () => {
@@ -43,17 +42,15 @@ test('venda nova válida vira linha normalizada', () => {
   assert.equal(value.clientDocumentType, 'CPF');
   assert.equal(value.value, 59.9);
   assert.equal(value.contractFormat, 'PRINT');
-  assert.equal(value.billedByLuxus, true);
   assert.equal(value.simType, 'CHIP');
 });
 
-test('venda nova exige cobrança, formato do contrato e dados do eSIM', () => {
+test('venda nova exige formato do contrato e dados do eSIM', () => {
   const { value, errors } = normalizeImportRow(
-    { ...baseRow, billedByLuxus: '', contractFormat: '', simType: 'eSIM' },
+    { ...baseRow, contractFormat: '', simType: 'eSIM' },
     'new',
   );
   assert.equal(value, undefined);
-  assert.ok(errors.includes('Cobrança pela Luxus deve ser Sim ou Não'));
   assert.ok(errors.includes('Formato do contrato deve ser Impressão ou ZapSign'));
   assert.ok(errors.includes('eSIM: informe o IMEI do aparelho'));
 });

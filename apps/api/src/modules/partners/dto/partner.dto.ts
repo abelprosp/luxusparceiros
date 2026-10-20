@@ -1,6 +1,7 @@
 import { PartialType } from '@nestjs/swagger';
 import {
   IsArray,
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsNumber,
@@ -135,6 +136,13 @@ export class CreatePartnerDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({
+    description: 'Quando verdadeiro, a Luxus cobra as vendas do parceiro e as concluídas vão para o sistema de faturamento',
+  })
+  @IsOptional()
+  @IsBoolean()
+  billedByLuxus?: boolean;
 
   @ApiPropertyOptional({ type: CreatePartnerUserDto })
   @IsOptional()

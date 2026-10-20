@@ -282,7 +282,6 @@ export class SalesImportService {
     const clientId = await this.updateExistingClient(row, partnerId);
     const sale = await this.salesService.create({
       ...(clientId ? { clientId } : { client: this.clientData(row) }),
-      billedByLuxus: row.billedByLuxus,
       operatorId,
       planId: plan.id,
       partnerId: user.partnerId ? undefined : partnerId,
@@ -334,6 +333,7 @@ export class SalesImportService {
     const planPrice = await this.prisma.plan.findUnique({ where: { id: plan.id }, select: { price: true } });
     const value = row.value ?? Number(planPrice?.price ?? 0);
     const { amount, commissionRate } = await this.salesService.resolveCommission(partnerId, plan.id, value);
+    const billedByLuxus = await this.salesService.partnerBilledByLuxus(partnerId);
     const sale = await this.prisma.$transaction(async (tx) => {
       const clientId = await this.upsertClient(row, partnerId, branchId, tx);
       const line = await tx.line.upsert({
@@ -388,7 +388,7 @@ export class SalesImportService {
           contractStageUpdatedAt: concludedAt,
           signedContractSyncStatus: SaleTaskSyncStatus.NOT_READY,
           contractFormat: row.contractFormat,
-          billedByLuxus: row.billedByLuxus,
+          billedByLuxus,
           value,
           commissionRate,
           commissionValue: amount,

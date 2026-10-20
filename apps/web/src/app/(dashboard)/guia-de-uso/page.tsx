@@ -61,7 +61,10 @@ const commonSections: GuideSection[] = [
 ];
 
 const billingStep =
-  'Em toda venda nova, marque a Cobrança: “feita pela Luxus” manda a venda concluída para o sistema de faturamento da Luxus; “não feita pela Luxus” não manda.';
+  'A cobrança é definida no cadastro do parceiro. Se a cobrança for feita pela Luxus, as vendas concluídas vão para o sistema de faturamento da Luxus; se não estiver marcada, ficam fora.';
+
+const adminBillingStep =
+  'No cadastro do parceiro, marque “A cobrança das vendas deste parceiro é feita pela Luxus” quando for o caso. Sem marcação, as vendas ficam fora do sistema de faturamento da Luxus. Ao mudar, as vendas ainda não concluídas passam a seguir a nova opção.';
 
 const dashboardStep =
   'No Dashboard, a venda conta no mês em que foi feita (data da venda), mesmo que o Luxus Task conclua depois. Cancelamentos contam pela data do cancelamento.';
@@ -69,7 +72,7 @@ const dashboardStep =
 const importNewSteps = [
   'Em Vendas, clique em “Importar” e escolha “Vendas novas (vão para aprovação)”.',
   'Clique em “Baixar planilha”: ela traz a aba Vendas, as instruções de cada coluna e a lista de planos.',
-  'Preencha uma venda por linha a partir da linha 2, sem mudar os títulos. Colunas com * são obrigatórias, inclusive “Cobrança pela Luxus” (Sim ou Não).',
+  'Preencha uma venda por linha a partir da linha 2, sem mudar os títulos. Colunas com * são obrigatórias. A cobrança não vai na planilha: segue o cadastro do parceiro.',
   'Envie o arquivo e clique em “Importar”. Cada venda entra direto em análise; o administrador pode pedir as fotos (chip, CPF, RG), que a planilha não leva.',
   'Se alguma linha der erro, o sistema mostra o número da linha e o motivo. Corrija só essas linhas, apague as que já entraram e envie de novo.',
 ];
@@ -115,6 +118,7 @@ const adminSections: GuideSection[] = [
     icon: Users,
     steps: [
       'Cadastre o parceiro e depois inclua suas filiais e usuários.',
+      adminBillingStep,
       'Planos e operadoras configurados para a matriz valem também para suas filiais.',
       'Revise o perfil e as permissões antes de liberar um novo acesso.',
     ],

@@ -115,6 +115,15 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (this.taskSyncTimer) clearInterval(this.taskSyncTimer);
   }
 
+  /** A cobrança é definida no cadastro do parceiro; sem marcação, a venda fica fora do faturamento da Luxus. */
+  async partnerBilledByLuxus(partnerId: string) {
+    const partner = await this.prisma.partner.findUnique({
+      where: { id: partnerId },
+      select: { billedByLuxus: true },
+    });
+    return partner?.billedByLuxus ?? false;
+  }
+
   async resolveCommission(partnerId: string, planId: string, saleValue: number) {
     const partnerPlan = await this.prisma.partnerPlan.findUnique({
       where: { partnerId_planId: { partnerId, planId } },
@@ -502,6 +511,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
 
     const saleValue = dto.value ?? Number(plan.price);
     const { amount, commissionRate } = await this.resolveCommission(partnerId, dto.planId, saleValue);
+    const billedByLuxus = await this.partnerBilledByLuxus(partnerId);
 
     const sale = await this.prisma.sale.create({
       data: {
@@ -520,7 +530,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         value: saleValue,
         commissionRate,
         commissionValue: amount,
-        billedByLuxus: dto.billedByLuxus,
+        billedByLuxus,
         isPortability: dto.isPortability ?? false,
         isVirginChip,
         isUpgrade: Boolean(upgradeSource),
@@ -656,7 +666,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       lineId,
       campaignId,
       value,
-      billedByLuxus,
+      billedByLuxus: _billedByLuxus,
       isPortability,
       isVirginChip,
       portabilityNumber,
@@ -755,7 +765,6 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         ...(lineId !== undefined && { lineId }),
         ...(campaignId !== undefined && { campaignId }),
         ...(value !== undefined && { value }),
-        ...(billedByLuxus !== undefined && { billedByLuxus }),
         ...(commission && {
           commissionRate: commission.commissionRate,
           commissionValue: commission.amount,

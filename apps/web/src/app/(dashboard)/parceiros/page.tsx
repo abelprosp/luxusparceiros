@@ -42,6 +42,7 @@ interface Partner {
   city?: string;
   state?: string;
   zipCode?: string;
+  billedByLuxus?: boolean;
   createdAt: string;
   users?: { id: string; email: string; name: string }[];
   branches?: Branch[];
@@ -85,6 +86,7 @@ const emptyForm = {
   address: '',
   city: '',
   state: '',
+  billedByLuxus: false,
   userName: '',
   userEmail: '',
   userPassword: '',
@@ -239,6 +241,7 @@ export default function ParceirosPage() {
       address: form.address.trim(),
       city: form.city.trim(),
       state: form.state.trim().toUpperCase(),
+      billedByLuxus: form.billedByLuxus,
     };
 
     try {
@@ -402,6 +405,7 @@ export default function ParceirosPage() {
                           address: p.address ?? '',
                           city: p.city ?? '',
                           state: p.state ?? '',
+                          billedByLuxus: p.billedByLuxus === true,
                         });
                         setDialogOpen(true);
                       }}>
@@ -443,6 +447,22 @@ export default function ParceirosPage() {
             </div>
             <div className="space-y-2"><Label>E-mail</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
             <div className="space-y-2"><Label>Telefone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
+            <label className="flex items-start gap-3 rounded-lg border p-4 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4"
+                checked={form.billedByLuxus}
+                onChange={(event) => setForm({ ...form, billedByLuxus: event.target.checked })}
+              />
+              <span>
+                <span className="font-medium">A cobrança das vendas deste parceiro é feita pela Luxus</span>
+                <span className="block text-xs text-muted-foreground">
+                  Marcado: as vendas concluídas vão para o sistema de faturamento da Luxus.
+                  Desmarcado: as vendas ficam fora do sistema de faturamento da Luxus.
+                  Ao mudar, as vendas ainda não concluídas passam a seguir a nova opção.
+                </span>
+              </span>
+            </label>
             <div className="space-y-3 rounded-lg border p-4">
               <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-primary" />

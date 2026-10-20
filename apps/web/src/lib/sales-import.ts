@@ -44,7 +44,6 @@ const COLUMNS: ImportColumn[] = [
   { key: 'portabilityNumber', header: 'Número portado', required: 'never', width: 16, example: '', hint: 'Obrigatório se Portabilidade = Sim.' },
   { key: 'donorOperator', header: 'Operadora doadora', required: 'never', width: 14, example: '', hint: 'Vivo, TIM, Claro, Surf ou Outra. Obrigatório se Portabilidade = Sim.' },
   { key: 'contractFormat', header: 'Formato do contrato', required: 'new', width: 16, example: 'Impressão', hint: 'Impressão ou ZapSign. Nas concluídas, em branco = Impressão.' },
-  { key: 'billedByLuxus', header: 'Cobrança pela Luxus', required: 'always', width: 16, example: 'Sim', hint: 'Sim = vai para o sistema de faturamento da Luxus. Não = não vai.' },
   { key: 'notes', header: 'Observações', required: 'never', width: 30, example: '', hint: 'Qualquer informação extra da venda.' },
 ];
 
@@ -81,7 +80,7 @@ function normalizeHeader(value: unknown) {
 
 export interface SalesTemplateData {
   plans: Array<{ operator: string; plan: string; price: number }>;
-  partners?: Array<{ name: string; document: string; branches: string[] }>;
+  partners?: Array<{ name: string; document: string; billedByLuxus: boolean; branches: string[] }>;
 }
 
 export async function downloadSalesTemplate(mode: SalesImportMode, isAdmin: boolean, data: SalesTemplateData) {
@@ -136,14 +135,15 @@ export async function downloadSalesTemplate(mode: SalesImportMode, isAdmin: bool
     ...(isAdmin && data.partners ? [{
       sheet: 'Parceiros e lojas',
       data: [
-        [headerCell('Parceiro'), headerCell('CNPJ/CPF'), headerCell('Lojas (em branco = Matriz)')],
+        [headerCell('Parceiro'), headerCell('CNPJ/CPF'), headerCell('Cobrança pela Luxus'), headerCell('Lojas (em branco = Matriz)')],
         ...data.partners.map((partner) => [
           { type: String, value: partner.name },
           { type: String, value: partner.document },
+          { type: String, value: partner.billedByLuxus ? 'Sim' : 'Não' },
           { type: String, value: partner.branches.join(', ') || 'Somente Matriz' },
         ]),
       ],
-      columns: [{ width: 34 }, { width: 22 }, { width: 60 }],
+      columns: [{ width: 34 }, { width: 22 }, { width: 20 }, { width: 60 }],
       stickyRowsCount: 1,
     }] : []),
   ];

@@ -1,8 +1,8 @@
 HISTÓRICO DE VERSÕES — LUXUS PARCEIROS
 ======================================
 
-Atualizado em: 19/10/2026
-Versão atual: 1.12.0
+Atualizado em: 20/10/2026
+Versão atual: 1.12.0 em produção; 1.13.0 em homologação (branch homologacao)
 Repositório: https://github.com/abelprosp/luxusparceiros (branch main)
 Sistema web: https://parceiros.grupoluxus.com.br
 
@@ -55,6 +55,7 @@ TECNOLOGIAS USADAS NO PROJETO (VISÃO GERAL)
 1.10.0  14/10/2026          Envio ao sistema de faturamento (telefonia-2)
 1.11.0  19/10/2026          Dashboard conta a venda pela data da venda
 1.12.0  19/10/2026          Importação de vendas por planilha, guia, histórico
+1.13.0  20/10/2026          (Homologação) Cobrança pela Luxus no cadastro do parceiro
 
 
 ==============================================================================
@@ -494,3 +495,43 @@ TECNOLOGIAS USADAS NO PROJETO (VISÃO GERAL)
    Por quê: ter em um só lugar tudo o que foi feito, por que e com o quê.
    A cada nova mudança, acrescente uma versão no fim, seguindo o mesmo
    formato: Problema, Por quê, O que foi usado.
+
+
+==============================================================================
+1.13.0 — 20/10/2026 — Cobrança pela Luxus no cadastro do parceiro
+                      (EM HOMOLOGAÇÃO: branch "homologacao", ainda fora da main)
+==============================================================================
+
+   Problema: a cobrança pela Luxus era escolhida em cada venda, por quem
+   cadastrava. É uma decisão comercial que vale para o parceiro inteiro, e
+   repetir a escolha venda a venda abria espaço para erro.
+   Por quê: regra definida pelo cliente — quem cria o parceiro marca se a
+   cobrança é da Luxus; toda venda já nasce nessa base; sem nada marcado, a
+   venda fica fora do sistema de faturamento da Luxus.
+   Como funciona:
+   - No cadastro do parceiro (só administrador) há a caixa "A cobrança das
+     vendas deste parceiro é feita pela Luxus".
+   - Toda venda criada para o parceiro herda essa opção: cadastro normal,
+     importação por planilha e cópia histórica do Task. O formulário de venda,
+     a edição da venda e a planilha não perguntam mais.
+   - Ao mudar a opção no parceiro, as vendas dele ainda não concluídas passam
+     a seguir a nova opção. Concluídas, canceladas e rejeitadas ficam como
+     estão.
+   - Parceiros existentes começam desmarcados, e as vendas em aberto deles
+     também. Ao publicar, o administrador precisa marcar os parceiros
+     cobrados pela Luxus; até lá nenhuma venda nova vai ao faturamento.
+   O que foi usado:
+   - Migração 20261020120000_partner_billed_by_luxus (campo no parceiro,
+     padrão "não"; padrão da venda também passa a "não"; vendas em aberto
+     desmarcadas).
+   - API: partners.service.ts atualiza parceiro e vendas em aberto na mesma
+     transação; SalesService.partnerBilledByLuxus() usado na criação da venda,
+     na importação e no external-sales. O campo enviado pela tela antiga é
+     aceito e ignorado.
+   - Web: caixa no formulário de parceiro; escolha removida das telas de
+     venda; coluna removida da planilha e cobrança mostrada na aba "Parceiros
+     e lojas"; Guia de uso atualizado.
+   - Testes: partner-billing.test.js (novo) e sales-import.test.js, ambos
+     agora no "pnpm test".
+   - Documentação: README (seção "Atualização em homologação", com roteiro
+     de teste) e docs/HISTORICO-DE-VERSOES.md (Versão 36).

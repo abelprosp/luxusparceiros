@@ -58,9 +58,10 @@ export class CreateSaleDto {
   @Type(() => CreateClientInlineDto)
   client?: CreateClientInlineDto;
 
-  @ApiProperty({ description: 'Quando verdadeiro, a Luxus cobra e a venda concluída entra no telefonia-2' })
+  @ApiPropertyOptional({ description: 'Ignorado: a cobrança vem do cadastro do parceiro' })
+  @IsOptional()
   @IsBoolean()
-  billedByLuxus: boolean;
+  billedByLuxus?: boolean;
 
   @ApiProperty()
   @IsUUID()

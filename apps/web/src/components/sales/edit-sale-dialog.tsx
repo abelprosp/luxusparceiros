@@ -31,7 +31,6 @@ interface SaleDetail {
   newNumber?: string | null;
   chipIccid?: string | null;
   contractFormat?: ContractFormat | null;
-  billedByLuxus?: boolean;
   notes?: string | null;
   taskDeadline?: string | null;
   taskDemandId?: string | null;
@@ -96,7 +95,6 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
   const [newNumber, setNewNumber] = useState('');
   const [chipIccid, setChipIccid] = useState('');
   const [contractFormat, setContractFormat] = useState<ContractFormat | ''>('');
-  const [billedByLuxus, setBilledByLuxus] = useState(true);
   const [notes, setNotes] = useState('');
   const [taskDeadline, setTaskDeadline] = useState('');
   const minDeadline = useMemo(() => {
@@ -132,7 +130,6 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
         setNewNumber(data.newNumber ?? '');
         setChipIccid(data.chipIccid ?? '');
         setContractFormat(data.contractFormat ?? '');
-        setBilledByLuxus(data.billedByLuxus !== false);
         setNotes(data.notes ?? '');
         setTaskDeadline(toDateInputValue(data.taskDeadline));
       })
@@ -195,7 +192,6 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
           newNumber: newNumber || undefined,
           chipIccid: chipIccid || undefined,
           contractFormat: contractFormat || undefined,
-          billedByLuxus,
           notes,
           ...(taskDeadline ? { taskDeadline } : {}),
           client: {
@@ -290,23 +286,6 @@ export function EditSaleDialog({ saleId, open, onOpenChange, onSuccess }: EditSa
                     maxDigits={22}
                     hintLabel="ICCID (começa com 89)"
                   />
-                </div>
-                <div className="space-y-3 sm:col-span-2 rounded-lg border p-3">
-                  <Label>Cobrança</Label>
-                  <label className="flex items-start gap-2 text-sm">
-                    <input type="radio" name="edit-billed-by-luxus" className="mt-1" checked={billedByLuxus} onChange={() => setBilledByLuxus(true)} />
-                    <span>
-                      <span className="font-medium">A cobrança será feita pela Luxus</span>
-                      <span className="block text-xs text-muted-foreground">Esta venda vai para o sistema de faturamento da Luxus.</span>
-                    </span>
-                  </label>
-                  <label className="flex items-start gap-2 text-sm">
-                    <input type="radio" name="edit-billed-by-luxus" className="mt-1" checked={!billedByLuxus} onChange={() => setBilledByLuxus(false)} />
-                    <span>
-                      <span className="font-medium">A cobrança não será feita pela Luxus</span>
-                      <span className="block text-xs text-muted-foreground">Esta venda não vai para o sistema de faturamento da Luxus.</span>
-                    </span>
-                  </label>
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label>Formato do contrato</Label>

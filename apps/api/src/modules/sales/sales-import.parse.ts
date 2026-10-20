@@ -36,7 +36,6 @@ export interface SalesImportRow {
   portabilityNumber?: string;
   donorOperator?: DonorOperator;
   contractFormat: ContractFormat;
-  billedByLuxus: boolean;
   notes?: string;
   taskProtocol?: string;
   soldAt?: Date;
@@ -245,9 +244,6 @@ export function normalizeImportRow(
   const contractFormat = contractFormatOf(raw.contractFormat) ?? (isConcluded && !text(raw.contractFormat) ? ContractFormat.PRINT : null);
   if (!contractFormat) errors.push('Formato do contrato deve ser Impressão ou ZapSign');
 
-  const billedByLuxus = yesNo(raw.billedByLuxus);
-  if (billedByLuxus === null) errors.push('Cobrança pela Luxus deve ser Sim ou Não');
-
   let taskProtocol: string | undefined;
   let soldAt: Date | undefined;
   let concludedAt: Date | undefined;
@@ -303,7 +299,6 @@ export function normalizeImportRow(
       portabilityNumber,
       donorOperator,
       contractFormat: contractFormat!,
-      billedByLuxus: billedByLuxus!,
       notes: optional(raw.notes),
       taskProtocol,
       soldAt,

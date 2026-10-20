@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { CommissionStatus, PartnerStatus, Prisma, UserRole } from '@prisma/client';
+import { CommissionStatus, PartnerStatus, Prisma, SaleStatus, UserRole } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
@@ -19,6 +19,9 @@ import {
   SuspendPartnerDto,
   UpdatePartnerDto,
 } from './dto/partner.dto';
+
+/** Vendas concluídas, canceladas ou rejeitadas mantêm a cobrança com que terminaram. */
+const OPEN_SALE_EXCLUDED_STATUSES: SaleStatus[] = [SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED];
 
 type PartnerAddress = {
   address?: string | null;
@@ -174,7 +177,9 @@ export class PartnersService {
 
   async update(id: string, dto: UpdatePartnerDto, actor: AuthUser) {
     const existing = await this.findOne(id, actor);
-    const { user: _user, ...partnerData } = dto;
+    const { user: _user, billedByLuxus: requestedBilling, ...partnerData } = dto;
+    const billedByLuxus = actor.partnerId ? undefined : requestedBilling;
+    const billingChanged = billedByLuxus !== undefined && billedByLuxus !== existing.billedByLuxus;
     if (partnerData.document !== undefined) {
       partnerData.document = partnerData.document.replace(/\D/g, '');
     }
@@ -199,9 +204,18 @@ export class PartnersService {
       ? coordinates ?? { latitude: null, longitude: null }
       : {};
 
-    const partner = await this.prisma.partner.update({
-      where: { id },
-      data: { ...partnerData, ...coordinateData },
+    const partner = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.partner.update({
+        where: { id },
+        data: { ...partnerData, ...coordinateData, ...(billedByLuxus !== undefined && { billedByLuxus }) },
+      });
+      if (billingChanged) {
+        await tx.sale.updateMany({
+          where: { partnerId: id, status: { notIn: OPEN_SALE_EXCLUDED_STATUSES } },
+          data: { billedByLuxus },
+        });
+      }
+      return updated;
     });
     await this.auditService.log({
       userId: actor.id,

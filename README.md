@@ -16,7 +16,7 @@ Plataforma web (com aplicativo móvel) que a Luxus Telefonia (Grupo Luxus) usa p
 - Clientes com edição e exclusão, inclusive em lote, dentro do escopo do usuário.
 - Vendas dos tipos linha nova, portabilidade (com operadora doadora), eSIM (com IMEI, EID, sistema do aparelho e foto da tela) e upgrade de plano a partir de uma venda anterior (copia cliente e documentos).
 - Documentos da venda (RG, CPF, selfie, contrato, foto do chip etc.) com lista de obrigatórios que depende do tipo de venda. Anexos de qualquer tipo de arquivo, até 50 MB, podem ser incluídos, trocados ou excluídos enquanto a venda estiver aberta.
-- Opção "cobrança pela Luxus" em cada venda, que define se ela vai para o sistema de faturamento da Luxus depois de concluída.
+- Opção "cobrança pela Luxus" no cadastro do parceiro (marcada pelo administrador), que define se as vendas desse parceiro vão para o sistema de faturamento da Luxus depois de concluídas. Toda venda herda a opção do parceiro; sem marcação, a venda fica fora do faturamento. Ver "Atualização em homologação" abaixo.
 - Edição da venda enquanto ela não estiver finalizada, com registro no histórico, e campos com contador que mostra quantos dígitos faltam (por exemplo RG e UF).
 - Importação de vendas por planilha `.xlsx` (botão "Importar" em Vendas), em dois modos: "vendas novas", que seguem o fluxo normal até o Luxus Task, e "vendas já concluídas no Luxus Task" (somente administrador). Cada linha é validada isoladamente, até 300 linhas por arquivo.
 - Exportação da lista de vendas e filtros por andamento, intervalo de datas e parceiro.
@@ -86,7 +86,7 @@ Módulos da API (`apps/api/src/modules`): `auth`, `users` (inclui perfil), `part
 
 Telas da web (`apps/web/src/app/(dashboard)`): dashboard, vendas, clientes, parceiros, filiais, estoque, planos, operadoras, comissões, campanhas, financeiro, chamados, solicitações (menu "Demandas"), usuários, auditoria, perfil, configurações e guia de uso. Fora da área autenticada ficam `login` e `forgot-password`.
 
-Outros arquivos na raiz: `HISTORICO_DE_VERSOES.txt` (histórico com numeração 0.1.0 a 1.12.0), `DOCUMENTACAO_COMPLETA.txt`, `RELATORIO_TECNICO.md` e `Luxus Parceiros.docx` (manual de processos). A pasta `__pycache__/` na raiz não faz parte do sistema e pode ser ignorada.
+Outros arquivos na raiz: `HISTORICO_DE_VERSOES.txt` (histórico com numeração 0.1.0 a 1.13.0, esta última em homologação), `DOCUMENTACAO_COMPLETA.txt`, `RELATORIO_TECNICO.md` e `Luxus Parceiros.docx` (manual de processos). A pasta `__pycache__/` na raiz não faz parte do sistema e pode ser ignorada.
 
 ## Como rodar localmente
 
@@ -169,7 +169,7 @@ Na API também existe `prisma:fix-sale-branch`, que corrige a filial de vendas a
 
 ### Testes
 
-`pnpm test` roda os testes listados no script `test` de `apps/api/package.json` (isolamento por parceiro, documentos obrigatórios, status realizados, filtros do dashboard, edição e exclusão segura, fluxo de análise, integração com o Task, notificações de suporte, cópia histórica e telefonia-2). O arquivo `test/sales-import.test.js` existe, mas não está na lista do script; para rodá-lo é preciso incluí-lo ou executá-lo manualmente. Antes de enviar para a `main`, rode `pnpm build`: o deploy na Railway é automático e um erro de TypeScript derruba a publicação.
+`pnpm test` roda os testes listados no script `test` de `apps/api/package.json` (isolamento por parceiro, documentos obrigatórios, status realizados, filtros do dashboard, edição e exclusão segura, fluxo de análise, integração com o Task, notificações de suporte, cópia histórica, telefonia-2, importação por planilha e cobrança no cadastro do parceiro). Três testes de `sale-review-workflow.test.js` e `task-integration.test.js` já falhavam antes da importação por planilha e continuam falhando; não são causados pelas mudanças recentes. Antes de enviar para a `main`, rode `pnpm build`: o deploy na Railway é automático e um erro de TypeScript derruba a publicação.
 
 ## Variáveis de ambiente
 
@@ -248,7 +248,7 @@ Se o Task ficar fora do ar, as vendas não concluem (não há mais finalização
 
 ### telefonia-2 / Luxus Connect (faturamento)
 
-Módulo `apps/api/src/modules/telefonia-intake`. Vendas concluídas com cobrança pela Luxus entram em uma fila processada a cada 20 segundos e são enviadas para `/v1/intake/customers` do telefonia-2, com o cabeçalho `X-API-Key`. O envio nunca desfaz a conclusão da venda; dados fora do padrão vão para as observações.
+Módulo `apps/api/src/modules/telefonia-intake`. Vendas concluídas com cobrança pela Luxus (opção herdada do cadastro do parceiro) entram em uma fila processada a cada 20 segundos e são enviadas para `/v1/intake/customers` do telefonia-2, com o cabeçalho `X-API-Key`. O envio nunca desfaz a conclusão da venda; dados fora do padrão vão para as observações.
 
 ### API externa de vendas (sistemas terceiros)
 
@@ -265,6 +265,58 @@ Módulo `apps/api/src/modules/external-sales`, autenticado pelo cabeçalho `x-ap
 
 - Busca de endereço por CEP (`apps/web/src/lib/cep.ts`) e mapa de parceiros com Leaflet.
 
+## Atualização em homologação: cobrança pela Luxus no cadastro do parceiro
+
+Situação: branch `homologacao`, ainda **não** mesclada na `main` e, portanto, ainda não publicada em produção. Data: 20/10/2026.
+
+### O que muda
+
+| Antes (produção) | Depois (homologação) |
+| --- | --- |
+| Quem cadastra a venda escolhe, venda a venda, se a cobrança é feita pela Luxus | O administrador marca uma única vez, no cadastro do parceiro, se a cobrança das vendas dele é feita pela Luxus |
+| Escolha obrigatória no formulário de nova venda e editável na venda | O formulário de venda não pergunta mais; a venda herda a opção do parceiro |
+| Coluna obrigatória "Cobrança pela Luxus" na planilha de importação | A coluna sai da planilha; a aba "Parceiros e lojas" mostra a cobrança de cada parceiro |
+| Sem escolha não salvava a venda | Parceiro sem marcação = vendas fora do sistema de faturamento da Luxus |
+
+Regras:
+
+1. Parceiros novos e os que já existiam começam **desmarcados** (cobrança fora da Luxus) até o administrador marcar.
+2. Ao marcar ou desmarcar no parceiro, as vendas dele **ainda não concluídas** passam a seguir a nova opção. Vendas concluídas, canceladas ou rejeitadas ficam como terminaram (as concluídas que já foram ao faturamento não mudam).
+3. Usuários do próprio parceiro não alteram essa opção, mesmo editando os dados do parceiro; só o administrador.
+4. Na migração, as vendas em aberto ficam desmarcadas (seguem os parceiros, que começam desmarcados). Depois de publicar, o administrador deve marcar os parceiros cobrados pela Luxus; nesse momento as vendas em aberto deles voltam a ir para o faturamento quando concluírem.
+5. Vendas criadas pela importação por planilha, pela cópia histórica do Task e pela troca de parceiro de uma venda histórica também seguem o parceiro.
+
+### Como foi feito
+
+- **Banco:** migration `20261020120000_partner_billed_by_luxus` cria `partners.billedByLuxus` (padrão `false`), muda o padrão de `sales.billedByLuxus` para `false` e desmarca as vendas em aberto (status diferente de `ACTIVATED`, `CANCELLED` e `REJECTED`).
+- **API:**
+  - `partners`: campo opcional `billedByLuxus` no cadastro e na edição. Na edição, se o valor mudar, o parceiro e as vendas em aberto são atualizados na mesma transação. Usuário com `partnerId` (o próprio parceiro) é ignorado nesse campo.
+  - `sales`: `SalesService.partnerBilledByLuxus()` lê a opção do parceiro, e `create()` grava esse valor na venda. O campo `billedByLuxus` enviado pelo navegador é aceito e ignorado (para não quebrar telas antigas em cache), e a edição da venda não muda mais a cobrança.
+  - Importação por planilha e `external-sales` (cópia histórica e troca de parceiro) usam a opção do parceiro.
+  - O envio ao telefonia-2 não mudou: continua enviando só vendas concluídas com `billedByLuxus = true`.
+- **Web:** caixa "A cobrança das vendas deste parceiro é feita pela Luxus" no formulário de parceiro (`parceiros/page.tsx`); escolha removida de `create-sale-dialog.tsx` e `edit-sale-dialog.tsx`; o detalhe da venda continua mostrando se ela vai ou não para o faturamento; coluna removida da planilha (`lib/sales-import.ts`); Guia de uso atualizado.
+- **Testes:** `test/partner-billing.test.js` (mudança no parceiro leva as vendas em aberto; salvar sem mudar não mexe nas vendas; parceiro não altera a própria cobrança) e `test/sales-import.test.js` ajustado. Os dois entraram no script `pnpm test`.
+- **Efeito colateral positivo:** o aplicativo móvel nunca enviava a escolha de cobrança, que era obrigatória na API; com a mudança, a criação de venda pelo aplicativo deixa de ser recusada por isso.
+
+### Como testar a homologação
+
+A Railway publica somente a `main`. Para testar sem afetar produção, use uma das opções:
+
+- Rodar localmente a branch: `git checkout homologacao` e seguir "Como rodar localmente" (a migration roda sozinha ao iniciar a API).
+- Ou criar na Railway um ambiente de homologação ligado à branch `homologacao`, com banco próprio (nunca o banco de produção).
+
+Roteiro sugerido:
+
+1. Editar um parceiro e marcar "A cobrança das vendas deste parceiro é feita pela Luxus"; criar uma venda para ele e conferir, no detalhe, "Vai para o sistema de faturamento da Luxus".
+2. Criar uma venda para um parceiro desmarcado e conferir "Não vai para o sistema de faturamento da Luxus".
+3. Com uma venda em análise, desmarcar o parceiro e conferir que a venda mudou; conferir que uma venda concluída não mudou.
+4. Entrar como usuário do parceiro e conferir que a opção não aparece e não muda.
+5. Baixar a planilha de importação e conferir que a coluna de cobrança sumiu e que a aba "Parceiros e lojas" mostra a cobrança.
+
+### Para publicar em produção
+
+Mesclar `homologacao` na `main` (o push na `main` dispara o deploy) e, logo depois, marcar no cadastro os parceiros cobrados pela Luxus. Até isso ser feito, nenhuma venda nova vai para o faturamento.
+
 ## Pontos de atenção
 
 Resumo; detalhes na seção 7 de [docs/HISTORICO-DE-VERSOES.md](docs/HISTORICO-DE-VERSOES.md).
@@ -272,7 +324,7 @@ Resumo; detalhes na seção 7 de [docs/HISTORICO-DE-VERSOES.md](docs/HISTORICO-D
 - Credenciais de demonstração: se o seed já rodou em produção, as contas de exemplo existem lá. Confirme `RUN_DB_SEED=false` e que essas contas foram removidas ou tiveram a senha trocada.
 - Refresh token com validade padrão de 365 dias no código quando `JWT_REFRESH_EXPIRES_IN` não está definida.
 - Dependência do Luxus Task para concluir vendas, sem procedimento de contingência documentado.
-- Aplicativo móvel sem mudanças desde 24/08/2026: eSIM, upgrade, importação e cobrança pela Luxus podem não existir nele.
+- Aplicativo móvel sem mudanças desde 24/08/2026: eSIM, upgrade e importação podem não existir nele (a cobrança pela Luxus, depois da homologação, vem do parceiro e não depende do aplicativo).
 - Docker local com endereços padrão da web apontando para a porta 80, enquanto o NGINX usa a 8088 (ver "Como rodar localmente").
 - Redis declarado na infraestrutura, mas não usado pelo código.
 - Duas numerações de versão (`docs/HISTORICO-DE-VERSOES.md` e `HISTORICO_DE_VERSOES.txt`) e muitas branches antigas já mescladas.
