@@ -1,9 +1,162 @@
 # Luxus Parceiros
 
-Plataforma web (com aplicativo móvel) que a Luxus Telefonia (Grupo Luxus) usa para organizar a operação comercial feita por parceiros revendedores: parceiros, filiais, usuários, clientes, vendas com documentação, estoque, planos, comissões, campanhas, financeiro, chamados, demandas e auditoria. O sistema está em produção na Railway, com o domínio web `parceiros.grupoluxus.com.br`, e em desenvolvimento contínuo.
+Plataforma web (com aplicativo móvel) que a Luxus Telefonia (Grupo Luxus) usa para organizar a operação comercial feita por parceiros revendedores; é usada pelos administradores da Luxus e pelos parceiros e suas filiais (lojas). Ela cobre parceiros, filiais, usuários, clientes, vendas com documentação, estoque, planos, comissões, campanhas, financeiro, chamados, demandas e auditoria. O sistema está em produção na Railway, com o domínio web `parceiros.grupoluxus.com.br`, e em desenvolvimento contínuo.
 
 > Histórico completo de versões, decisões técnicas e pendências: [docs/HISTORICO-DE-VERSOES.md](docs/HISTORICO-DE-VERSOES.md).
 > Documentação de todos os sistemas: repositório privado `redobrai-del/documentacao-sistemas`.
+
+## Arquitetura e funcionamento
+
+### Visão geral
+
+O Luxus Parceiros é um monorepo (um único repositório com vários aplicativos) com três aplicações que compartilham tipos e utilitários: a **API** NestJS (`apps/api`), o **site** Next.js (`apps/web`) e o **aplicativo móvel** Expo (`apps/mobile`). Só a API acessa o banco PostgreSQL e a pasta de arquivos enviados (documentos das vendas); o site e o aplicativo rodam no navegador ou no celular e conversam com a API por HTTPS (REST com JSON) e por Socket.IO (biblioteca de mensagens em tempo real sobre WebSocket). Em produção, a API e o site são dois serviços separados na Railway (plataforma de hospedagem de contêineres), cada um com seu Dockerfile, mais um PostgreSQL gerenciado e um volume persistente para os arquivos. As integrações com o Luxus Task, com o telefonia-2 (Luxus Connect) e com sistemas terceiros são chamadas HTTP servidor a servidor, autenticadas por chave em cabeçalho. As tarefas em segundo plano (filas de envio ao Task e ao telefonia-2) rodam dentro do próprio processo da API, com temporizadores; não há Redis, fila externa nem serviço de "worker" separado.
+
+```mermaid
+flowchart LR
+    subgraph usuarios["Usuários"]
+        adm["Administrador da Luxus"]
+        par["Parceiro e filial"]
+    end
+    subgraph railway["Railway"]
+        web["Site Next.js 14 - serviço web"]
+        api["API NestJS 10 - serviço api"]
+        db[("PostgreSQL 16")]
+        vol[("Volume /app/uploads - documentos")]
+    end
+    app["Aplicativo Expo - Android e iOS"]
+    task["Luxus Task - sistema de demandas da operação"]
+    tel["telefonia-2 / Luxus Connect - faturamento"]
+    ext["Sistemas terceiros"]
+
+    adm -->|"navegador"| web
+    par -->|"navegador"| web
+    par -->|"celular"| app
+    web -->|"HTTPS REST /api e Socket.IO /events"| api
+    app -->|"HTTPS REST /api e Socket.IO /events"| api
+    api -->|"Prisma ORM"| db
+    api -->|"grava e lê arquivos"| vol
+    api -->|"cria demanda, comentários, prazo e anexos - x-integration-key"| task
+    task -->|"callback de status POST /api/integrations/luxus-task/callback"| api
+    task -->|"lê resumo e documentos da venda"| api
+    api -->|"cliente da venda concluída POST /v1/intake/customers - X-API-Key"| tel
+    ext -->|"consulta vendas e cópia histórica - x-api-key"| api
+```
+
+### Linguagens e onde cada uma é usada
+
+| Linguagem | Onde | Papel |
+| --- | --- | --- |
+| TypeScript | `apps/api`, `apps/web`, `apps/mobile`, `packages/*` | Todo o código da API, do site, do aplicativo e dos pacotes compartilhados |
+| Prisma Schema Language | `apps/api/prisma/schema.prisma` | Definição das tabelas, relações e enums (listas fixas de valores) do banco |
+| SQL | `apps/api/prisma/migrations/*/migration.sql` | Migrations (scripts versionados que alteram o banco), geradas pelo Prisma e às vezes ajustadas à mão |
+| JavaScript | `apps/api/test/*.test.js` | Testes automatizados, executados com `node:test` sobre o código compilado |
+| CSS (Tailwind) | `apps/web` | Estilos do site |
+| Shell (sh) | `docker/api-entrypoint.sh` | Inicialização do contêiner da API (migrations, seed opcional e início do servidor) |
+| Dockerfile, YAML e TOML | `docker/`, `docker-compose.yml`, `railway*.toml` | Imagens, ambiente local e configuração da Railway |
+
+### Como uma requisição percorre o sistema
+
+Exemplo real: um usuário entra no site e abre a lista de vendas.
+
+1. O usuário preenche e-mail e senha em `/login`. O site chama `POST /api/auth/login` (endereço base em `NEXT_PUBLIC_API_URL`).
+2. Na API, todas as rotas passam por guardas globais registrados em `apps/api/src/app.module.ts`: `JwtAuthGuard` (exige token, exceto em rotas marcadas com `@Public()`), `RolesGuard` e `PermissionsGuard` (perfil e permissões) e `ThrottlerGuard` (limite de requisições). O login é público.
+3. O `AuthService` compara a senha com o hash bcrypt (algoritmo de hash de senha) gravado em `users`, emite um token de acesso JWT (JSON Web Token, token assinado que identifica o usuário; validade padrão de 15 minutos) e um refresh token (token de renovação) gravado na tabela `refresh_tokens` para poder ser revogado.
+4. O site guarda os tokens no navegador (`apps/web/src/lib/auth.ts`) e passa a chamar a API pela função `api()` de `apps/web/src/lib/api.ts`, que envia o cabeçalho `Authorization: Bearer <token>`. Ao abrir Vendas, chama `GET /api/sales` com os filtros da tela.
+5. O `ValidationPipe` global valida os parâmetros contra o DTO (Data Transfer Object, classe que descreve os campos aceitos) e recusa campos desconhecidos. O `SalesController` repassa ao `SalesService`, que aplica o escopo do usuário (`partner-scope.ts` e `branch-scope.ts`) e consulta o PostgreSQL pelo Prisma (ORM, biblioteca que traduz código em SQL).
+6. O `TransformInterceptor` embrulha a resposta no formato `{ success: true, data: ... }`; erros passam pelos filtros `HttpExceptionFilter` e `PrismaExceptionFilter`, que devolvem mensagens padronizadas.
+7. Quando o token de acesso expira, a API responde 401; o site chama `POST /api/auth/refresh` uma única vez, troca os tokens e repete a requisição.
+8. Alterações feitas por outros usuários chegam sem recarregar a página: a API emite eventos Socket.IO (por exemplo `sale:updated`) para as salas do usuário e do parceiro.
+
+### Fluxo principal: a venda de ponta a ponta
+
+A venda nasce no Parceiros, é executada no Luxus Task e, se a cobrança for pela Luxus, termina no telefonia-2. Três campos da tabela `sales` controlam esse caminho: `reviewStatus` (análise interna: `DRAFT`, `AWAITING_REVIEW`, `UNDER_REVIEW`, `CHANGES_REQUESTED`, `APPROVED`...), `taskSyncStatus` (envio ao Task: `NOT_READY`, `PENDING`, `PROCESSING`, `SYNCED`, `RETRY`, `FAILED`) e `status` (situação comercial; `ACTIVATED` significa venda concluída). O envio ao telefonia-2 usa `telefoniaSyncStatus`, com os mesmos valores do envio ao Task.
+
+```mermaid
+sequenceDiagram
+    participant parc as Parceiro ou filial (site)
+    participant api as API Parceiros
+    participant db as PostgreSQL
+    participant adm as Administrador Luxus
+    participant task as Luxus Task
+    participant tel as telefonia-2
+
+    parc->>api: POST /api/sales (cliente, plano, tipo de venda)
+    api->>db: cria venda DRAFT e copia billedByLuxus do parceiro
+    parc->>api: POST /api/uploads (RG, CPF, foto do chip...)
+    parc->>api: POST /api/sales/id/submit
+    api->>db: reviewStatus AWAITING_REVIEW
+    api-->>adm: notificação Nova venda para analisar
+    adm->>api: start-review e depois approve-for-task ou send-to-task
+    api->>db: reviewStatus APPROVED e taskSyncStatus PENDING
+    loop Fila de envio a cada 30 segundos
+        api->>task: GET demanda da venda (evita duplicar)
+        api->>task: POST /integrations/luxus-parceiros/demandas
+        api->>task: importa os anexos um a um
+        api->>db: taskSyncStatus SYNCED, taskDemandId e taskProtocol
+    end
+    task->>api: POST /api/integrations/luxus-task/callback (status, etapa, anexos, mensagens)
+    api->>db: atualiza a venda, a linha do tempo e os documentos
+    api-->>parc: notificação e evento Socket.IO sale:updated
+    task->>api: callback com a demanda concluída
+    api->>db: status ACTIVATED, comissão criada, linha marcada como vendida
+    loop Fila do telefonia-2 a cada 20 segundos, só se billedByLuxus
+        api->>tel: POST /v1/intake/customers com X-API-Key
+        api->>db: telefoniaSyncStatus SYNCED e telefoniaCustomerId
+    end
+```
+
+Passo a passo, com os pontos em que o código decide algo:
+
+1. **Cadastro.** O parceiro cria a venda no site (`create-sale-dialog.tsx`), que chama `POST /api/sales`. A venda nasce com `reviewStatus = DRAFT` e herda `billedByLuxus` do cadastro do parceiro (`SalesService.partnerBilledByLuxus()`). Os documentos são enviados por `POST /api/uploads` e gravados no disco da API (pasta `UPLOAD_DIR` ou volume da Railway); no banco fica só o registro em `documents`.
+2. **Envio para análise.** `POST /api/sales/:id/submit` (`SalesService.submitForReview`) exige formato do contrato (impressão ou ZapSign, serviço de assinatura eletrônica), os documentos obrigatórios do tipo de venda (`sale-documents.constants.ts`) e, no eSIM (chip virtual), IMEI (identificador do aparelho), EID (identificador do chip virtual) e sistema do aparelho. A venda vai para `AWAITING_REVIEW` e os administradores são notificados. O aplicativo móvel cria vendas e envia documentos, mas não chama `/submit` no código atual; a confirmar se essas vendas precisam ser enviadas para análise pelo site.
+3. **Análise.** O administrador abre a análise (`start-review`, vira `UNDER_REVIEW`) e pode devolver para correção (`request-correction`, vira `CHANGES_REQUESTED`, e o parceiro corrige e reenvia) ou aprovar. Há duas formas de aprovar: `approve-for-task` (aprovação após a análise) e `send-to-task` (envio direto, marcado como `taskHandoff`, em que o Task conduz todo o restante). Nas duas, o administrador escolhe responsável, cliente e prazo do Task, e a venda fica com `taskSyncStatus = PENDING` e `contractStage = TASK_PROCESSING`.
+4. **Criação da demanda no Task.** Um temporizador em `SalesService.onModuleInit` roda a fila a cada 30 segundos (e imediatamente após cada aprovação). Para cada venda pendente, `syncSaleToTask` marca a venda como `PROCESSING` (para que duas execuções não peguem a mesma venda), consulta se a demanda já existe no Task (`GET /integrations/luxus-parceiros/demandas/:id`), cria a demanda se não existir (`POST /integrations/luxus-parceiros/demandas`, com `source = luxus_parceiros` e o protocolo local da venda) e importa os anexos um a um em base64 (texto que representa o arquivo). Em caso de sucesso grava `taskDemandId`, `taskProtocol` e `SYNCED`; em caso de erro grava `RETRY`, a mensagem em `taskSyncError` e uma nova tentativa com espera crescente (de 30 segundos, dobrando a cada falha, até no máximo 15 minutos). Os administradores são avisados na primeira falha. Vendas presas em `PROCESSING` por mais de 5 minutos voltam para a fila.
+5. **Execução e callback.** A equipe de operação trabalha a demanda no Task. A cada mudança, o Task chama `POST /api/integrations/luxus-task/callback` com o cabeçalho `x-integration-key` (conferido por `TaskIntegrationGuard`). `TaskIntegrationService.applyCallback` identifica se o callback é de uma venda ou de uma Demanda (tabela `requests`), atualiza status, responsável, quem está editando, última mensagem e etapa do contrato, baixa e grava os anexos novos (sem duplicar, pelo campo `documents.externalId`), registra na linha do tempo e notifica administradores e usuários do parceiro. Como reforço, caso algum callback se perca, `reconcileTaskProgress` consulta no Task, a cada 30 segundos, até 8 vendas em andamento sem atualização há mais de 1 minuto.
+6. **Conclusão.** Quando o Task conclui a demanda, a venda passa a `status = ACTIVATED`, `contractStage = COMPLETED` e ganha `activatedAt`. Na mesma passagem, a linha usada é marcada como vendida, a comissão é criada (`CommissionsService.createFromSale`) e, se `billedByLuxus = true`, a venda entra na fila do telefonia-2. Depois de concluída, cancelada ou rejeitada, a venda não muda mais por callbacks.
+7. **Faturamento.** `TelefoniaIntakeService` roda a cada 20 segundos e envia as vendas `ACTIVATED` com `billedByLuxus = true` para `/v1/intake/customers` do telefonia-2 (cabeçalho `X-API-Key`). Em caso de sucesso grava `telefoniaCustomerId` e `SYNCED`; em caso de erro, `RETRY` com espera crescente. Falhas nesse envio nunca desfazem a conclusão da venda.
+
+### Outros fluxos
+
+- **Demandas (menu "Demandas", tabela `requests`).** O administrador abre uma demanda avulsa (sem venda) que segue para o Task pelo mesmo mecanismo: `RequestsService` tem sua própria fila com temporizador, envia comentários ao Task e recebe status e respostas pelo mesmo callback.
+- **Importação por planilha.** `POST /api/sales/import` (`sales-import.service.ts`) valida cada linha isoladamente e cria vendas novas, que seguem o fluxo acima, ou vendas já concluídas no Task (somente administrador).
+- **Cópia histórica.** `POST /api/integrations/external/sales/historical` (`historical-sales.service.ts`) cria no Parceiros uma venda que já existe e foi concluída no Task, sem alterar o Task.
+
+### Modelo de dados
+
+O schema está em `apps/api/prisma/schema.prisma` (29 tabelas e 27 enums) e as alterações ficam em `apps/api/prisma/migrations/`. As principais entidades:
+
+```mermaid
+erDiagram
+    Partner ||--o{ Branch : "tem filiais"
+    Partner ||--o{ User : "tem usuários"
+    Branch ||--o| User : "usuário da loja"
+    Partner ||--o{ Client : "atende"
+    Operator ||--o{ Plan : "oferece"
+    Partner ||--o{ Sale : "vende"
+    Client ||--o{ Sale : "compra"
+    Plan ||--o{ Sale : "plano vendido"
+    Sale ||--o{ Document : "anexos"
+    Sale ||--o| Commission : "gera"
+    Partner ||--o{ Request : "abre demandas"
+```
+
+- `Partner` (`partners`): parceiro revendedor (matriz), com documento (CNPJ), status e a opção `billedByLuxus`. `Branch` (`branches`): filial ligada ao parceiro por `parentPartnerId`.
+- `User` (`users`): usuário com perfil (`role`), opcionalmente ligado a um parceiro (`partnerId`) e a uma filial (`branchId`). `RefreshToken`, `Session`, `Permission` e `UserPermission` guardam sessões e permissões.
+- `Client` (`clients`): cliente final, sempre dentro de um parceiro.
+- `Operator`, `Plan` e `PartnerPlan`: operadoras, planos e planos liberados para cada parceiro. `Line`, `SimCard` e `StockMovement`: estoque de linhas, chips (identificados pelo ICCID, número de série impresso no chip) e suas movimentações.
+- `Sale` (`sales`): a venda, com dados comerciais, campos de análise (`reviewStatus`), espelho do Task (campos `task*`) e controle do faturamento (campos `telefonia*`). `SaleTimeline` guarda o histórico de cada venda.
+- `Document` (`documents`): metadados dos arquivos (nome, tipo, caminho em disco); pode pertencer a cliente, venda, demanda ou chamado. Anexos vindos do Task têm `externalId` no formato `task:<demanda>:<anexo>`.
+- `Commission` e `CommissionRule`: comissão de cada venda concluída (uma por venda) e regras de cálculo.
+- `Request`, `RequestComment`, `RequestTimeline`: Demandas integradas ao Task. `Ticket`, `TicketMessage`, `TicketTimeline`: chamados de suporte.
+- `Campaign`, `FinancialRecord`, `Notification` e `AuditLog`: campanhas e metas, lançamentos financeiros, notificações e auditoria.
+
+### Organização do código
+
+- **API:** cada domínio em `apps/api/src/modules/<domínio>` segue `controller → service → Prisma`. O controller só recebe a requisição e declara permissões (`@RequirePermissions`, `@Roles`, `@Public`); a regra de negócio fica no service; as validações de entrada ficam nos DTOs (`dto/*.dto.ts`, com class-validator). Guardas, filtros, interceptadores e os helpers de escopo por parceiro e filial ficam em `apps/api/src/common`. O Socket.IO fica em `apps/api/src/gateway/events.gateway.ts`. As integrações têm módulos próprios: `task-integration` (cliente HTTP do Task, callback e anexos), `telefonia-intake` (fila e montagem do envio ao telefonia-2) e `external-sales` (API para terceiros e cópia histórica).
+- **Site:** páginas em `apps/web/src/app` (App Router do Next.js; as telas autenticadas ficam em `(dashboard)`), componentes em `apps/web/src/components` e acesso à API, sessão, permissões e exportações em `apps/web/src/lib`. O site não tem rotas de API próprias: tudo passa pela API NestJS.
+- **Aplicativo:** telas em `apps/mobile/app` (Expo Router) e cliente da API em `apps/mobile/src/services/api.ts`.
+- **Compartilhado:** `packages/types` (tipos, enums, rótulos e permissões usados pela API, pelo site e pelo aplicativo), `packages/utils` e `packages/ui`.
+- **Testes:** `apps/api/test`, com um arquivo por regra importante (escopo por parceiro, fluxo de análise, integração com o Task, telefonia-2, importação, cobrança do parceiro etc.). Não há testes automatizados no site nem no aplicativo.
 
 ## Funcionalidades
 
@@ -28,7 +181,7 @@ Plataforma web (com aplicativo móvel) que a Luxus Telefonia (Grupo Luxus) usa p
 3. A equipe de operação executa a ativação no Task. O Parceiros espelha o andamento (quem está com a demanda, últimas mensagens, lembretes) e troca anexos com o Task nos dois sentidos.
 4. A venda só é concluída quando o Task conclui a demanda. Nesse momento a venda passa a `ACTIVATED`, gera comissão e, se tiver cobrança pela Luxus, entra na fila de envio ao telefonia-2.
 
-A aprovação interna e a finalização forçada que existiram no Parceiros foram desativadas; o Task é a fonte de verdade da conclusão (ver Versão 29 do histórico).
+A aprovação interna e a finalização forçada que existiram no Parceiros foram desativadas; o Task é a fonte de verdade da conclusão (ver Versão 29 do histórico). O detalhe técnico deste fluxo (filas, callback e estados) está em "Arquitetura e funcionamento".
 
 ### Gestão e acompanhamento
 
@@ -66,7 +219,7 @@ Sobre o Redis: o Docker Compose sobe um Redis 7 e o `.env.example` traz `REDIS_U
 Luxus Parceiros/
 ├── apps/
 │   ├── api/                     # API NestJS
-│   │   ├── prisma/              # schema.prisma, migrations (22), seed.ts e scripts de manutenção
+│   │   ├── prisma/              # schema.prisma, migrations (23), seed.ts e scripts de manutenção
 │   │   ├── src/modules/         # um módulo por domínio (ver tabela abaixo)
 │   │   ├── src/common/          # escopo por parceiro/filial, constantes e utilitários
 │   │   ├── src/gateway/         # Socket.IO (namespace /events)
