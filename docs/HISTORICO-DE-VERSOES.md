@@ -165,7 +165,7 @@ O Luxus Parceiros faz parte do ecossistema do Grupo Luxus: ele alimenta o **Luxu
 | 33 | 2026-10-09 | Alias de caminhos da API e mover venda histórica para o parceiro dono |
 | 34 | 2026-10-14 | Envio de vendas concluídas ao telefonia-2 e escolha de cobrança pela Luxus |
 | 35 | 2026-10-19 | Dashboard pela data da venda e importação de vendas por planilha |
-| 36 | 2026-10-20 | (Homologação, branch `homologacao`) Cobrança pela Luxus passa da venda para o cadastro do parceiro |
+| 36 | 2026-10-20 | Cobrança pela Luxus passa da venda para o cadastro do parceiro |
 
 ## 4. Histórico de versões
 
@@ -659,9 +659,9 @@ Este dia marca o início da integração com o **telefonia-2**, sistema de fatur
 - **O que foi feito:** `2d45af7` criou a **importação de vendas por planilha** (botão "Importar" em Vendas, `sales-import-button.tsx` e `apps/web/src/lib/sales-import.ts`; rota `POST /api/sales/import`, com validação em `sales-import.parse.ts` e gravação em `sales-import.service.ts`). Há dois tipos: "vendas novas", que entram aguardando análise e seguem o fluxo normal até o Task (administrador, parceiro e filial), e "vendas já concluídas no Luxus Task" (só administrador), que entram concluídas, com comissão, sem alterar o Task. A planilha modelo `.xlsx` traz abas de instruções, planos e, para o administrador, parceiros e lojas. Cada linha é validada isoladamente (até 300 por arquivo) e o resultado mostra o erro de cada linha. O Guia de uso foi atualizado e foi criado o arquivo `HISTORICO_DE_VERSOES.txt` na raiz.
 - **Por quê:** agilizar cadastros em massa e completar o histórico de vendas.
 
-### Versão 36 — 2026-10-20 — Cobrança pela Luxus no cadastro do parceiro (em homologação)
+### Versão 36 — 2026-10-20 — Cobrança pela Luxus no cadastro do parceiro
 
-**Situação:** branch `homologacao`, ainda não mesclada na `main` nem publicada. Detalhes e roteiro de teste no README, seção "Atualização em homologação".
+**Commits:** `f87ff4c`. **Situação:** em produção desde 20/10/2026, depois de passar pela branch `homologacao`. Detalhes e roteiro de conferência no README, seção "Atualização 1.13.0".
 
 - **Tipo:** Mudança de regra
 - **Situação anterior / problema:** a cobrança pela Luxus era escolhida em cada venda, por quem cadastrava. A decisão é comercial e vale para o parceiro inteiro, então repetir a escolha venda a venda abria espaço para erro.
@@ -681,7 +681,7 @@ Este dia marca o início da integração com o **telefonia-2**, sistema de fatur
 - **O Luxus Task é a fonte de verdade da conclusão:** depois de várias tentativas de fluxo com "vez" alternando entre os sistemas (Versões 12 a 19), o fluxo foi simplificado (Versão 21) e, por fim, a venda só conclui quando a demanda do Task conclui (Versão 29). As saídas de emergência no Parceiros (aprovação interna e finalização forçada) foram desativadas.
 - **Prazos como data pura:** prazos são enviados no formato aaaa-mm-dd, sem hora, para evitar que o fuso horário mude o dia (Versão 21).
 - **Dashboard pela data da venda:** a data de referência das métricas mudou de ativação (Versão 24) para criação da venda (Versão 35), para bater com a lista de vendas.
-- **Faturamento separado e não bloqueante:** o envio ao telefonia-2 nunca desfaz a conclusão da venda e só ocorre para vendas com cobrança pela Luxus (Versão 34). A cobrança passou a ser definida no parceiro e herdada pela venda (Versão 36, em homologação).
+- **Faturamento separado e não bloqueante:** o envio ao telefonia-2 nunca desfaz a conclusão da venda e só ocorre para vendas com cobrança pela Luxus (Versão 34). A cobrança passou a ser definida no parceiro e herdada pela venda (Versão 36).
 - **Planilhas geradas e lidas no navegador:** write-excel-file e read-excel-file geram e leem `.xlsx` na web; a API recebe as linhas já lidas e valida cada uma (Versões 30 e 35).
 
 ## 6. Problemas recorrentes e lições aprendidas

@@ -2,7 +2,7 @@ HISTÓRICO DE VERSÕES — LUXUS PARCEIROS
 ======================================
 
 Atualizado em: 20/10/2026
-Versão atual: 1.12.0 em produção; 1.13.0 em homologação (branch homologacao)
+Versão atual: 1.13.0
 Repositório: https://github.com/abelprosp/luxusparceiros (branch main)
 Sistema web: https://parceiros.grupoluxus.com.br
 
@@ -55,7 +55,7 @@ TECNOLOGIAS USADAS NO PROJETO (VISÃO GERAL)
 1.10.0  14/10/2026          Envio ao sistema de faturamento (telefonia-2)
 1.11.0  19/10/2026          Dashboard conta a venda pela data da venda
 1.12.0  19/10/2026          Importação de vendas por planilha, guia, histórico
-1.13.0  20/10/2026          (Homologação) Cobrança pela Luxus no cadastro do parceiro
+1.13.0  20/10/2026          Cobrança pela Luxus no cadastro do parceiro
 
 
 ==============================================================================
@@ -499,7 +499,8 @@ TECNOLOGIAS USADAS NO PROJETO (VISÃO GERAL)
 
 ==============================================================================
 1.13.0 — 20/10/2026 — Cobrança pela Luxus no cadastro do parceiro
-                      (EM HOMOLOGAÇÃO: branch "homologacao", ainda fora da main)
+                      [f87ff4c] — em produção; testada antes na branch
+                      "homologacao"
 ==============================================================================
 
    Problema: a cobrança pela Luxus era escolhida em cada venda, por quem
@@ -533,5 +534,5 @@ TECNOLOGIAS USADAS NO PROJETO (VISÃO GERAL)
      e lojas"; Guia de uso atualizado.
    - Testes: partner-billing.test.js (novo) e sales-import.test.js, ambos
      agora no "pnpm test".
-   - Documentação: README (seção "Atualização em homologação", com roteiro
+   - Documentação: README (seção "Atualização 1.13.0", com roteiro
      de teste) e docs/HISTORICO-DE-VERSOES.md (Versão 36).
