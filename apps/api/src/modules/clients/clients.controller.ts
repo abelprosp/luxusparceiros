@@ -1,7 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
-import { IsOptional, IsUUID } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsOptional, IsUUID } from 'class-validator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
 import { PaginationDto } from '@/common/dto/pagination.dto';
@@ -12,6 +13,11 @@ class ClientQueryDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   partnerId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value))
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 @ApiTags('Clients')
@@ -32,6 +38,7 @@ export class ClientsController {
       limit: query.limit ?? 20,
       search: query.search,
       partnerId: query.partnerId,
+      isActive: query.isActive,
     });
   }
 

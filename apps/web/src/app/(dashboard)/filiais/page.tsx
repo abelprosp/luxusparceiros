@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState, LoadMoreButton } from '@/components/ui/error-state';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { useToast } from '@/components/ui/toaster';
 
 interface BranchUser {
@@ -59,8 +61,6 @@ function getBranchLogin(branch: Branch): string {
 }
 
 export default function FiliaisPage() {
-  const [items, setItems] = useState<Branch[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -70,24 +70,12 @@ export default function FiliaisPage() {
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getPaginated<Branch>('/branches', {
-        search: search || undefined,
-        limit: 50,
-      });
-      setItems(res.data);
-    } catch {
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [search]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const fetchBranches = useCallback(
+    (page: number) => getPaginated<Branch>('/branches', { search: search || undefined, page, limit: 50 }),
+    [search],
+  );
+  const list = usePaginatedList(fetchBranches);
+  const { items, loading, reload: load } = list;
 
   const openCreate = () => {
     setEditing(null);
@@ -221,6 +209,8 @@ export default function FiliaisPage() {
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+      ) : list.error && items.length === 0 ? (
+        <ErrorState message={list.error} onRetry={() => void load()} />
       ) : items.length === 0 ? (
         <EmptyState
           icon={Store}
@@ -286,6 +276,15 @@ export default function FiliaisPage() {
             </TableBody>
           </Table>
         </div>
+      )}
+      {!loading && (
+        <LoadMoreButton
+          hasMore={list.hasMore}
+          loading={list.loadingMore}
+          onClick={() => void list.loadMore()}
+          shown={items.length}
+          total={list.total}
+        />
       )}
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) { setEditing(null); setForm(emptyForm); } setDialogOpen(open); }}>

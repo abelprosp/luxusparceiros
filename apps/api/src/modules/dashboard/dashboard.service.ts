@@ -16,7 +16,7 @@ import {
 } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { resolveBranchId } from '@/common/utils/branch-scope';
-import { realizedSaleStatusFilter } from '@/common/constants/realized-sale-statuses';
+import { REALIZED_SALE_STATUSES, realizedSaleStatusFilter } from '@/common/constants/realized-sale-statuses';
 import { formatDocument, formatPhone } from '@luxus/utils';
 import { DashboardFiltersDto } from './dto/dashboard-filters.dto';
 
@@ -43,8 +43,13 @@ const CANCELLED_SALE_STATUSES: SaleStatus[] = [
   SaleStatus.REJECTED,
 ];
 
+const DASHBOARD_CACHE_TTL_MS = 60_000;
+const DASHBOARD_CACHE_MAX_ENTRIES = 300;
+
 @Injectable()
 export class DashboardService {
+  private readonly cache = new Map<string, { value: Promise<unknown>; expiresAt: number }>();
+
   constructor(private prisma: PrismaService) {}
 
   private resolvePeriod(filters: DashboardFiltersDto) {
@@ -121,26 +126,11 @@ export class DashboardService {
         },
       }),
       this.prisma.line.count({ where: { ...lineWhere, status: LineStatus.ACTIVATED } }),
-      this.prisma.sale.findMany({
-        where: saleWherePeriod,
-        select: { value: true },
-      }),
-      this.prisma.commission.findMany({
-        where: commissionWhere,
-        select: { value: true },
-      }),
-      this.prisma.sale.findMany({
-        where: projectionWhere,
-        select: { commissionValue: true },
-      }),
-      this.prisma.sale.findMany({
-        where: inProgressWhere,
-        select: { value: true },
-      }),
-      this.prisma.sale.findMany({
-        where: cancelledWhere,
-        select: { value: true },
-      }),
+      this.prisma.sale.aggregate({ where: saleWherePeriod, _sum: { value: true } }),
+      this.prisma.commission.aggregate({ where: commissionWhere, _sum: { value: true } }),
+      this.prisma.sale.aggregate({ where: projectionWhere, _sum: { commissionValue: true } }),
+      this.prisma.sale.aggregate({ where: inProgressWhere, _count: { id: true }, _sum: { value: true } }),
+      this.prisma.sale.aggregate({ where: cancelledWhere, _count: { id: true }, _sum: { value: true } }),
       this.prisma.partner.findMany({
         where: partnerWhere,
         select: {
@@ -197,16 +187,13 @@ export class DashboardService {
       availableLines,
       soldLines,
       activatedLines,
-      revenue: sales.reduce((sum, s) => sum + Number(s.value), 0),
-      commissions: commissions.reduce((sum, c) => sum + Number(c.value), 0),
-      projectedCommission: projectedSales.reduce(
-        (sum, s) => sum + Number(s.commissionValue ?? 0),
-        0,
-      ),
-      inProgressSales: inProgressSales.length,
-      inProgressValue: inProgressSales.reduce((sum, s) => sum + Number(s.value), 0),
-      cancelledSales: cancelledSales.length,
-      cancelledValue: cancelledSales.reduce((sum, s) => sum + Number(s.value), 0),
+      revenue: Number(sales._sum.value ?? 0),
+      commissions: Number(commissions._sum.value ?? 0),
+      projectedCommission: Number(projectedSales._sum.commissionValue ?? 0),
+      inProgressSales: inProgressSales._count.id,
+      inProgressValue: Number(inProgressSales._sum.value ?? 0),
+      cancelledSales: cancelledSales._count.id,
+      cancelledValue: Number(cancelledSales._sum.value ?? 0),
       period,
       periodLabel,
       salesChart,
@@ -373,13 +360,23 @@ export class DashboardService {
   }
 
   async getMetrics(user: AuthUser, requestedBranchId?: string) {
-    if (user.partnerId) {
-      return this.getPartnerMetrics(user, requestedBranchId);
+    if (!user.partnerId && [UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.FINANCIAL].includes(user.role)) {
+      return this.getAdminMetricsCached();
     }
-    if ([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.FINANCIAL].includes(user.role)) {
-      return this.getAdminMetrics();
-    }
-    return this.getPartnerMetrics(user, requestedBranchId);
+    return this.getPartnerMetricsCached(user, requestedBranchId);
+  }
+
+  async getAdminMetricsCached(filters: DashboardFiltersDto = {}) {
+    const key = JSON.stringify(Object.entries(filters).filter(([, value]) => value !== undefined).sort());
+    return this.cached(`admin:${key}`, () => this.getAdminMetrics(filters));
+  }
+
+  async getPartnerMetricsCached(user: AuthUser, requestedBranchId?: string) {
+    const branchId = resolveBranchId(user, requestedBranchId) ?? '';
+    return this.cached(
+      `partner:${user.partnerId ?? ''}:${branchId}`,
+      () => this.getPartnerMetrics(user, requestedBranchId),
+    );
   }
 
   async getDetails(
@@ -777,51 +774,72 @@ export class DashboardService {
     return where;
   }
 
+  /** Soma diária (UTC) calculada no banco, com os mesmos filtros de buildSaleWhere. */
   private async getSalesChart(
     since: Date | undefined,
     filters: DashboardFiltersDto = {},
     branchId?: string,
   ) {
-    const sales = await this.prisma.sale.findMany({
-      where: {
-        ...this.buildSaleWhere(filters, since),
-        ...(branchId && { branchId }),
-      },
-      select: { createdAt: true, value: true },
-      orderBy: { createdAt: 'asc' },
-    });
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`s."status"::text IN (${Prisma.join(REALIZED_SALE_STATUSES)})`,
+    ];
+    if (since) conditions.push(Prisma.sql`s."createdAt" >= ${since}`);
+    if (filters.partnerId) conditions.push(Prisma.sql`s."partnerId" = ${filters.partnerId}`);
+    if (filters.campaignId) conditions.push(Prisma.sql`s."campaignId" = ${filters.campaignId}`);
+    if (filters.operatorId) conditions.push(Prisma.sql`s."operatorId" = ${filters.operatorId}`);
+    if (filters.state) conditions.push(Prisma.sql`p."state" = ${filters.state}`);
+    if (branchId) conditions.push(Prisma.sql`s."branchId" = ${branchId}`);
 
-    const grouped: Record<string, number> = {};
-    for (const sale of sales) {
-      const date = sale.createdAt.toISOString().split('T')[0];
-      grouped[date] = (grouped[date] ?? 0) + Number(sale.value);
-    }
+    const rows = await this.prisma.$queryRaw<Array<{ date: string; value: Prisma.Decimal | number | null }>>`
+      SELECT to_char(date_trunc('day', s."createdAt"), 'YYYY-MM-DD') AS "date", SUM(s."value") AS "value"
+      FROM "sales" s
+      JOIN "partners" p ON p."id" = s."partnerId"
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      GROUP BY 1
+      ORDER BY 1`;
 
-    return Object.entries(grouped).map(([date, value]) => ({ date, value }));
+    return rows.map((row) => ({ date: row.date, value: Number(row.value ?? 0) }));
   }
 
   private async getMonthlyChart(partnerId: string, branchId?: string) {
     const now = new Date();
-    const months: { month: string; value: number }[] = [];
+    const ranges = [5, 4, 3, 2, 1, 0].map((i) => ({
+      start: new Date(now.getFullYear(), now.getMonth() - i, 1),
+      end: new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59),
+    }));
+    const counts = await Promise.all(
+      ranges.map(({ start, end }) =>
+        this.prisma.sale.count({
+          where: {
+            partnerId,
+            ...(branchId && { branchId }),
+            createdAt: { gte: start, lte: end },
+            status: realizedSaleStatusFilter(),
+          },
+        }),
+      ),
+    );
 
-    for (let i = 5; i >= 0; i--) {
-      const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
-      const count = await this.prisma.sale.count({
-        where: {
-          partnerId,
-          ...(branchId && { branchId }),
-          createdAt: { gte: start, lte: end },
-          status: realizedSaleStatusFilter(),
-        },
-      });
-      months.push({
-        month: start.toLocaleString('pt-BR', { month: 'short', year: '2-digit' }),
-        value: count,
-      });
+    return ranges.map(({ start }, index) => ({
+      month: start.toLocaleString('pt-BR', { month: 'short', year: '2-digit' }),
+      value: counts[index],
+    }));
+  }
+
+  /** Cache curto em memória: o painel é recarregado com frequência e as métricas toleram ~1 min de atraso. */
+  private async cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const now = Date.now();
+    const hit = this.cache.get(key);
+    if (hit && hit.expiresAt > now) return hit.value as Promise<T>;
+    const value = load();
+    this.cache.set(key, { value, expiresAt: now + DASHBOARD_CACHE_TTL_MS });
+    value.catch(() => this.cache.delete(key));
+    if (this.cache.size > DASHBOARD_CACHE_MAX_ENTRIES) {
+      for (const [entryKey, entry] of this.cache) {
+        if (entry.expiresAt <= now || this.cache.size > DASHBOARD_CACHE_MAX_ENTRIES) this.cache.delete(entryKey);
+      }
     }
-
-    return months;
+    return value;
   }
 
   private emptyPartnerMetrics(): DashboardPartnerMetrics {

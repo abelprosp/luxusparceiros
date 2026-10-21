@@ -5,8 +5,10 @@ import {
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { TicketStatus, Prisma, UserRole } from '@prisma/client';
+import { CoordinationService } from '@/common/coordination/coordination.service';
 import { AuthUser } from '@luxus/types';
 import { generateProtocol } from '@luxus/utils';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -15,7 +17,12 @@ import { NotificationsService } from '@/modules/notifications/notifications.serv
 import { EventsGateway } from '@/gateway/events.gateway';
 import { UploadsService } from '@/modules/uploads/uploads.service';
 import { MESSAGES } from '@/common/constants/messages';
-import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
+import { assertPartnerAccess, isPlatformAdmin, resolvePartnerId } from '@/common/utils/partner-scope';
+
+/** Atendimento de chamados é da equipe Luxus (administração global), não de administradores de parceiros. */
+function isSupportUser(user: AuthUser): boolean {
+  return isPlatformAdmin(user);
+}
 import {
   CreateTicketDto,
   CreateTicketMessageDto,
@@ -50,12 +57,21 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
     private notificationsService: NotificationsService,
     private eventsGateway: EventsGateway,
     private uploadsService: UploadsService,
+    @Optional() private coordination?: CoordinationService,
   ) {}
 
   onModuleInit() {
-    this.slaTimer = setInterval(() => void this.notifyOverdueTickets(), 60_000);
+    this.slaTimer = setInterval(() => this.runSlaTimer(), 60_000);
     this.slaTimer.unref();
-    setImmediate(() => void this.notifyOverdueTickets());
+    setImmediate(() => this.runSlaTimer());
+  }
+
+  private runSlaTimer() {
+    const work = () => this.notifyOverdueTickets();
+    const locked = this.coordination
+      ? this.coordination.withLock('tickets:sla', 2 * 60_000, work)
+      : work();
+    void locked.catch((error) => console.warn('[tickets] Falha ao verificar SLA', error));
   }
 
   onModuleDestroy() {
@@ -103,6 +119,7 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
     const tickets = await this.prisma.ticket.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      take: 500,
       include: {
         createdBy: { select: { id: true, name: true } },
         assignedTo: { select: { id: true, name: true } },
@@ -141,8 +158,9 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
     });
     if (!ticket) throw new NotFoundException(MESSAGES.NOT_FOUND);
     if (ticket.partnerId) assertPartnerAccess(user, ticket.partnerId);
+    else if (user.partnerId) throw new NotFoundException(MESSAGES.NOT_FOUND);
 
-    if (!isAdminRole(user.role)) {
+    if (!isSupportUser(user)) {
       return {
         ...ticket,
         messages: ticket.messages.filter((m) => !m.isInternal),
@@ -184,7 +202,7 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
     if (partnerId) {
       this.eventsGateway.emitToPartner(partnerId, 'ticket:created', ticket);
     }
-    if (!isAdminRole(user.role)) {
+    if (!isSupportUser(user)) {
       await this.notificationsService.createForAdminUsers({
         type: 'SYSTEM',
         title: 'Novo chamado de parceiro',
@@ -198,7 +216,7 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
   async update(id: string, dto: UpdateTicketDto, user: AuthUser) {
     const existing = await this.findOne(id, user);
     if (
-      !isAdminRole(user.role)
+      !isSupportUser(user)
       && (
         dto.status !== undefined
         || dto.assignedToId !== undefined
@@ -252,7 +270,7 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
           data: { resolvedAt: null },
         });
       }
-      if (existing.partnerId && isAdminRole(user.role)) {
+      if (existing.partnerId && isSupportUser(user)) {
         await this.notificationsService.createForPartnerUsers(existing.partnerId, {
           type: 'TICKET_REPLY',
           title: 'Andamento do chamado',
@@ -273,7 +291,7 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async acknowledge(id: string, user: AuthUser) {
-    if (!isAdminRole(user.role)) {
+    if (!isSupportUser(user)) {
       throw new NotFoundException(MESSAGES.NOT_FOUND);
     }
     const ticket = await this.findOne(id, user);
@@ -309,7 +327,7 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
   async addMessage(id: string, dto: CreateTicketMessageDto, user: AuthUser) {
     const ticket = await this.findOne(id, user);
 
-    if (dto.isInternal && !isAdminRole(user.role)) {
+    if (dto.isInternal && !isSupportUser(user)) {
       dto.isInternal = false;
     }
 
@@ -326,14 +344,14 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
     await this.addTimeline(id, 'Mensagem adicionada', null, null, user.id);
 
     if (!message.isInternal) {
-      if (isAdminRole(user.role) && ticket.partnerId) {
+      if (isSupportUser(user) && ticket.partnerId) {
         await this.notificationsService.createForPartnerUsers(ticket.partnerId, {
           type: 'TICKET_REPLY',
           title: 'Nova resposta no ticket',
           message: `Ticket ${ticket.protocol}: nova mensagem recebida.`,
           data: { ticketId: id },
         }, [user.id]);
-      } else if (!isAdminRole(user.role)) {
+      } else if (!isSupportUser(user)) {
         await this.notificationsService.createForAdminUsers({
           type: 'TICKET_REPLY',
           title: 'Nova mensagem de parceiro',
@@ -350,7 +368,7 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async remove(id: string, user: AuthUser) {
-    if (!isAdminRole(user.role)) {
+    if (!isSupportUser(user)) {
       throw new ForbiddenException('Somente administradores podem excluir chamados');
     }
     const ticket = await this.findOne(id, user);
@@ -389,6 +407,7 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.user.findMany({
       where: {
         role: { in: [UserRole.ADMIN, UserRole.SUPERVISOR] },
+        partnerId: null,
         isActive: true,
       },
       select: { id: true, name: true, email: true },
@@ -403,13 +422,13 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
     if (!content && !statusChanged) {
       throw new BadRequestException('Informe uma mensagem ou uma alteração de status');
     }
-    if (statusChanged && !isAdminRole(user.role)) {
+    if (statusChanged && !isSupportUser(user)) {
       throw new ForbiddenException('Somente o atendimento pode alterar o status');
     }
     if (statusChanged) {
       this.assertStatusTransition(ticket.status, dto.status!);
     }
-    const isInternal = Boolean(dto.isInternal && isAdminRole(user.role));
+    const isInternal = Boolean(dto.isInternal && isSupportUser(user));
     await this.prisma.$transaction(async (tx) => {
       if (statusChanged) {
         await tx.ticket.update({
@@ -453,14 +472,14 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
       const statusText = statusChanged
         ? ` Status: ${TICKET_STATUS_MESSAGES[dto.status!]}.`
         : '';
-      if (isAdminRole(user.role) && ticket.partnerId) {
+      if (isSupportUser(user) && ticket.partnerId) {
         await this.notificationsService.createForPartnerUsers(ticket.partnerId, {
           type: 'TICKET_REPLY',
           title: 'Chamado atualizado',
           message: `${ticket.protocol} foi atualizado.${statusText}`,
           data: { ticketId: id },
         }, [user.id]);
-      } else if (!isAdminRole(user.role)) {
+      } else if (!isSupportUser(user)) {
         await this.notificationsService.createForAdminUsers({
           type: 'TICKET_REPLY',
           title: 'Resposta de parceiro',
@@ -488,6 +507,7 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
       where: {
         id: userId,
         isActive: true,
+        partnerId: null,
         role: { in: [UserRole.ADMIN, UserRole.SUPERVISOR] },
       },
       select: { id: true },

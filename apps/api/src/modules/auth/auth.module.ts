@@ -6,6 +6,8 @@ import { AuditModule } from '@/modules/audit/audit.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { LoginThrottleService } from './login-throttle.service';
+import { JWT_ALGORITHM, jwtAudience, jwtIssuer } from '@/common/utils/jwt-options';
 
 @Module({
   imports: [
@@ -15,13 +17,23 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.getOrThrow<string>('JWT_SECRET'),
-        signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN', '15m') },
+        signOptions: {
+          expiresIn: config.get<string>('JWT_EXPIRES_IN', '15m'),
+          algorithm: JWT_ALGORITHM,
+          issuer: jwtIssuer(config),
+          audience: jwtAudience(config),
+        },
+        verifyOptions: {
+          algorithms: [JWT_ALGORITHM],
+          issuer: jwtIssuer(config),
+          audience: jwtAudience(config),
+        },
       }),
     }),
     forwardRef(() => AuditModule),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, LoginThrottleService],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

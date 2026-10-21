@@ -229,6 +229,7 @@ enum AuditAction {
   REJECT
   PAY
   EXPORT
+  VIEW
 }
 
 model User {
@@ -254,6 +255,7 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   refreshTokens RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
   sessions      Session[]
   permissions   UserPermission[]
   sales         Sale[]         @relation("SaleCreatedBy")
@@ -276,18 +278,68 @@ model User {
 
 model RefreshToken {
   id        String   @id @default(uuid())
+  /// SHA-256 do token entregue ao cliente; o valor original nunca é salvo.
   token     String   @unique
+  familyId  String?
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   createdAt DateTime @default(now())
   revokedAt DateTime?
+  rotatedAt DateTime?
   ipAddress String?
   userAgent String?
 
   @@index([userId])
   @@index([token])
+  @@index([familyId])
   @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/// Travas e contadores com expiração quando o Redis não está configurado.
+model CoordinationEntry {
+  key       String   @id
+  value     Int      @default(0)
+  owner     String?
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("coordination_entries")
+}
+
+enum OutboxStatus {
+  PENDING
+  DONE
+  FAILED
+}
+
+model OutboxEvent {
+  id            String       @id @default(uuid())
+  type          String
+  aggregateId   String
+  status        OutboxStatus @default(PENDING)
+  attempts      Int          @default(0)
+  nextAttemptAt DateTime     @default(now())
+  lastError     String?
+  createdAt     DateTime     @default(now())
+  processedAt   DateTime?
+
+  @@unique([type, aggregateId])
+  @@index([status, nextAttemptAt])
+  @@map("outbox_events")
 }
 
 model Session {
@@ -438,6 +490,8 @@ model Client {
   @@index([branchId])
   @@index([document])
   @@index([name])
+  @@index([partnerId, document])
+  @@index([partnerId, createdAt])
   @@map("clients")
 }
 
@@ -672,6 +726,14 @@ model Sale {
   @@index([upgradeOfSaleId])
   @@index([createdAt])
   @@index([protocol])
+  @@index([partnerId, createdAt])
+  @@index([partnerId, status])
+  @@index([branchId, createdAt])
+  @@index([clientId])
+  @@index([createdById])
+  @@index([lineId])
+  @@index([simCardId])
+  @@index([status, activatedAt])
   @@map("sales")
 }
 
@@ -716,6 +778,9 @@ model Document {
   @@index([clientId])
   @@index([saleId])
   @@index([saleId, purpose])
+  @@index([requestId])
+  @@index([ticketId])
+  @@index([url])
   @@map("documents")
 }
 
@@ -739,6 +804,7 @@ model Commission {
   @@index([partnerId])
   @@index([status])
   @@index([createdAt])
+  @@index([partnerId, status])
   @@map("commissions")
 }
 
@@ -922,6 +988,8 @@ model Notification {
 
   @@index([userId])
   @@index([isRead])
+  @@index([userId, isRead, createdAt])
+  @@index([userId, createdAt])
   @@map("notifications")
 }
 

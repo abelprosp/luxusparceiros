@@ -50,10 +50,17 @@ export function Input({
           style={[styles.input, { color: colors.text }, style]}
           placeholderTextColor={colors.textSecondary}
           secureTextEntry={isPassword && !showPassword}
+          accessibilityLabel={label ?? props.placeholder}
+          accessibilityHint={error ?? hint}
           {...props}
         />
         {isPassword ? (
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.icon}>
+          <TouchableOpacity
+            onPress={() => setShowPassword(!showPassword)}
+            style={styles.icon}
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+          >
             {showPassword ? (
               <EyeOff size={20} color={colors.textSecondary} />
             ) : (

@@ -1,9 +1,12 @@
 import {
   BadGatewayException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { AuthUser } from '@luxus/types';
+import { assertPartnerAccess } from '@/common/utils/partner-scope';
 import { ConfigService } from '@nestjs/config';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, extname, join } from 'path';
@@ -13,6 +16,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { TelefoniaIntakeService } from '@/modules/telefonia-intake/telefonia-intake.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { CommissionsService } from '@/modules/commissions/commissions.service';
+import { enqueueOutboxEvent, OUTBOX_COMMISSION_FROM_SALE } from '@/modules/outbox/outbox-events';
 import { TaskDemandCallbackDto, CreateTaskDemandInput, normalizeIncomingTaskStatus } from './dto/task-integration.dto';
 
 export interface TaskResponsible {
@@ -175,6 +179,20 @@ export class TaskIntegrationService {
       `/integrations/luxus-parceiros/demandas/${encodeURIComponent(externalRequestId)}/etapa-venda`,
       { method: 'POST', body: JSON.stringify(input) },
     );
+  }
+
+  async downloadSaleAttachmentForUser(saleId: string, attachmentId: string, user: AuthUser) {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { partnerId: true, branchId: true, taskDemandId: true },
+    });
+    if (!sale) throw new NotFoundException('Venda não encontrada');
+    assertPartnerAccess(user, sale.partnerId);
+    if (user.branchId && sale.branchId !== user.branchId) {
+      throw new ForbiddenException('Sem permissão para acessar esta venda');
+    }
+    if (!sale.taskDemandId) throw new NotFoundException('Venda sem demanda no Luxus Task');
+    return this.downloadTaskAttachment(saleId, attachmentId);
   }
 
   async downloadTaskAttachment(externalRequestId: string, attachmentId: string) {
@@ -601,7 +619,7 @@ export class TaskIntegrationService {
     const messageChanged = Boolean(resolution) && sale.taskLastMessage !== resolution;
     const workflowChanged = statusChanged || stageChanged || messageChanged || Boolean(reminderMessage);
 
-    await this.prisma.sale.update({
+    const saleUpdate = this.prisma.sale.update({
       where: { id: sale.id },
       data: {
         taskDemandId: dto.demandId,
@@ -654,6 +672,14 @@ export class TaskIntegrationService {
         } : {}),
       },
     });
+    if (shouldComplete) {
+      await this.prisma.$transaction([
+        saleUpdate,
+        enqueueOutboxEvent(this.prisma, OUTBOX_COMMISSION_FROM_SALE, sale.id),
+      ]);
+    } else {
+      await saleUpdate;
+    }
 
     if (shouldComplete) {
       void this.telefoniaIntake?.enqueue(sale.id)?.catch((error) => {
@@ -758,19 +784,15 @@ export class TaskIntegrationService {
   ) {
     const digits = String(newNumber || '').replace(/\D/g, '');
     const line = lineId
-      ? await this.prisma.line.findUnique({ where: { id: lineId }, select: { id: true } })
+      ? await this.prisma.line.findUnique({ where: { id: lineId }, select: { id: true, partnerId: true } })
       : digits
-        ? await this.prisma.line.findFirst({
-            where: {
-              OR: [
-                { number: digits },
-                { number: { contains: digits.slice(-8) } },
-              ],
-            },
-            select: { id: true },
-          })
+        ? await this.prisma.line.findUnique({ where: { number: digits }, select: { id: true, partnerId: true } })
         : null;
     if (!line) return;
+    if (line.partnerId && line.partnerId !== partnerId) {
+      console.warn(`[task-integration] Linha ${line.id} pertence a outro parceiro; status não alterado`);
+      return;
+    }
     await this.prisma.line.update({
       where: { id: line.id },
       data: {

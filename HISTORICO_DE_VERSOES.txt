@@ -56,6 +56,7 @@ TECNOLOGIAS USADAS NO PROJETO (VISÃO GERAL)
 1.11.0  19/10/2026          Dashboard conta a venda pela data da venda
 1.12.0  19/10/2026          Importação de vendas por planilha, guia, histórico
 1.13.0  20/10/2026          Cobrança pela Luxus no cadastro do parceiro
+1.14.0  20/10/2026          Segurança, consistência e usabilidade (homologação)
 
 
 ==============================================================================
@@ -536,3 +537,64 @@ TECNOLOGIAS USADAS NO PROJETO (VISÃO GERAL)
      agora no "pnpm test".
    - Documentação: README (seção "Atualização 1.13.0", com roteiro
      de teste) e docs/HISTORICO-DE-VERSOES.md (Versão 36).
+
+
+==============================================================================
+1.14.0 — 20/10/2026 — Segurança, consistência e usabilidade
+                      em homologação na branch "homologacao"; ainda não
+                      publicada na main
+==============================================================================
+
+   Problema: uma revisão do sistema apontou 30 pontos: brechas de
+   isolamento entre parceiros (exclusão em massa, estoque, uploads, anexos do
+   Task), sessões guardadas em texto puro e sem detecção de reuso, comissão
+   que não acompanhava a venda, exclusões que deixavam dados soltos,
+   listagens sem paginação real, falta de tela de erro e de acessibilidade, e
+   o aplicativo deixando a venda nova em rascunho.
+   Por quê: reduzir risco de vazamento entre parceiros e de sequestro de
+   sessão, manter comissão, estoque e clientes coerentes, e deixar web e
+   aplicativo usáveis com listas grandes e por teclado.
+   Como funciona (resumo; a lista completa está no README, seção
+   "Atualização 1.14.0"):
+   - Segurança: exclusão em massa, uploads, anexos do Task e chamados
+     respeitam parceiro e filial; admin de parceiro não mexe em comissão,
+     status nem catálogo; estoque não troca o dono de linha ou chip; uploads
+     conferidos pelo conteúdo; dados bancários só para administrador e
+     titular (leitura auditada); CSV sem fórmulas; Swagger desligado em
+     produção; JWT com HS256, emissor e público; bloqueio temporário de
+     login; seed só com senha forte.
+   - Sessões: refresh token guardado como hash e trocado a cada renovação;
+     reuso derruba a família de sessões; desativar usuário ou trocar senha
+     derruba todas. Redefinição de senha por e-mail com token de uso único
+     (1 hora).
+   - Consistência: venda que deixa de estar ativada cancela a comissão
+     (comissão paga bloqueia); cliente com venda ativada, vínculo com o Task
+     ou comissão paga não pode ser excluído; linha, chip e plano da venda
+     precisam ser do mesmo parceiro e operadora; comissão gerada por fila
+     com nova tentativa (outbox); travas entre instâncias; dashboard por
+     agregação no banco com cache de 60 segundos; /api/health/ready.
+   - Usabilidade: Chamados no menu; "Nova demanda" no app só para
+     administrador; modais de exclusão padronizados; tela de erro com
+     "Tentar novamente"; "Carregar mais" na web e rolagem infinita no app;
+     menu "Alterar status" no Kanban; contraste, rótulos e zoom liberado; no
+     app a venda nova é enviada para análise depois dos anexos.
+   O que foi usado:
+   - Migração 20261020180000_security_hardening (password_reset_tokens,
+     coordination_entries, outbox_events, familyId/rotatedAt nas sessões com
+     conversão dos tokens para hash, índices e a view
+     client_document_duplicates).
+   - API: ioredis (opcional, com recuo para o PostgreSQL), multer 2,
+     nodemailer via common/mail, módulos coordination e outbox.
+   - Web e app: hooks de paginação (usePaginatedList, useInfiniteList),
+     componentes ErrorState e KanbanStatusMenu, tela /redefinir-senha.
+   - Testes: security-hardening.test.js e auth-refresh.test.js, no
+     "pnpm test". 73 aprovados; os 3 que já falhavam continuam iguais.
+   - Homologação: Docker local (projeto luxus-homolog, banco próprio) exposto
+     por túnel do Cloudflare (trycloudflare.com), sem Task e sem telefonia-2.
+     Ela pegou um erro: a migração recriava o índice sales_simCardId_idx,
+     que já existia, e travava a API ao iniciar. A linha foi retirada.
+   Antes de publicar: gerar novo build do aplicativo para levar as mudanças
+   do celular. Roteiro de teste no README.
+   E-mail de redefinição adiado (decisão de 21/10/2026): sem SMTP_* e
+   APP_URL na Railway, o "Esqueci minha senha" não envia nada; a troca de
+   senha continua sendo feita pelo administrador na tela de Usuários.

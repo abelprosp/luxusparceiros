@@ -322,7 +322,7 @@ Na API também existe `prisma:fix-sale-branch`, que corrige a filial de vendas a
 
 ### Testes
 
-`pnpm test` roda os testes listados no script `test` de `apps/api/package.json` (isolamento por parceiro, documentos obrigatórios, status realizados, filtros do dashboard, edição e exclusão segura, fluxo de análise, integração com o Task, notificações de suporte, cópia histórica, telefonia-2, importação por planilha e cobrança no cadastro do parceiro). Três testes de `sale-review-workflow.test.js` e `task-integration.test.js` já falhavam antes da importação por planilha e continuam falhando; não são causados pelas mudanças recentes. Antes de enviar para a `main`, rode `pnpm build`: o deploy na Railway é automático e um erro de TypeScript derruba a publicação.
+`pnpm test` roda os testes listados no script `test` de `apps/api/package.json` (isolamento por parceiro, documentos obrigatórios, status realizados, filtros do dashboard, edição e exclusão segura, fluxo de análise, integração com o Task, notificações de suporte, cópia histórica, telefonia-2, importação por planilha, cobrança no cadastro do parceiro, endurecimento de segurança e ciclo do refresh token). Três testes de `sale-review-workflow.test.js` e `task-integration.test.js` já falhavam antes da importação por planilha e continuam falhando; não são causados pelas mudanças recentes. Antes de enviar para a `main`, rode `pnpm build`: o deploy na Railway é automático e um erro de TypeScript derruba a publicação.
 
 ## Variáveis de ambiente
 
@@ -332,7 +332,7 @@ O arquivo de exemplo é `.env.example` na raiz. Nunca versione o `.env` nem valo
 | --- | --- | --- |
 | `POSTGRES_PASSWORD` | Docker Compose | Senha do PostgreSQL local |
 | `DATABASE_URL` | API (Prisma) | Conexão com o PostgreSQL |
-| `REDIS_URL` | Docker Compose | Endereço do Redis; hoje não é lido pelo código da API |
+| `REDIS_URL` | API | Opcional. Travas entre instâncias e contadores do bloqueio de login; sem Redis (ou se ele cair) a API usa a tabela `coordination_entries` do PostgreSQL |
 | `JWT_SECRET`, `JWT_EXPIRES_IN` | API | Segredo e validade do token de acesso (padrão 15 minutos) |
 | `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRES_IN` | API | Segredo e validade do token de renovação. Sem a variável, o código usa 365 dias; o `.env.example` e o Docker Compose sugerem 7 dias |
 | `API_PORT`, `PORT` | API | Porta da API; `PORT` (definida pela Railway) tem prioridade |
@@ -340,7 +340,14 @@ O arquivo de exemplo é `.env.example` na raiz. Nunca versione o `.env` nem valo
 | `CORS_ORIGINS` | API e Socket.IO | Origens do frontend autorizadas, separadas por vírgula |
 | `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` | Web (no build) | Endereço da API (com ou sem `/api` no final) e do Socket.IO (`.../events`). Ficam visíveis no navegador; não coloque segredos nelas |
 | `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_WS_URL` | Aplicativo | Mesmos endereços para o Expo (use o IP da máquina na rede local). Ficam embutidas no aplicativo |
+| `JWT_ISSUER`, `JWT_AUDIENCE` | API | Emissor e público conferidos em todo token (padrão `luxus-parceiros-api` e `luxus-parceiros`). Trocar invalida as sessões abertas |
 | `RUN_DB_SEED` | Entrypoint da API | `true` roda o seed de demonstração ao iniciar; mantenha `false` em produção |
+| `SEED_ADMIN_PASSWORD`, `SEED_ALLOW_PRODUCTION` | Seed | Senha dos usuários demo (mínimo 12 caracteres, obrigatória). Com `NODE_ENV=production` o seed só roda com `SEED_ALLOW_PRODUCTION=true` |
+| `TRUST_PROXY` | API | Quantos proxies confiáveis ficam na frente da API, para ler o IP real no bloqueio de login (padrão 1; NGINX + túnel = 2) |
+| `APP_URL` | API | Endereço da web usado no link de redefinição de senha |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | API | Envio do e-mail de redefinição de senha |
+| `MAIL_LOG_LINKS` | API | Só homologação: sem SMTP, escreve o link de redefinição no log da API |
+| `ENABLE_SWAGGER` | API | `true` liga o Swagger em `/api/docs` também em produção (desligado por padrão) |
 | `UPLOAD_DIR`, `UPLOAD_MAX_SIZE` | API | Pasta dos arquivos e tamanho máximo em bytes (padrão 50 MB) |
 | `RAILWAY_VOLUME_MOUNT_PATH` | API | Usada como pasta de uploads quando `UPLOAD_DIR` não está definida |
 | `THROTTLE_TTL`, `THROTTLE_LIMIT` | API | Janela (segundos) e número máximo de requisições do rate limiting |
@@ -361,7 +368,9 @@ Regras obrigatórias para qualquer nova consulta na API:
 2. Aplicar também o filtro por `branchId` para usuários de filial (`branch-scope.ts`).
 3. Ocultar elementos no frontend não substitui a autorização na API.
 
-Outras proteções: Helmet, CORS restrito, rate limiting, `ValidationPipe` que rejeita campos não declarados nos DTOs, limite de 50 MB no corpo das requisições e nos uploads, arquivos servidos somente com autenticação, e auditoria. Fotos de perfil aceitam apenas imagens. As integrações servidor-a-servidor usam chaves em cabeçalho HTTP.
+Outras proteções: Helmet, CORS restrito, rate limiting, bloqueio temporário de login (5 erros por conta e IP, 20 por conta, 50 por IP em 15 minutos), `ValidationPipe` que rejeita campos não declarados nos DTOs, limite de corpo por rota (1 MB por padrão; 5 MB em vendas, 10 MB na importação, 50 MB nas integrações), uploads conferidos pelo conteúdo do arquivo (magic bytes) e baixados como anexo, arquivos servidos somente com autenticação, CSV exportado sem fórmulas, dados bancários visíveis só para administrador e titular do parceiro (com auditoria de leitura), e auditoria. As integrações servidor-a-servidor usam chaves em cabeçalho HTTP.
+
+Sessões: o refresh token é guardado só como hash SHA-256 e trocado a cada renovação. Reusar um token já trocado derruba toda a família de sessões (há 30 segundos de tolerância para abas ou requisições que renovam ao mesmo tempo); desativar o usuário ou trocar a senha derruba todas as sessões dele. A redefinição de senha usa token de uso único guardado como hash, válido por 1 hora, enviado por e-mail (telas `/forgot-password` e `/redefinir-senha`).
 
 ## Tempo real
 
@@ -465,6 +474,114 @@ Roteiro sugerido:
 
 Marcar no cadastro os parceiros cobrados pela Luxus. Até isso ser feito, nenhuma venda desses parceiros vai para o faturamento.
 
+## Atualização 1.14.0: segurança, consistência e usabilidade
+
+Situação: **em homologação** desde 20/10/2026, na branch `homologacao`. Ainda **não** foi para a `main` nem para a produção.
+
+São 30 ajustes, agrupados abaixo.
+
+### Segurança e isolamento entre parceiros
+
+**Por quê:** uma revisão do código encontrou caminhos em que um parceiro conseguia agir sobre dados de outro (excluir em massa por id, assumir linha ou chip pelo estoque, anexar arquivo a cliente alheio, baixar anexo do Task de venda que não enxerga) e pontos que facilitavam roubo de sessão ou de conta (refresh token em texto puro e válido para sempre, login sem limite de tentativas, Swagger aberto, upload aceito só pelo nome do arquivo). Cada item abaixo fecha um desses caminhos.
+
+1. Exclusão em massa de vendas e solicitações respeita o parceiro e a filial de quem exclui.
+2. Administrador vinculado a parceiro não altera comissão personalizada, status de venda nem o catálogo (operadoras, planos, campanhas); isso fica com a Luxus.
+3. Estoque e importação não "sequestram" linha ou chip de outro parceiro: o número já cadastrado em outro parceiro é recusado em vez de mudar de dono.
+4. Upload com `clientId` confere se o cliente é do parceiro e da filial de quem envia.
+5. O proxy de anexos do Task confere se o usuário enxerga a venda dona do anexo.
+6. A correlação de linha com o Task usa o número completo (antes bastavam os 8 últimos dígitos).
+7. Seed seguro por padrão: não roda em produção sem `SEED_ALLOW_PRODUCTION=true` e exige `SEED_ADMIN_PASSWORD` forte; o Compose não tem mais senha padrão.
+8. Uploads conferidos pelo conteúdo (magic bytes) contra uma lista de tipos permitidos; downloads saem como anexo com `nosniff`.
+9. Refresh token guardado como hash, trocado a cada renovação, com detecção de reuso e revogação ao desativar usuário, trocar senha ou mudar parceiro/filial.
+10. Dados bancários e PIX do parceiro só para administrador e titular; os demais recebem os campos vazios e a leitura é auditada.
+11. CSV exportado neutraliza fórmulas (`=`, `+`, `-`, `@`); chamados ficam restritos ao parceiro e à filial.
+12. Multer 2 e limite de corpo por rota (1 MB padrão).
+13. Listagens com limite máximo, GET sem efeitos colaterais, validação de DTOs e de intervalos de datas.
+14. Swagger desligado em produção (`ENABLE_SWAGGER`), JWT com algoritmo HS256 fixo e `iss`/`aud` conferidos, cabeçalhos de segurança no NGINX.
+15. Bloqueio temporário de login por conta, IP e conta+IP, e `TRUST_PROXY` para ler o IP real.
+16. Redefinição de senha por e-mail com token de uso único guardado como hash (1 hora).
+
+### Consistência dos dados
+
+**Por quê:** havia situações em que o sistema ficava incoerente: venda cancelada com comissão ainda válida, cliente excluído deixando arquivos e vínculos para trás, venda usando linha ou chip de outro parceiro ou de outra operadora, comissão perdida quando a geração falhava no meio, e dashboard lento por carregar todas as vendas na memória. Com mais de uma instância da API, as filas também podiam rodar em dobro.
+
+17. Ciclo de vida da comissão: venda que deixa de estar ativada cancela a comissão; comissão já paga bloqueia o cancelamento ou a rejeição até o estorno.
+18. Exclusão de cliente bloqueada quando há venda ativada, vínculo com o Task ou comissão paga; nos demais casos os arquivos do cliente também são apagados.
+19. Linha, chip e plano da venda precisam ser do mesmo parceiro e coerentes entre si (plano ativo, operadora compatível, linha/chip livres).
+20. Cadastro de usuário confere se o parceiro e a filial existem e combinam.
+21. Índices novos em vendas, clientes, documentos, comissões, notificações e sessões. A view `client_document_duplicates` lista clientes repetidos por documento, a unificar antes de criar a restrição de unicidade.
+22. Outbox: a comissão da venda ativada é gerada por uma fila persistida, com nova tentativa e espera crescente (até 10 tentativas).
+23. Dashboard calculado com agregações no banco e cache de 60 segundos.
+24. `/api/health/ready` confere banco e Redis; travas entre instâncias (Redis ou PostgreSQL) evitam que duas réplicas processem a mesma fila; o reset de senha e os contadores de login ficam persistidos.
+
+### Usabilidade e acessibilidade
+
+**Por quê:** as listas carregavam só a primeira página sem aviso, um erro de rede deixava a tela vazia sem saída, Chamados não aparecia no menu, o Kanban só funcionava arrastando com o mouse, e exclusões usavam a caixa de confirmação do navegador. No app, a venda nova ficava em rascunho e não chegava à análise, e usuários sem permissão viam o botão "Nova demanda" para depois receber erro.
+
+25. Chamados no menu (web e app); "Nova demanda" no app só para administrador; exclusões confirmadas por modal padrão (parceiros, operadoras, planos, campanhas e documentos da venda).
+26. Tela de erro com "Tentar novamente" nas listagens da web e do app.
+27. Paginação real: "Carregar mais" na web e rolagem infinita no app.
+28. Acessibilidade: contraste maior, zoom liberado no celular, rótulos ligados aos campos, cabeçalhos de tabela e botões só com ícone com nome acessível.
+29. Kanban de chamados e solicitações com menu "Alterar status" (funciona por teclado, sem arrastar).
+30. App: a venda nova é enviada para análise depois dos anexos (antes ficava em rascunho); vendas em rascunho mostram o botão "Enviar para análise".
+
+### Como foi feito
+
+- **Banco:** migration `20261020180000_security_hardening` (tabelas `password_reset_tokens`, `coordination_entries` e `outbox_events`; colunas `familyId` e `rotatedAt` em `refresh_tokens`, com conversão dos tokens existentes para hash sem derrubar sessões; ação de auditoria `VIEW`; índices; view de clientes duplicados).
+- **API:** novos `common/coordination` (travas e contadores), `common/mail` (SMTP), `modules/outbox`, `auth/login-throttle.service.ts`, `commissions/commission-lifecycle.ts` e utilitários em `common/utils` (`bank-data`, `csv`, `date-range`, `file-signature`, `jwt-options`, `session-revocation`, `token-hash`).
+- **Web:** `hooks/usePaginatedList.ts`, `components/ui/error-state.tsx` (inclui "Carregar mais"), `components/ui/kanban-status-menu.tsx` e a tela `/redefinir-senha`.
+- **App:** `hooks/useInfiniteList.ts`, `components/ui/ErrorState.tsx` e envio da venda para análise.
+- **Testes:** `test/security-hardening.test.js` e `test/auth-refresh.test.js`, incluídos no `pnpm test`. Resultado: 73 aprovados e os mesmos 3 que já falhavam antes.
+- **Correção achada na homologação:** a primeira versão da migration recriava o índice `sales_simCardId_idx`, que já existe desde `20260701180000_sale_process_fields`, e travava a API na inicialização. A linha foi retirada; depois disso o banco ficou idêntico ao `schema.prisma` (`prisma migrate diff` vazio).
+
+### Como conferir
+
+Roteiro sugerido na homologação (entrar como administrador, como parceiro e como usuário de filial):
+
+1. **Isolamento:** como parceiro, tentar excluir em massa, abrir ou anexar arquivos em vendas e clientes de outro parceiro: deve ser recusado. Cadastrar no estoque uma linha que já é de outro parceiro: deve ser recusado.
+2. **Admin de parceiro:** conferir que não altera comissão personalizada, status da venda, operadoras, planos nem campanhas.
+3. **Dados bancários:** como atendente, abrir o parceiro e conferir que banco e PIX não aparecem.
+4. **Login:** errar a senha 5 vezes seguidas e conferir a mensagem de bloqueio temporário (15 minutos para aquela conta naquele IP).
+5. **Senha:** "Esqueci minha senha" na tela de login, abrir o link (na homologação ele aparece no log da API), definir a senha nova e conferir que o link não funciona uma segunda vez.
+6. **Comissão:** ativar uma venda e conferir a comissão; cancelar a venda e conferir a comissão cancelada; com comissão paga, conferir que o cancelamento é bloqueado.
+7. **Cliente:** tentar excluir um cliente com venda ativada (bloqueado) e um sem vendas (excluído).
+8. **Venda:** escolher linha ou chip de outra operadora que não a do plano: deve ser recusado.
+9. **Listas:** em clientes, usuários, estoque, comissões etc., usar "Carregar mais"; no app, rolar até o fim das listas.
+10. **Erro:** desligar a internet, abrir uma lista, conferir "Tentar novamente" e religar.
+11. **Kanban:** em Chamados e Solicitações, usar o menu "Alterar status" pelo teclado (Tab e Enter).
+12. **App:** criar uma venda com anexos e conferir que ela chega "em análise" no painel.
+13. **Exportação:** exportar um CSV com um cliente cujo nome começa com `=` e conferir que o Excel não executa fórmula.
+
+### Ambiente de homologação
+
+Roda na máquina local com Docker e é exposto por um túnel rápido do Cloudflare (endereço `*.trycloudflare.com`). Usa banco próprio (projeto Docker `luxus-homolog`, com volumes separados) e **não** se conecta ao banco de produção, ao Luxus Task nem ao telefonia-2.
+
+1. Iniciar o túnel: `cloudflared tunnel --no-autoupdate --url http://localhost:8088` e anotar o endereço `https://....trycloudflare.com`.
+2. Criar `.env.homolog` na raiz (ignorado pelo Git) com `POSTGRES_PASSWORD`, `JWT_SECRET`, `JWT_REFRESH_SECRET` e `SEED_ADMIN_PASSWORD` aleatórios, `RUN_DB_SEED=true`, `SEED_ALLOW_PRODUCTION=true`, `TRUST_PROXY=2`, `MAIL_LOG_LINKS=true`, e `APP_URL`, `CORS_ORIGINS` e `NEXT_PUBLIC_API_URL` com o endereço do túnel (`NEXT_PUBLIC_WS_URL` com `/events` no final). Deixar vazias as chaves do Task e do telefonia-2.
+3. Subir: `docker compose -p luxus-homolog --env-file .env.homolog up -d --build`.
+4. Entrar com `admin@luxus.com.br` e a senha de `SEED_ADMIN_PASSWORD`. O link de "Esqueci minha senha" aparece em `docker logs luxus-parceiros-api`.
+
+O endereço do túnel muda toda vez que o `cloudflared` reinicia; nesse caso, atualize o `.env.homolog` e rode o passo 3 de novo (a web embute o endereço no build).
+
+### Antes de publicar
+
+- **E-mail de redefinição (adiado por decisão em 21/10/2026):** a versão pode ser publicada sem servidor de e-mail. Enquanto `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` e `APP_URL` não forem configurados na Railway, a tela "Esqueci minha senha" informa que o e-mail foi enviado, mas nada chega (em produção o link não é escrito no log). Nesse período, a troca de senha é feita pelo administrador na tela de Usuários. Para ativar depois, basta uma conta de envio da Luxus (um único remetente envia para Gmail, Hotmail ou domínio próprio) e os registros SPF, DKIM e DMARC no DNS de `grupoluxus.com.br`.
+- **Proxy:** conferir `TRUST_PROXY` (padrão 1, adequado para a Railway com um proxy na frente). Valor errado faz o bloqueio de login contar todos os usuários como um único IP.
+- **Variáveis que não podem existir em produção:** `RUN_DB_SEED` deve continuar `false`, e `MAIL_LOG_LINKS` e `ENABLE_SWAGGER` não devem ser definidas.
+- **Aplicativo:** as mudanças do app (itens 25 a 30 na parte do celular) só chegam aos usuários com um novo build do Expo. A publicação na Railway atualiza apenas a API e a web.
+
+### Efeitos esperados na publicação
+
+- A migration converte os refresh tokens existentes para hash: ninguém precisa entrar de novo por causa disso.
+- Os tokens de acesso emitidos antes da publicação não têm `iss`/`aud` e passam a ser recusados; web e app renovam sozinhos com o refresh token, então o usuário não percebe (no máximo uma requisição repetida).
+- Como o corpo das requisições passou a ter limite por rota (1 MB por padrão), integrações que enviem JSON grande fora de `/api/integrations/`, `/api/sales` e `/api/sales/import` receberão erro 413.
+
+### Depois da publicação
+
+- Conferir a view `client_document_duplicates` e unificar os clientes repetidos antes de criar a restrição de unicidade.
+- Acompanhar em `/api/health/ready` (banco e Redis) e os eventos com falha na tabela `outbox_events`.
+- Atualizar a situação desta seção e dos dois históricos para "em produção", com o commit publicado.
+
 ## Pontos de atenção
 
 Resumo; detalhes na seção 7 de [docs/HISTORICO-DE-VERSOES.md](docs/HISTORICO-DE-VERSOES.md).
@@ -474,7 +591,7 @@ Resumo; detalhes na seção 7 de [docs/HISTORICO-DE-VERSOES.md](docs/HISTORICO-D
 - Dependência do Luxus Task para concluir vendas, sem procedimento de contingência documentado.
 - Aplicativo móvel sem mudanças desde 24/08/2026: eSIM, upgrade e importação podem não existir nele (a cobrança pela Luxus vem do parceiro e não depende do aplicativo).
 - Docker local com endereços padrão da web apontando para a porta 80, enquanto o NGINX usa a 8088 (ver "Como rodar localmente").
-- Redis declarado na infraestrutura, mas não usado pelo código.
+- Redis é opcional: sem ele, travas e contadores usam o PostgreSQL (a partir da 1.14.0).
 - Duas numerações de versão (`docs/HISTORICO-DE-VERSOES.md` e `HISTORICO_DE_VERSOES.txt`) e muitas branches antigas já mescladas.
 
 ## Convenções

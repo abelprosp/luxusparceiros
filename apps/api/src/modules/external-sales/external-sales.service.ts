@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, SaleStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { assertDateRange } from '@/common/utils/date-range';
 import { ExternalSalesQueryDto } from './dto/external-sales.dto';
 
 const saleListSelect = {
@@ -146,6 +147,7 @@ export class ExternalSalesService {
     }
 
     if (query.createdFrom || query.createdTo) {
+      assertDateRange(query.createdFrom, query.createdTo);
       where.createdAt = {};
       if (query.createdFrom) where.createdAt.gte = new Date(query.createdFrom);
       if (query.createdTo) where.createdAt.lte = new Date(query.createdTo);

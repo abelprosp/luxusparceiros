@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -35,9 +35,11 @@ export class PartnersController {
   @RequirePermissions(PERMISSIONS.PARTNERS_READ)
   @ApiOperation({ summary: 'Verificar se o CNPJ/CPF já possui outros acessos' })
   checkDocument(
+    @CurrentUser() user: AuthUser,
     @Query('document') document: string,
     @Query('excludeId') excludeId?: string,
   ) {
+    if (user.partnerId) throw new ForbiddenException('Consulta disponível apenas para a equipe Luxus');
     return this.partnersService.findByDocument(document ?? '', excludeId);
   }
 
@@ -45,7 +47,7 @@ export class PartnersController {
   @RequirePermissions(PERMISSIONS.PARTNERS_READ)
   @ApiOperation({ summary: 'Obter parceiro por ID' })
   findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.partnersService.findOne(id, user);
+    return this.partnersService.findOneForView(id, user);
   }
 
   @Get(':id/plans')

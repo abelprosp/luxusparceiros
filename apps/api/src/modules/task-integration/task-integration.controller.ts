@@ -9,8 +9,10 @@ import {
   UseGuards,
   ValidationPipe,
 } from '@nestjs/common';
-import { PERMISSIONS } from '@luxus/types';
+import { AuthUser, PERMISSIONS } from '@luxus/types';
 import { Response } from 'express';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { safeDownloadHeaders } from '@/common/utils/file-signature';
 import { Public } from '@/common/decorators/public.decorator';
 import { RequirePermissions } from '@/common/decorators/permissions.decorator';
 import { TaskDemandCallbackDto } from './dto/task-integration.dto';
@@ -54,12 +56,15 @@ export class TaskIntegrationController {
   async taskSaleAttachment(
     @Param('saleId') saleId: string,
     @Param('attachmentId') attachmentId: string,
+    @CurrentUser() user: AuthUser,
     @Res() response: Response,
   ) {
-    const file = await this.integration.downloadTaskAttachment(saleId, attachmentId);
-    response.setHeader('Content-Type', file.mimeType);
+    const file = await this.integration.downloadSaleAttachmentForUser(saleId, attachmentId, user);
+    response.setHeader('Content-Type', safeDownloadHeaders(file.mimeType, false).contentType);
     response.setHeader('Content-Length', file.buffer.length);
     response.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`);
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     response.end(file.buffer);
   }
 

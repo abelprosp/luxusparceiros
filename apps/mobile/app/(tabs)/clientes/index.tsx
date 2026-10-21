@@ -6,6 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -13,7 +14,8 @@ import { Search, User, Filter } from 'lucide-react-native';
 import { formatDocument, formatPhone, getInitials } from '@luxus/utils';
 import { useTheme } from '@/contexts/ThemeContext';
 import { clientsApi, type Client } from '@/services/api';
-import { Input, Badge, SkeletonList, EmptyState } from '@/components/ui';
+import { Input, Badge, SkeletonList, EmptyState, ErrorState } from '@/components/ui';
+import { useInfiniteList } from '@/hooks/useInfiniteList';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { FAB } from '@/components/FAB';
 import { spacing, typography, radius } from '@/theme';
@@ -21,39 +23,25 @@ import { spacing, typography, radius } from '@/theme';
 export default function ClientesScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterActive, setFilterActive] = useState<boolean | null>(null);
 
-  const loadClients = useCallback(async () => {
-    try {
-      const response = await clientsApi.list({ search: search || undefined });
-      if (response.success && response.data) {
-        let data = response.data.data;
-        if (filterActive !== null) {
-          data = data.filter((c) => c.isActive === filterActive);
-        }
-        setClients(data);
-      }
-    } catch {
-      setClients([]);
-    }
-  }, [search, filterActive]);
-
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadClients().finally(() => setLoading(false));
-    }, 300);
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(timer);
-  }, [loadClients]);
+  }, [search]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadClients();
-    setRefreshing(false);
-  };
+  const fetchClients = useCallback(
+    (page: number) => clientsApi.list({
+      search: debouncedSearch || undefined,
+      isActive: filterActive ?? undefined,
+      page,
+    }),
+    [debouncedSearch, filterActive],
+  );
+  const list = useInfiniteList<Client>(fetchClients);
+  const clients = list.items;
 
   const renderClient = ({ item }: { item: Client }) => (
     <TouchableOpacity
@@ -82,7 +70,7 @@ export default function ClientesScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.content}>
-        <ScreenHeader title="Clientes" subtitle={`${clients.length} cadastrados`} />
+        <ScreenHeader title="Clientes" subtitle={`${list.total} cadastrados`} />
 
         <Input
           placeholder="Buscar por nome ou documento..."
@@ -115,16 +103,21 @@ export default function ClientesScreen() {
           })}
         </View>
 
-        {loading ? (
+        {list.loading ? (
           <SkeletonList />
+        ) : list.error ? (
+          <ErrorState message={list.error} onRetry={list.retry} />
         ) : (
           <FlatList
             data={clients}
             keyExtractor={(item) => item.id}
             renderItem={renderClient}
             contentContainerStyle={styles.list}
+            onEndReached={list.loadMore}
+            onEndReachedThreshold={0.4}
+            ListFooterComponent={list.loadingMore ? <ActivityIndicator color={colors.primary} style={styles.footer} /> : null}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+              <RefreshControl refreshing={list.refreshing} onRefresh={list.refresh} tintColor={colors.primary} />
             }
             ListEmptyComponent={
               <EmptyState
@@ -166,6 +159,9 @@ const styles = StyleSheet.create({
   list: {
     gap: spacing.sm,
     paddingBottom: 80,
+  },
+  footer: {
+    paddingVertical: spacing.md,
   },
   clientCard: {
     flexDirection: 'row',

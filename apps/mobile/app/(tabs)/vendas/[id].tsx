@@ -135,6 +135,22 @@ export default function VendaDetalheScreen() {
     }
   };
 
+  const isDraft = sale?.reviewStatus === 'DRAFT' || sale?.reviewStatus === 'CHANGES_REQUESTED';
+
+  const submitDraft = async () => {
+    if (!sale) return;
+    setSubmitting(true);
+    try {
+      await salesApi.submit(sale.id);
+      Alert.alert('Venda enviada', 'A venda foi enviada para análise.');
+      await load();
+    } catch (error) {
+      Alert.alert('Não foi possível enviar', error instanceof Error ? error.message : 'Tente novamente');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
@@ -183,6 +199,16 @@ export default function VendaDetalheScreen() {
             Registrada em {formatDate(sale.createdAt)}
           </Text>
         </Card>
+
+        {isDraft && sale.status !== 'DOCUMENTS_PENDING' && (
+          <Card>
+            <Text style={[styles.title, { color: colors.text }]}>Venda ainda não enviada</Text>
+            <Text style={[styles.instructions, { color: colors.textSecondary }]}>
+              Esta venda está como rascunho. Envie para análise quando os documentos obrigatórios estiverem anexados.
+            </Text>
+            <Button title="Enviar para análise" fullWidth loading={submitting} onPress={submitDraft} />
+          </Card>
+        )}
 
         {sale.status === 'DOCUMENTS_PENDING' && (
           <Card>

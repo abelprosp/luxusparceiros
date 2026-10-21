@@ -38,7 +38,7 @@ export class CreateUserDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
-  partnerId?: string;
+  partnerId?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

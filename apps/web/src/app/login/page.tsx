@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LuxusLogo } from '@/components/brand/luxus-logo';
 import {
@@ -146,14 +147,14 @@ export default function LoginPage() {
             <h2 className="text-2xl font-bold text-white sm:text-3xl">
               Entrar na Luxus
             </h2>
-            <p className="text-sm text-white/50">
+            <p className="text-sm text-white/70">
               Informe seus dados para acessar sua conta.
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-xs font-medium text-white/60">
+              <Label htmlFor="email" className="text-xs font-medium text-white/75">
                 E-mail
               </Label>
               <Input
@@ -169,7 +170,7 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-xs font-medium text-white/60">
+              <Label htmlFor="password" className="text-xs font-medium text-white/75">
                 Senha
               </Label>
               <div className="relative">
@@ -186,7 +187,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 transition-colors hover:text-white/70"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded text-white/65 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
                 >
                   {showPassword ? (
@@ -198,9 +199,17 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <p className="text-xs text-white/45">
-              Sua sessão permanecerá conectada neste dispositivo até você escolher sair.
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-white/65">
+                Sua sessão permanecerá conectada neste dispositivo até você escolher sair.
+              </p>
+              <Link
+                href="/forgot-password"
+                className="shrink-0 rounded text-xs font-medium text-primary-light underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                Esqueci minha senha
+              </Link>
+            </div>
 
             <Button
               type="submit"
@@ -218,9 +227,9 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <p className="mt-8 text-center text-sm text-white/40">
+          <p className="mt-8 text-center text-sm text-white/65">
             Precisa de acesso?{' '}
-            <span className="text-white/60">Entre em contato com o administrador.</span>
+            <span className="text-white/80">Entre em contato com o administrador.</span>
           </p>
         </div>
       </div>

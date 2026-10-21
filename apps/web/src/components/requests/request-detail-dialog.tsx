@@ -92,6 +92,15 @@ export function RequestDetailDialog({ requestId, open, onOpenChange, onUpdated }
       setRequest(data);
       setStatus(data.status);
       setResolution(data.resolution ?? '');
+      if (data.taskDemandId) {
+        void api<RequestDetail>(`/requests/${requestId}/refresh-task`, { method: 'POST' })
+          .then((fresh) => {
+            setRequest(fresh);
+            setStatus(fresh.status);
+            setResolution(fresh.resolution ?? '');
+          })
+          .catch(() => undefined);
+      }
     } catch {
       setRequest(null);
     } finally {

@@ -24,7 +24,7 @@ export class DashboardController {
   @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.FINANCIAL)
   @ApiOperation({ summary: 'Métricas administrativas' })
   getAdminMetrics(@CurrentUser() user: AuthUser, @Query() filters: DashboardFiltersDto) {
-    return this.dashboardService.getAdminMetrics({
+    return this.dashboardService.getAdminMetricsCached({
       ...filters,
       ...(user.partnerId && { partnerId: user.partnerId }),
     });
@@ -36,7 +36,7 @@ export class DashboardController {
     @CurrentUser() user: AuthUser,
     @Query('branchId') branchId?: string,
   ) {
-    return this.dashboardService.getPartnerMetrics(user, branchId);
+    return this.dashboardService.getPartnerMetricsCached(user, branchId);
   }
 
   @Get('details')

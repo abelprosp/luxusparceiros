@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState, LoadMoreButton } from '@/components/ui/error-state';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toaster';
 import { useAuth } from '@/hooks/useAuth';
@@ -105,6 +106,10 @@ export default function EstoquePage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [chipsMeta, setChipsMeta] = useState({ page: 1, totalPages: 1, total: 0 });
+  const [linesMeta, setLinesMeta] = useState({ page: 1, totalPages: 1, total: 0 });
   const [chipSearch, setChipSearch] = useState('');
   const [lineSearch, setLineSearch] = useState('');
   const [debouncedChipSearch, setDebouncedChipSearch] = useState('');
@@ -146,31 +151,38 @@ export default function EstoquePage() {
     }
   }, [isPartner]);
 
-  const loadChips = useCallback(async () => {
-    setLoading(true);
+  const loadChips = useCallback(async (page = 1) => {
+    if (page === 1) setLoading(true);
+    else setLoadingMore(true);
     try {
       const res = await getPaginated<SimCard>('/sim-cards', {
         search: debouncedChipSearch || undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
         partnerId: partnerFilter !== 'all' && partnerFilter !== 'general' ? partnerFilter : undefined,
         generalOnly: partnerFilter === 'general' ? true : undefined,
+        page,
         limit: 50,
       });
-      setItems(res.data);
+      setItems((current) => (page === 1 ? res.data : [...current, ...res.data]));
+      setChipsMeta({ page, totalPages: res.meta.totalPages, total: res.meta.total });
+      setLoadError(null);
     } catch (err) {
-      setItems([]);
-      toast({
-        title: 'Erro ao carregar chips',
-        description: err instanceof Error ? err.message : 'Falha na requisição',
-        variant: 'destructive',
-      });
+      const message = err instanceof Error ? err.message : 'Falha na requisição';
+      if (page === 1) {
+        setItems([]);
+        setLoadError(message);
+      } else {
+        toast({ title: 'Erro ao carregar chips', description: message, variant: 'destructive' });
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [debouncedChipSearch, statusFilter, partnerFilter, toast]);
 
-  const loadLines = useCallback(async () => {
-    setLoading(true);
+  const loadLines = useCallback(async (page = 1) => {
+    if (page === 1) setLoading(true);
+    else setLoadingMore(true);
     try {
       const path = isPartner ? '/stock/lines' : '/lines';
       const res = await getPaginated<Line>(path, {
@@ -178,18 +190,23 @@ export default function EstoquePage() {
         status: statusFilter !== 'all' ? statusFilter : undefined,
         partnerId: !isPartner && partnerFilter !== 'all' && partnerFilter !== 'general' ? partnerFilter : undefined,
         generalOnly: !isPartner && partnerFilter === 'general' ? true : undefined,
+        page,
         limit: 50,
       });
-      setLines(res.data);
+      setLines((current) => (page === 1 ? res.data : [...current, ...res.data]));
+      setLinesMeta({ page, totalPages: res.meta.totalPages, total: res.meta.total });
+      setLoadError(null);
     } catch (err) {
-      setLines([]);
-      toast({
-        title: 'Erro ao carregar linhas',
-        description: err instanceof Error ? err.message : 'Falha na requisição',
-        variant: 'destructive',
-      });
+      const message = err instanceof Error ? err.message : 'Falha na requisição';
+      if (page === 1) {
+        setLines([]);
+        setLoadError(message);
+      } else {
+        toast({ title: 'Erro ao carregar linhas', description: message, variant: 'destructive' });
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [debouncedLineSearch, statusFilter, partnerFilter, isPartner, toast]);
 
@@ -439,6 +456,8 @@ export default function EstoquePage() {
 
         {loading ? (
           <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+        ) : loadError && sortedLines.length === 0 ? (
+          <ErrorState message={loadError} onRetry={() => void loadLines()} />
         ) : sortedLines.length === 0 ? (
           <EmptyState
             icon={Smartphone}
@@ -477,6 +496,15 @@ export default function EstoquePage() {
               );
             })}
           </div>
+        )}
+        {!loading && (
+          <LoadMoreButton
+            hasMore={linesMeta.page < linesMeta.totalPages}
+            loading={loadingMore}
+            onClick={() => void loadLines(linesMeta.page + 1)}
+            shown={sortedLines.length}
+            total={linesMeta.total}
+          />
         )}
       </DashboardLayout>
     );
@@ -558,6 +586,8 @@ export default function EstoquePage() {
 
           {loading ? (
             <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+          ) : loadError && items.length === 0 ? (
+            <ErrorState message={loadError} onRetry={() => void loadChips()} />
           ) : items.length === 0 ? (
             <EmptyState icon={Warehouse} title="Estoque vazio" description="Importe chips via CSV ou cadastre manualmente." />
           ) : (
@@ -610,6 +640,15 @@ export default function EstoquePage() {
               </Table>
             </div>
           )}
+          {!loading && (
+            <LoadMoreButton
+              hasMore={chipsMeta.page < chipsMeta.totalPages}
+              loading={loadingMore}
+              onClick={() => void loadChips(chipsMeta.page + 1)}
+              shown={items.length}
+              total={chipsMeta.total}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="lines">
@@ -624,6 +663,8 @@ export default function EstoquePage() {
 
           {loading ? (
             <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+          ) : loadError && lines.length === 0 ? (
+            <ErrorState message={loadError} onRetry={() => void loadLines()} />
           ) : lines.length === 0 ? (
             <EmptyState
               icon={Smartphone}
@@ -668,6 +709,15 @@ export default function EstoquePage() {
                 </TableBody>
               </Table>
             </div>
+          )}
+          {!loading && (
+            <LoadMoreButton
+              hasMore={linesMeta.page < linesMeta.totalPages}
+              loading={loadingMore}
+              onClick={() => void loadLines(linesMeta.page + 1)}
+              shown={lines.length}
+              total={linesMeta.total}
+            />
           )}
         </TabsContent>
       </Tabs>

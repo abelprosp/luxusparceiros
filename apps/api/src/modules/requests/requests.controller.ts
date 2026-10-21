@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { AuthUser, PERMISSIONS, UserRole } from '@luxus/types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -90,6 +91,14 @@ export class RequestsController {
   @ApiOperation({ summary: 'Obter solicitação por ID' })
   findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.requestsService.findOne(id, user);
+  }
+
+  @Post(':id/refresh-task')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @RequirePermissions(PERMISSIONS.REQUESTS_READ)
+  @ApiOperation({ summary: 'Atualizar a solicitação com o estado atual da demanda no Luxus Task' })
+  refreshFromTask(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.requestsService.syncFromTask(id, user);
   }
 
   @Post()

@@ -33,6 +33,9 @@ import { StockModule } from '@/modules/stock/stock.module';
 import { BranchesModule } from '@/modules/branches/branches.module';
 import { TaskIntegrationModule } from '@/modules/task-integration/task-integration.module';
 import { ExternalSalesModule } from '@/modules/external-sales/external-sales.module';
+import { OutboxModule } from '@/modules/outbox/outbox.module';
+import { CoordinationModule } from '@/common/coordination/coordination.module';
+import { MailModule } from '@/common/mail/mail.module';
 import { HealthController } from './health.controller';
 import { RootController } from './root.controller';
 
@@ -50,6 +53,8 @@ import { RootController } from './root.controller';
       ],
     }),
     PrismaModule,
+    CoordinationModule,
+    MailModule,
     GatewayModule,
     AuthModule,
     UsersModule,
@@ -73,6 +78,7 @@ import { RootController } from './root.controller';
     BranchesModule,
     TaskIntegrationModule,
     ExternalSalesModule,
+    OutboxModule,
   ],
   controllers: [RootController, HealthController],
   providers: [

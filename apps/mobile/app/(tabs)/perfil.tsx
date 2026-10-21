@@ -165,13 +165,15 @@ export default function PerfilScreen() {
           />
         </Card>
 
-        <Card title="Dados bancários" headerRight={<Building2 size={18} color={colors.primary} />}>
-          <Input label="Banco" value={bankForm.bankName} onChangeText={(v) => setBankForm((p) => ({ ...p, bankName: v }))} />
-          <Input label="Agência" value={bankForm.bankAgency} onChangeText={(v) => setBankForm((p) => ({ ...p, bankAgency: v }))} />
-          <Input label="Conta" value={bankForm.bankAccount} onChangeText={(v) => setBankForm((p) => ({ ...p, bankAccount: v }))} />
-          <Input label="Chave PIX" value={bankForm.pixKey} onChangeText={(v) => setBankForm((p) => ({ ...p, pixKey: v }))} />
-          <Button title="Salvar dados bancários" onPress={handleSaveBank} loading={loading} fullWidth variant="outline" />
-        </Card>
+        {partner && !partner.bankDataRestricted && (
+          <Card title="Dados bancários" headerRight={<Building2 size={18} color={colors.primary} />}>
+            <Input label="Banco" value={bankForm.bankName} onChangeText={(v) => setBankForm((p) => ({ ...p, bankName: v }))} />
+            <Input label="Agência" value={bankForm.bankAgency} onChangeText={(v) => setBankForm((p) => ({ ...p, bankAgency: v }))} />
+            <Input label="Conta" value={bankForm.bankAccount} onChangeText={(v) => setBankForm((p) => ({ ...p, bankAccount: v }))} />
+            <Input label="Chave PIX" value={bankForm.pixKey} onChangeText={(v) => setBankForm((p) => ({ ...p, pixKey: v }))} />
+            <Button title="Salvar dados bancários" onPress={handleSaveBank} loading={loading} fullWidth variant="outline" />
+          </Card>
+        )}
 
         <Button title="Sair da conta" variant="danger" onPress={logout} fullWidth />
       </ScrollView>

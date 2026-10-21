@@ -5,6 +5,7 @@ import {
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import {
   CommissionType,
@@ -27,6 +28,9 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { CommissionsService } from '@/modules/commissions/commissions.service';
+import { cancelSaleCommission } from '@/modules/commissions/commission-lifecycle';
+import { CoordinationService } from '@/common/coordination/coordination.service';
+import { assertDateRange } from '@/common/utils/date-range';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { PlansService } from '@/modules/plans/plans.service';
 import { EventsGateway } from '@/gateway/events.gateway';
@@ -97,18 +101,23 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     private plansService: PlansService,
     private taskIntegration: TaskIntegrationService,
     private uploadsService: UploadsService,
+    @Optional() private coordination?: CoordinationService,
   ) {}
 
   onModuleInit() {
-    this.taskSyncTimer = setInterval(() => {
-      void this.processTaskSyncQueue();
-      void this.reconcileTaskProgress();
-    }, 30_000);
+    this.taskSyncTimer = setInterval(() => this.runTaskTimers(), 30_000);
     this.taskSyncTimer.unref();
-    setImmediate(() => {
-      void this.processTaskSyncQueue();
-      void this.reconcileTaskProgress();
-    });
+    setImmediate(() => this.runTaskTimers());
+  }
+
+  /** Só uma réplica da API processa a fila e a reconciliação com o Task por vez. */
+  private runTaskTimers() {
+    const run = (name: string, work: () => Promise<unknown>) => {
+      const locked = this.coordination ? this.coordination.withLock(name, 5 * 60_000, work) : work();
+      void locked.catch((error) => console.warn(`[sales] Falha em ${name}`, error));
+    };
+    run('sales:task-sync-queue', () => this.processTaskSyncQueue());
+    run('sales:task-reconcile', () => this.reconcileTaskProgress());
   }
 
   onModuleDestroy() {
@@ -201,6 +210,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       ];
     }
     if (params.createdFrom || params.createdTo) {
+      assertDateRange(params.createdFrom, params.createdTo);
       where.createdAt = {};
       if (params.createdFrom) where.createdAt.gte = new Date(`${params.createdFrom}T00:00:00.000-03:00`);
       if (params.createdTo) where.createdAt.lte = new Date(`${params.createdTo}T23:59:59.999-03:00`);
@@ -456,6 +466,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
 
     const plan = await this.prisma.plan.findUnique({ where: { id: dto.planId } });
     if (!plan) throw new BadRequestException('Plano inválido');
+    if (plan.operatorId !== dto.operatorId) {
+      throw new BadRequestException('O plano escolhido não pertence à operadora selecionada');
+    }
 
     if (user.partnerId) {
       await this.plansService.ensurePartnerPlanLinks(partnerId);
@@ -497,17 +510,11 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    let lineId = dto.lineId;
-    if (!lineId && dto.newNumber) {
-      const line = await this.prisma.line.findUnique({ where: { number: dto.newNumber } });
-      if (line) lineId = line.id;
-    }
-
-    let simCardId: string | undefined;
-    if (dto.chipIccid) {
-      const simCard = await this.prisma.simCard.findUnique({ where: { iccid: dto.chipIccid } });
-      if (simCard) simCardId = simCard.id;
-    }
+    const { lineId, simCardId } = await this.resolveSaleInventory(partnerId, dto.operatorId, {
+      lineId: dto.lineId,
+      newNumber: dto.newNumber,
+      chipIccid: dto.chipIccid,
+    });
 
     const saleValue = dto.value ?? Number(plan.price);
     const { amount, commissionRate } = await this.resolveCommission(partnerId, dto.planId, saleValue);
@@ -584,6 +591,53 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
 
     this.eventsGateway.emitToPartner(partnerId, 'sale:created', sale);
     return sale;
+  }
+
+  /** Linha e chip da venda precisam ser do parceiro (ou do estoque geral) e da operadora do plano. */
+  private async resolveSaleInventory(
+    partnerId: string,
+    operatorId: string,
+    input: { lineId?: string | null; newNumber?: string | null; chipIccid?: string | null },
+  ): Promise<{ lineId?: string; simCardId?: string }> {
+    const select = { id: true, partnerId: true, operatorId: true } as const;
+    let line: { id: string; partnerId: string | null; operatorId: string } | null = null;
+    if (input.lineId) {
+      line = await this.prisma.line.findUnique({ where: { id: input.lineId }, select });
+      if (!line) throw new BadRequestException('Linha não encontrada');
+    } else if (input.newNumber) {
+      const digits = input.newNumber.replace(/\D/g, '');
+      line = await this.prisma.line.findFirst({
+        where: { number: { in: [...new Set([input.newNumber, digits].filter(Boolean))] } },
+        select,
+      });
+    }
+    if (line) this.assertInventoryItem('A linha informada', line, partnerId, operatorId);
+
+    let simCard: typeof line = null;
+    if (input.chipIccid) {
+      const iccid = input.chipIccid.replace(/\s/g, '');
+      simCard = await this.prisma.simCard.findFirst({
+        where: { iccid: { in: [...new Set([input.chipIccid, iccid].filter(Boolean))] } },
+        select,
+      });
+      if (simCard) this.assertInventoryItem('O chip informado', simCard, partnerId, operatorId);
+    }
+
+    return { lineId: line?.id, simCardId: simCard?.id };
+  }
+
+  private assertInventoryItem(
+    label: string,
+    item: { partnerId: string | null; operatorId: string },
+    partnerId: string,
+    operatorId: string,
+  ) {
+    if (item.partnerId && item.partnerId !== partnerId) {
+      throw new BadRequestException(`${label} pertence a outro parceiro`);
+    }
+    if (item.operatorId !== operatorId) {
+      throw new BadRequestException(`${label} é de outra operadora`);
+    }
   }
 
   private async copyUpgradeDocuments(
@@ -718,6 +772,18 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    const inventoryChanged = lineId !== undefined
+      || newNumber !== undefined
+      || chipIccid !== undefined
+      || effectiveOperatorId !== existing.operatorId;
+    const inventory = inventoryChanged
+      ? await this.resolveSaleInventory(existing.partnerId, effectiveOperatorId, {
+          lineId: lineId !== undefined ? lineId : existing.lineId,
+          newNumber: newNumber ?? existing.newNumber,
+          chipIccid: chipIccid ?? existing.chipIccid,
+        })
+      : null;
+
     const effectiveValue = value ?? Number(existing.value);
     const commission =
       planId !== undefined || value !== undefined
@@ -762,7 +828,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         ...(branchId !== undefined && { branchId }),
         ...(operatorId !== undefined && { operatorId }),
         ...(planId !== undefined && { planId }),
-        ...(lineId !== undefined && { lineId }),
+        ...(inventory && { lineId: inventory.lineId ?? null, simCardId: inventory.simCardId ?? null }),
         ...(campaignId !== undefined && { campaignId }),
         ...(value !== undefined && { value }),
         ...(commission && {
@@ -1903,7 +1969,9 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
       ? SaleContractStage.BLANK_CONTRACT_READY_FOR_ADMIN
       : SaleContractStage.PRE_REVIEW;
 
-    const updated = await this.prisma.sale.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await cancelSaleCommission(tx, id, { keepPaid: true });
+      return tx.sale.update({
       where: { id },
       data: {
         status: SaleStatus.IN_ANALYSIS,
@@ -1930,6 +1998,7 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
           },
         },
       },
+      });
     });
 
     if (sale.taskDemandId) {
@@ -1974,10 +2043,14 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     if (dto.status === SaleStatus.REJECTED) data.rejectionReason = dto.rejectionReason;
     if (dto.status === SaleStatus.CONTESTED) data.contestReason = dto.contestReason;
 
-    const updated = await this.prisma.sale.update({
-      where: { id },
-      data,
-      include: { commission: true, partner: true },
+    const endsSale = dto.status === SaleStatus.CANCELLED || dto.status === SaleStatus.REJECTED;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (endsSale) await cancelSaleCommission(tx, id);
+      return tx.sale.update({
+        where: { id },
+        data,
+        include: { commission: true, partner: true },
+      });
     });
 
     await this.notifyStatusChange(updated, dto.status, dto.rejectionReason ?? dto.contestReason);
@@ -2205,7 +2278,11 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
         'Venda enviada ou preparada para o Luxus Task não pode ser excluída',
       );
     }
+    if (sale.commission?.status === 'PAID') {
+      throw new BadRequestException('A comissão desta venda já foi paga');
+    }
     await this.prisma.$transaction([
+      this.prisma.commission.deleteMany({ where: { saleId: id } }),
       this.prisma.document.deleteMany({ where: { saleId: id } }),
       this.prisma.sale.delete({ where: { id } }),
     ]);
@@ -2223,12 +2300,24 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
   async bulkRemove(ids: string[], user: AuthUser) {
     this.assertAdmin(user);
     const sales = await this.prisma.sale.findMany({
-      where: { id: { in: [...new Set(ids)] } },
+      where: {
+        id: { in: [...new Set(ids)] },
+        ...(user.partnerId && { partnerId: user.partnerId }),
+        ...(user.branchId && { branchId: user.branchId }),
+      },
       include: { documents: true, commission: true },
     });
     const deleted: string[] = [];
     const failed: Array<{ id: string; reason: string }> = [];
     for (const sale of sales) {
+      if (sale.status === SaleStatus.ACTIVATED) {
+        failed.push({ id: sale.id, reason: 'Venda ativada não pode ser removida' });
+        continue;
+      }
+      if (sale.taskDemandId || sale.taskSyncStatus !== SaleTaskSyncStatus.NOT_READY) {
+        failed.push({ id: sale.id, reason: 'Venda enviada ou preparada para o Luxus Task não pode ser excluída' });
+        continue;
+      }
       if (sale.commission?.status === 'PAID') {
         failed.push({ id: sale.id, reason: 'A comissão desta venda já foi paga' });
         continue;
@@ -2256,12 +2345,6 @@ export class SalesService implements OnModuleInit, OnModuleDestroy {
     for (const id of ids) {
       if (!sales.some((sale) => sale.id === id)) failed.push({ id, reason: 'Venda não encontrada' });
     }
-    return {
-      deleted,
-      failed,
-      warning: sales.some((sale) => sale.taskDemandId)
-        ? 'As demandas já criadas no Luxus Task foram preservadas para manter a auditoria.'
-        : undefined,
-    };
+    return { deleted, failed };
   }
 }

@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { JwtPayload } from '@luxus/types';
+import { jwtVerifyOptions } from '@/common/utils/jwt-options';
 
 const socketOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost,http://localhost:3000')
   .split(',')
@@ -45,9 +46,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      const payload = this.jwtService.verify<JwtPayload>(token, {
-        secret: this.configService.getOrThrow<string>('JWT_SECRET'),
-      });
+      const payload = this.jwtService.verify<JwtPayload>(token, jwtVerifyOptions(this.configService));
 
       client.data.userId = payload.sub;
       client.data.partnerId = payload.partnerId;

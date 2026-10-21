@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -103,7 +104,7 @@ export class SimCardsService {
   }
 
   async update(id: string, dto: UpdateSimCardDto, user: AuthUser) {
-    await this.findOne(id, user);
+    this.assertCanManage(await this.findOne(id, user), user);
     const { partnerId: requestedPartnerId, ...fields } = dto;
     const partnerId = requestedPartnerId
       ? resolvePartnerId(user, requestedPartnerId)
@@ -124,6 +125,9 @@ export class SimCardsService {
   }
 
   async transfer(dto: TransferSimCardsDto, user: AuthUser) {
+    if (user.partnerId) {
+      throw new ForbiddenException('A destinação de chips do estoque é feita pela Luxus');
+    }
     const partnerId = resolvePartnerId(user, dto.partnerId);
     if (!partnerId) {
       throw new ForbiddenException(MESSAGES.FORBIDDEN);
@@ -133,9 +137,6 @@ export class SimCardsService {
       where: {
         id: { in: dto.simCardIds },
         status: LineStatus.AVAILABLE,
-        ...(user.partnerId && {
-          OR: [{ partnerId: user.partnerId }, { partnerId: null }],
-        }),
       },
       data: { partnerId },
     });
@@ -152,7 +153,11 @@ export class SimCardsService {
   }
 
   async remove(id: string, user: AuthUser) {
-    await this.findOne(id, user);
+    this.assertCanManage(await this.findOne(id, user), user);
+    const sales = await this.prisma.sale.count({ where: { simCardId: id } });
+    if (sales > 0) {
+      throw new BadRequestException('Chip vinculado a vendas não pode ser removido');
+    }
     await this.prisma.simCard.delete({ where: { id } });
     await this.auditService.log({
       userId: user.id,
@@ -162,5 +167,12 @@ export class SimCardsService {
       entityType: 'SimCard',
     });
     return { message: 'Chip removido com sucesso' };
+  }
+
+  /** Chips do estoque geral (sem parceiro) só são alterados pela equipe Luxus. */
+  private assertCanManage(simCard: { partnerId: string | null }, user: AuthUser) {
+    if (!simCard.partnerId && user.partnerId) {
+      throw new ForbiddenException('Chips do estoque geral só podem ser alterados pela Luxus');
+    }
   }
 }

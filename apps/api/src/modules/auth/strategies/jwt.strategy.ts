@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtPayload, ROLE_PERMISSIONS, UserRole } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MESSAGES } from '@/common/constants/messages';
+import { JWT_ALGORITHM, jwtAudience, jwtIssuer } from '@/common/utils/jwt-options';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -16,6 +17,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
+      algorithms: [JWT_ALGORITHM],
+      issuer: jwtIssuer(configService),
+      audience: jwtAudience(configService),
     });
   }
 

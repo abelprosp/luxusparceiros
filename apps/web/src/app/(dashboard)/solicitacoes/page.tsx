@@ -45,6 +45,7 @@ import { requestStatusBadge } from '@/lib/status-badge';
 import { useNotifications, isTaskReminderNotification, type NotificationItem } from '@/components/notifications/notifications-provider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
+import { KanbanStatusMenu } from '@/components/ui/kanban-status-menu';
 
 interface Request {
   id: string;
@@ -484,6 +485,16 @@ export default function SolicitacoesPage() {
                             onClick={() => {
                               if (!didDragRef.current) openDetail(request.id);
                             }}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Abrir demanda ${request.protocol}`}
+                            onKeyDown={(event) => {
+                              if (event.target !== event.currentTarget) return;
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                openDetail(request.id);
+                              }
+                            }}
                             className={cn(
                               'shadow-sm transition-all hover:shadow-card',
                               canManageDemand && !request.taskDemandId
@@ -502,15 +513,29 @@ export default function SolicitacoesPage() {
                                     ? [...selectedIds, request.id]
                                     : selectedIds.filter((id) => id !== request.id))}
                                 />}
-                                <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" />
+                                <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />
                                 <div className="min-w-0 flex-1 space-y-2">
                                   <div className="flex items-start justify-between gap-2">
                                     <span className="block truncate font-mono text-xs text-muted-foreground">
                                       {request.protocol}
                                     </span>
-                                    {hasUnreadTaskMessage(request.id, notifications) && (
-                                      <TaskMessageBadge onClick={() => openDetail(request.id)} />
-                                    )}
+                                    <div className="flex shrink-0 items-center gap-1">
+                                      {hasUnreadTaskMessage(request.id, notifications) && (
+                                        <TaskMessageBadge onClick={() => openDetail(request.id)} />
+                                      )}
+                                      {canManageDemand && !request.taskDemandId && (
+                                        <KanbanStatusMenu
+                                          current={request.status}
+                                          options={columns.map((column) => ({
+                                            status: column.status,
+                                            label: REQUEST_STATUS_LABELS[column.status],
+                                          }))}
+                                          itemLabel={request.protocol}
+                                          disabled={movingId === request.id}
+                                          onChange={(status) => void moveRequest(request.id, status)}
+                                        />
+                                      )}
+                                    </div>
                                   </div>
                                   <Badge variant="outline" className="max-w-full">
                                     {REQUEST_TYPE_LABELS[request.type]}

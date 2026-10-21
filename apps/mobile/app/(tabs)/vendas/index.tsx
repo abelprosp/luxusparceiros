@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ShoppingCart } from 'lucide-react-native';
 import { formatCurrency, formatDate } from '@luxus/utils';
 import { useTheme } from '@/contexts/ThemeContext';
 import { salesApi, type Sale } from '@/services/api';
-import { Badge, SkeletonList, EmptyState } from '@/components/ui';
+import { Badge, SkeletonList, EmptyState, ErrorState } from '@/components/ui';
+import { useInfiniteList } from '@/hooks/useInfiniteList';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { FAB } from '@/components/FAB';
 import { getStatusLabel, SALE_STATUS_LABELS } from '@/utils/labels';
@@ -17,25 +18,14 @@ const STATUS_FILTERS = ['Todos', 'IN_ANALYSIS', 'DOCUMENTS_PENDING', 'CONTESTED'
 export default function VendasScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState('Todos');
 
-  const loadSales = useCallback(async () => {
-    try {
-      const response = await salesApi.list({
-        status: statusFilter !== 'Todos' ? statusFilter : undefined,
-      });
-      if (response.success && response.data) setSales(response.data.data);
-    } catch {
-      setSales([]);
-    }
-  }, [statusFilter]);
-
-  useEffect(() => {
-    loadSales().finally(() => setLoading(false));
-  }, [loadSales]);
+  const fetchSales = useCallback(
+    (page: number) => salesApi.list({ status: statusFilter !== 'Todos' ? statusFilter : undefined, page }),
+    [statusFilter],
+  );
+  const list = useInfiniteList<Sale>(fetchSales);
+  const sales = list.items;
 
   const renderSale = ({ item }: { item: Sale }) => (
     <TouchableOpacity
@@ -65,7 +55,7 @@ export default function VendasScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.content}>
-        <ScreenHeader title="Vendas" subtitle={`${sales.length} venda(s)`} />
+        <ScreenHeader title="Vendas" subtitle={`${list.total} venda(s)`} />
 
         <FlatList
           horizontal
@@ -87,15 +77,20 @@ export default function VendasScreen() {
           }}
         />
 
-        {loading ? (
+        {list.loading ? (
           <SkeletonList />
+        ) : list.error ? (
+          <ErrorState message={list.error} onRetry={list.retry} />
         ) : (
           <FlatList
             data={sales}
             keyExtractor={(item) => item.id}
             renderItem={renderSale}
             contentContainerStyle={styles.list}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await loadSales(); setRefreshing(false); }} tintColor={colors.primary} />}
+            onEndReached={list.loadMore}
+            onEndReachedThreshold={0.4}
+            ListFooterComponent={list.loadingMore ? <ActivityIndicator color={colors.primary} style={styles.footer} /> : null}
+            refreshControl={<RefreshControl refreshing={list.refreshing} onRefresh={list.refresh} tintColor={colors.primary} />}
             ListEmptyComponent={
               <EmptyState
                 icon={<ShoppingCart size={48} color={colors.textSecondary} />}
@@ -118,6 +113,7 @@ const styles = StyleSheet.create({
   filters: { gap: spacing.sm, paddingBottom: spacing.sm },
   chip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full, borderWidth: 1, marginRight: spacing.sm },
   list: { gap: spacing.sm, paddingBottom: 80 },
+  footer: { paddingVertical: spacing.md },
   saleCard: { padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, gap: spacing.xs },
   saleHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   protocol: { ...typography.label, fontWeight: '700' },

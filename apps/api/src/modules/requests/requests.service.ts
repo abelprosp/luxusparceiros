@@ -5,8 +5,10 @@ import {
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { RequestStatus, RequestType, Prisma } from '@prisma/client';
+import { CoordinationService } from '@/common/coordination/coordination.service';
 import { AuthUser, UserRole } from '@luxus/types';
 import { generateProtocol } from '@luxus/utils';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -17,6 +19,7 @@ import { TaskIntegrationService } from '@/modules/task-integration/task-integrat
 import { MESSAGES } from '@/common/constants/messages';
 import { assertBranchBelongsToPartner, resolveBranchId } from '@/common/utils/branch-scope';
 import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
+import { csvRow } from '@/common/utils/csv';
 import {
   CreateRequestCommentDto,
   CreateRequestDto,
@@ -78,14 +81,22 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     private notificationsService: NotificationsService,
     private eventsGateway: EventsGateway,
     private taskIntegration: TaskIntegrationService,
+    @Optional() private coordination?: CoordinationService,
   ) {}
 
   onModuleInit() {
-    this.taskSyncTimer = setInterval(() => {
-      void this.processTaskSyncQueue();
-    }, 30_000);
+    this.taskSyncTimer = setInterval(() => this.runTaskTimer(), 30_000);
     this.taskSyncTimer.unref();
-    setImmediate(() => void this.processTaskSyncQueue());
+    setImmediate(() => this.runTaskTimer());
+  }
+
+  /** Só uma réplica da API percorre a fila de envio ao Task por vez. */
+  private runTaskTimer() {
+    const work = () => this.processTaskSyncQueue();
+    const locked = this.coordination
+      ? this.coordination.withLock('requests:task-sync-queue', 5 * 60_000, work)
+      : work();
+    void locked.catch((error) => console.warn('[requests] Falha na fila do Task', error));
   }
 
   onModuleDestroy() {
@@ -141,6 +152,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     const data = await this.prisma.request.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      take: 500,
       include: {
         partner: { select: { id: true, name: true } },
         branch: { select: { id: true, name: true } },
@@ -160,7 +172,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async findOne(id: string, user: AuthUser) {
-    let request = await this.prisma.request.findUnique({
+    const request = await this.prisma.request.findUnique({
       where: { id },
       include: {
         partner: true,
@@ -181,6 +193,18 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
       throw new ForbiddenException(MESSAGES.FORBIDDEN);
     }
 
+    if (!isAdminRole(user.role)) {
+      return {
+        ...request,
+        comments: request.comments.filter((c) => !c.isInternal),
+      };
+    }
+    return request;
+  }
+
+  /** Atualiza a solicitação com o estado atual da demanda no Luxus Task (ação explícita, fora do GET). */
+  async syncFromTask(id: string, user: AuthUser) {
+    const request = await this.findOne(id, user);
     if (request.taskDemandId && this.taskIntegration.isConfigured()) {
       try {
         const taskDemand = await this.taskIntegration.getDemand(request.id);
@@ -194,33 +218,12 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
           responsibleName: taskDemand.responsible?.name,
           updatedAt: taskDemand.updatedAt,
         });
-        request = (await this.prisma.request.findUnique({
-          where: { id },
-          include: {
-            partner: true,
-            client: true,
-            createdBy: { select: { id: true, name: true, email: true } },
-            assignedTo: { select: { id: true, name: true, email: true } },
-            comments: {
-              orderBy: { createdAt: 'asc' },
-              include: { user: { select: { id: true, name: true } } },
-            },
-            timeline: { orderBy: { createdAt: 'asc' } },
-            documents: true,
-          },
-        }))!;
       } catch {
         // A tela continua disponível com o último estado conhecido.
+        return request;
       }
     }
-
-    if (!isAdminRole(user.role)) {
-      return {
-        ...request,
-        comments: request.comments.filter((c) => !c.isInternal),
-      };
-    }
-    return request;
+    return this.findOne(id, user);
   }
 
   async create(dto: CreateRequestDto, user: AuthUser) {
@@ -314,7 +317,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
   async retryTaskSync(id: string, user: AuthUser) {
     const request = await this.findOne(id, user);
     if (request.taskDemandId) {
-      return request;
+      return this.syncFromTask(id, user);
     }
     if (!request.taskResponsibleId) {
       throw new BadRequestException('Selecione um responsável do Luxus Task');
@@ -489,12 +492,24 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
   async bulkRemove(ids: string[], user: AuthUser) {
     if (!isAdminRole(user.role)) throw new ForbiddenException('Apenas administradores podem excluir em lote');
     const requests = await this.prisma.request.findMany({
-      where: { id: { in: [...new Set(ids)] } },
-      select: { id: true, protocol: true, taskDemandId: true },
+      where: {
+        id: { in: [...new Set(ids)] },
+        ...(user.partnerId && { partnerId: user.partnerId }),
+        ...(user.branchId && { branchId: user.branchId }),
+      },
+      select: { id: true, protocol: true, taskDemandId: true, status: true },
     });
     const deleted: string[] = [];
     const failed: Array<{ id: string; reason: string }> = [];
     for (const request of requests) {
+      if (request.taskDemandId) {
+        failed.push({ id: request.id, reason: 'Demandas vinculadas ao Luxus Task não podem ser excluídas' });
+        continue;
+      }
+      if (request.status === RequestStatus.COMPLETED) {
+        failed.push({ id: request.id, reason: 'Solicitação concluída não pode ser removida' });
+        continue;
+      }
       try {
         await this.prisma.$transaction([
           this.prisma.document.deleteMany({ where: { requestId: request.id } }),
@@ -516,13 +531,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     for (const id of ids) {
       if (!requests.some((request) => request.id === id)) failed.push({ id, reason: 'Solicitação não encontrada' });
     }
-    return {
-      deleted,
-      failed,
-      warning: requests.some((request) => request.taskDemandId)
-        ? 'As demandas já criadas no Luxus Task foram preservadas para manter a auditoria.'
-        : undefined,
-    };
+    return { deleted, failed };
   }
 
   async exportCsv(
@@ -538,6 +547,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     const requests = await this.prisma.request.findMany({
       where: this.buildWhere(user, params),
       orderBy: { createdAt: 'desc' },
+      take: 10_000,
       include: {
         partner: { select: { name: true } },
         branch: { select: { name: true } },
@@ -548,17 +558,17 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
 
     const header = 'Protocolo,Tipo,Status,Parceiro,Filial,Cliente,Descrição,Criado em,Criado por';
     const rows = requests.map((r) =>
-      [
+      csvRow([
         r.protocol,
         r.type,
         r.status,
         r.partner.name,
         r.branch?.name ?? '',
         r.client?.name ?? '',
-        `"${r.description.replace(/"/g, '""')}"`,
+        r.description,
         r.createdAt.toISOString(),
         r.createdBy.name,
-      ].join(','),
+      ]),
     );
 
     await this.auditService.log({

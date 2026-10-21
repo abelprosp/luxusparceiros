@@ -144,34 +144,36 @@ const TableHead = React.forwardRef<HTMLTableCellElement, TableHeadProps>(
     return (
       <th
         ref={ref}
+        scope="col"
         className={cn(
           'h-11 px-4 text-left align-middle text-xs font-semibold uppercase tracking-wider text-muted-foreground',
-          canSort && 'cursor-pointer select-none transition-colors hover:text-foreground',
           className,
         )}
-        title={canSort ? `Ordenar por ${label}` : props.title}
-        onClick={(event) => {
-          onClick?.(event);
-          if (!event.defaultPrevented && canSort) {
-            const index = event.currentTarget.cellIndex;
-            setColumnIndex(index);
-            context?.toggleSort(index);
-          }
-        }}
+        onClick={onClick}
         aria-sort={canSort ? (active ? context?.sort?.direction === 'asc' ? 'ascending' : 'descending' : 'none') : undefined}
         {...props}
       >
         {canSort ? (
-          <span className="inline-flex items-center gap-1.5">
+          <button
+            type="button"
+            className="-mx-1 inline-flex items-center gap-1.5 rounded px-1 uppercase tracking-wider transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={`Ordenar por ${label}`}
+            onClick={(event) => {
+              const cell = event.currentTarget.closest('th');
+              if (!cell) return;
+              setColumnIndex(cell.cellIndex);
+              context?.toggleSort(cell.cellIndex);
+            }}
+          >
             {children}
             {!active ? (
-              <ArrowUpDown className="h-3.5 w-3.5 opacity-45" />
+              <ArrowUpDown className="h-3.5 w-3.5 opacity-60" aria-hidden="true" />
             ) : context?.sort?.direction === 'asc' ? (
-              <ArrowUp className="h-3.5 w-3.5 text-primary" />
+              <ArrowUp className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
             ) : (
-              <ArrowDown className="h-3.5 w-3.5 text-primary" />
+              <ArrowDown className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
             )}
-          </span>
+          </button>
         ) : children}
       </th>
     );

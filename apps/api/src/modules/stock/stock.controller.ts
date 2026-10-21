@@ -107,7 +107,7 @@ export class StockController {
       },
     },
   })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 5 } }))
   importCsv(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: ImportStockDto,

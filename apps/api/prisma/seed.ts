@@ -331,12 +331,27 @@ async function seedSimCards(
   console.log(`✓ ${count} SIM cards`);
 }
 
+const WEAK_PASSWORDS = new Set(['luxus@2024', 'admin', 'admin123', 'password', '123456', '12345678']);
+
+function resolveSeedPassword(): string {
+  if (process.env.NODE_ENV === 'production' && process.env.SEED_ALLOW_PRODUCTION !== 'true') {
+    throw new Error('Seed bloqueado em produção. Defina SEED_ALLOW_PRODUCTION=true apenas se for intencional.');
+  }
+  const password = process.env.SEED_ADMIN_PASSWORD ?? '';
+  if (password.length < 12 || WEAK_PASSWORDS.has(password.toLowerCase())) {
+    throw new Error('Defina SEED_ADMIN_PASSWORD com pelo menos 12 caracteres (senha dos usuários demo).');
+  }
+  return password;
+}
+
 async function main() {
   console.log('Iniciando seed...\n');
 
+  const seedPassword = resolveSeedPassword();
+
   await seedPermissions();
 
-  const hashedPassword = await bcrypt.hash('Luxus@2024', 10);
+  const hashedPassword = await bcrypt.hash(seedPassword, 10);
 
   // Admin user
   const admin = await prisma.user.upsert({
@@ -384,10 +399,10 @@ async function main() {
   await seedSimCards(operatorIds, partner.id);
 
   console.log('\n✅ Seed concluído com sucesso!');
-  console.log('\nCredenciais:');
-  console.log('  Admin:    admin@luxusparceiros.com / Luxus@2024');
-  console.log('  Admin:    admin@luxus.com.br / Luxus@2024');
-  console.log('  Parceiro: parceiro@demotelecom.com.br / Luxus@2024');
+  console.log('\nUsuários demo (senha definida em SEED_ADMIN_PASSWORD):');
+  console.log('  Admin:    admin@luxusparceiros.com');
+  console.log('  Admin:    admin@luxus.com.br');
+  console.log('  Parceiro: parceiro@demotelecom.com.br');
 }
 
 main()

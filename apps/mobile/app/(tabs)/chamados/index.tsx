@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import React, { useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Headphones } from 'lucide-react-native';
 import { formatDate } from '@luxus/utils';
 import { useTheme } from '@/contexts/ThemeContext';
 import { ticketsApi, type Ticket } from '@/services/api';
-import { Badge, SkeletonList, EmptyState } from '@/components/ui';
+import { Badge, SkeletonList, EmptyState, ErrorState } from '@/components/ui';
+import { useInfiniteList } from '@/hooks/useInfiniteList';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { FAB } from '@/components/FAB';
 import { getStatusLabel, TICKET_STATUS_LABELS, TICKET_CATEGORY_LABELS } from '@/utils/labels';
@@ -15,22 +16,9 @@ import { spacing, typography, radius } from '@/theme';
 export default function ChamadosScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const load = useCallback(async () => {
-    try {
-      const response = await ticketsApi.list();
-      if (response.success && response.data) setTickets(response.data.data);
-    } catch {
-      setTickets([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    load().finally(() => setLoading(false));
-  }, [load]);
+  const fetchTickets = useCallback((page: number) => ticketsApi.list({ page }), []);
+  const list = useInfiniteList<Ticket>(fetchTickets);
+  const tickets = list.items;
 
   const renderItem = ({ item }: { item: Ticket }) => (
     <TouchableOpacity
@@ -53,17 +41,22 @@ export default function ChamadosScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.content}>
-        <ScreenHeader title="Chamados" subtitle={`${tickets.length} chamado(s)`} showBack />
+        <ScreenHeader title="Chamados" subtitle={`${list.total} chamado(s)`} showBack />
 
-        {loading ? (
+        {list.loading ? (
           <SkeletonList />
+        ) : list.error ? (
+          <ErrorState message={list.error} onRetry={list.retry} />
         ) : (
           <FlatList
             data={tickets}
             keyExtractor={(item) => item.id}
             renderItem={renderItem}
             contentContainerStyle={styles.list}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} tintColor={colors.primary} />}
+            onEndReached={list.loadMore}
+            onEndReachedThreshold={0.4}
+            ListFooterComponent={list.loadingMore ? <ActivityIndicator color={colors.primary} style={styles.loadingMore} /> : null}
+            refreshControl={<RefreshControl refreshing={list.refreshing} onRefresh={list.refresh} tintColor={colors.primary} />}
             ListEmptyComponent={
               <EmptyState
                 icon={<Headphones size={48} color={colors.textSecondary} />}
@@ -84,6 +77,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { flex: 1, padding: spacing.md, gap: spacing.md },
   list: { gap: spacing.sm, paddingBottom: 80 },
+  loadingMore: { paddingVertical: spacing.md },
   card: { padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, gap: spacing.xs },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   protocol: { ...typography.label, fontWeight: '700' },

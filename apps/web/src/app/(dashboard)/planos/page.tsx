@@ -15,6 +15,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState, LoadMoreButton } from '@/components/ui/error-state';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { useToast } from '@/components/ui/toaster';
 
@@ -72,25 +75,37 @@ function getPartnerIdFromPlan(plan: Plan) {
 }
 
 export default function PlanosPage() {
-  const [items, setItems] = useState<Plan[]>([]);
   const [operators, setOperators] = useState<Operator[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Plan | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [deleteTarget, setDeleteTarget] = useState<Plan | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getPaginated<Plan>('/plans', { search: search || undefined, limit: 50 });
-      setItems(res.data);
-    } catch { setItems([]); } finally { setLoading(false); }
-  }, [search]);
+  const fetchPlans = useCallback(
+    (page: number) => getPaginated<Plan>('/plans', { search: search || undefined, page, limit: 50 }),
+    [search],
+  );
+  const list = usePaginatedList(fetchPlans);
+  const { items, loading, reload: load } = list;
 
-  useEffect(() => { load(); }, [load]);
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api(`/plans/${deleteTarget.id}`, { method: 'DELETE' });
+      toast({ title: 'Plano excluído', variant: 'success' });
+      setDeleteTarget(null);
+      load();
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao excluir', variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     Promise.all([
@@ -173,6 +188,8 @@ export default function PlanosPage() {
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+      ) : list.error && items.length === 0 ? (
+        <ErrorState message={list.error} onRetry={() => void load()} />
       ) : items.length === 0 ? (
         <EmptyState icon={Package} title="Nenhum plano" description="Cadastre o primeiro plano." />
       ) : (
@@ -203,7 +220,7 @@ export default function PlanosPage() {
                       <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={async () => { await api(`/plans/${p.id}`, { method: 'DELETE' }); load(); }}>
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(p)} aria-label={`Excluir ${p.name}`}>
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </TableCell>
@@ -228,7 +245,7 @@ export default function PlanosPage() {
                   <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={async () => { await api(`/plans/${p.id}`, { method: 'DELETE' }); load(); }}>
+                  <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(p)} aria-label={`Excluir ${p.name}`}>
                     <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
                 </div>
@@ -237,6 +254,25 @@ export default function PlanosPage() {
           ))}
         />
       )}
+      {!loading && (
+        <LoadMoreButton
+          hasMore={list.hasMore}
+          loading={list.loadingMore}
+          onClick={() => void list.loadMore()}
+          shown={items.length}
+          total={list.total}
+        />
+      )}
+
+      <DeleteConfirmationDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        itemType="plano"
+        itemLabel={deleteTarget?.name ?? ''}
+        description="Esta ação não pode ser desfeita. Se o plano tiver vendas ou linhas vinculadas, a exclusão será recusada."
+        deleting={deleting}
+        onConfirm={() => void handleDelete()}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">

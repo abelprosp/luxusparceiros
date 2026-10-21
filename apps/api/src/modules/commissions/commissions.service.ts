@@ -1,9 +1,10 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CommissionStatus, Prisma, Sale } from '@prisma/client';
+import { CommissionStatus, Prisma, Sale, SaleStatus } from '@prisma/client';
 import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
@@ -107,29 +108,43 @@ export class CommissionsService {
     actorId: string,
   ) {
     const existing = await this.prisma.commission.findUnique({ where: { saleId: sale.id } });
-    if (existing) return existing;
+    if (existing && existing.status !== CommissionStatus.CANCELLED) return existing;
 
     const percentage = Number(sale.commissionRate);
     const value = Number(sale.commissionValue);
 
-    const commission = await this.prisma.commission.create({
-      data: {
-        partnerId: sale.partnerId,
-        saleId: sale.id,
-        value,
-        percentage,
-        status: CommissionStatus.FORECAST,
-      },
-      include: { sale: { select: { protocol: true } } },
-    });
+    const commission = existing
+      ? await this.prisma.commission.update({
+          where: { id: existing.id },
+          data: {
+            partnerId: sale.partnerId,
+            value,
+            percentage,
+            status: CommissionStatus.FORECAST,
+            approvedAt: null,
+            approvedBy: null,
+            paidAt: null,
+          },
+          include: { sale: { select: { protocol: true } } },
+        })
+      : await this.prisma.commission.create({
+          data: {
+            partnerId: sale.partnerId,
+            saleId: sale.id,
+            value,
+            percentage,
+            status: CommissionStatus.FORECAST,
+          },
+          include: { sale: { select: { protocol: true } } },
+        });
 
     await this.auditService.log({
       userId: actorId,
-      action: 'CREATE',
+      action: existing ? 'UPDATE' : 'CREATE',
       module: 'commissions',
       entityId: commission.id,
       entityType: 'Commission',
-      newData: { auto: true, saleId: sale.id } as Prisma.InputJsonValue,
+      newData: { auto: true, saleId: sale.id, reactivated: Boolean(existing) } as Prisma.InputJsonValue,
     });
 
     this.eventsGateway.emitToPartner(sale.partnerId, 'commission:created', commission);
@@ -137,13 +152,15 @@ export class CommissionsService {
   }
 
   async approve(id: string, dto: ApproveCommissionDto, user: AuthUser) {
+    this.assertCommissionManager(user);
     const commission = await this.findOne(id, user);
     if (commission.status !== CommissionStatus.FORECAST) {
       throw new BadRequestException('Comissão não pode ser aprovada neste status');
     }
+    this.assertSaleActivated(commission.sale.status);
 
-    const updated = await this.prisma.commission.update({
-      where: { id },
+    const claimed = await this.prisma.commission.updateMany({
+      where: { id, status: CommissionStatus.FORECAST, sale: { status: SaleStatus.ACTIVATED } },
       data: {
         status: CommissionStatus.APPROVED,
         approvedAt: new Date(),
@@ -151,6 +168,10 @@ export class CommissionsService {
         notes: dto.notes,
       },
     });
+    if (claimed.count !== 1) {
+      throw new BadRequestException('A comissão foi alterada por outra operação. Atualize a tela e tente novamente.');
+    }
+    const updated = await this.prisma.commission.findUniqueOrThrow({ where: { id } });
 
     await this.auditService.log({
       userId: user.id,
@@ -172,6 +193,7 @@ export class CommissionsService {
   }
 
   async pay(id: string, dto: PayCommissionDto, user: AuthUser) {
+    this.assertCommissionManager(user);
     const commission = await this.findOne(id, user);
     if (commission.status === CommissionStatus.PAID) {
       throw new BadRequestException(MESSAGES.COMMISSION_ALREADY_PAID);
@@ -179,15 +201,20 @@ export class CommissionsService {
     if (commission.status !== CommissionStatus.APPROVED) {
       throw new BadRequestException('Comissão deve estar aprovada para confirmar pagamento');
     }
+    this.assertSaleActivated(commission.sale.status);
 
-    const updated = await this.prisma.commission.update({
-      where: { id },
+    const claimed = await this.prisma.commission.updateMany({
+      where: { id, status: CommissionStatus.APPROVED, sale: { status: SaleStatus.ACTIVATED } },
       data: {
         status: CommissionStatus.PAID,
         paidAt: new Date(),
         notes: dto.notes ?? commission.notes,
       },
     });
+    if (claimed.count !== 1) {
+      throw new BadRequestException('A comissão foi alterada por outra operação. Atualize a tela e tente novamente.');
+    }
+    const updated = await this.prisma.commission.findUniqueOrThrow({ where: { id } });
 
     await this.auditService.log({
       userId: user.id,
@@ -210,15 +237,18 @@ export class CommissionsService {
   }
 
   async cancel(id: string, user: AuthUser) {
+    this.assertCommissionManager(user);
     const commission = await this.findOne(id, user);
     if (commission.status === CommissionStatus.PAID) {
       throw new BadRequestException(MESSAGES.COMMISSION_ALREADY_PAID);
     }
 
-    const updated = await this.prisma.commission.update({
-      where: { id },
+    const claimed = await this.prisma.commission.updateMany({
+      where: { id, status: { not: CommissionStatus.PAID } },
       data: { status: CommissionStatus.CANCELLED },
     });
+    if (claimed.count !== 1) throw new BadRequestException(MESSAGES.COMMISSION_ALREADY_PAID);
+    const updated = await this.prisma.commission.findUniqueOrThrow({ where: { id } });
 
     await this.auditService.log({
       userId: user.id,
@@ -229,5 +259,18 @@ export class CommissionsService {
     });
 
     return updated;
+  }
+
+  /** Aprovar, pagar e cancelar comissões é papel da equipe Luxus, nunca do próprio parceiro. */
+  private assertCommissionManager(user: AuthUser) {
+    if (user.partnerId) {
+      throw new ForbiddenException('Somente a equipe Luxus pode aprovar, pagar ou cancelar comissões');
+    }
+  }
+
+  private assertSaleActivated(status: SaleStatus) {
+    if (status !== SaleStatus.ACTIVATED) {
+      throw new BadRequestException('A comissão só pode avançar quando a venda estiver ativada');
+    }
   }
 }

@@ -20,7 +20,13 @@ export function ScreenHeader({ title, subtitle, showBack = false, rightAction }:
     <View style={styles.container}>
       <View style={styles.row}>
         {showBack && (
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar"
+            hitSlop={8}
+          >
             <ChevronLeft size={24} color={colors.text} />
           </TouchableOpacity>
         )}

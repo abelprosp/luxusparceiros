@@ -669,6 +669,25 @@ Este dia marca o início da integração com o **telefonia-2**, sistema de fatur
 - **Por quê:** regra definida pelo cliente: "quem cria o parceiro marca se ele quer ou não; toda venda já é criada nessa base; sem nada marcado, a venda é feita fora do sistema da Luxus".
 - **Atenção ao publicar:** até o administrador marcar os parceiros cobrados pela Luxus, nenhuma venda nova vai para o faturamento (telefonia-2).
 
+### Versão 37 — 2026-10-20 — Segurança, consistência e usabilidade (1.14.0)
+
+**Situação:** em homologação na branch `homologacao`, ainda não publicada na `main`. A lista completa dos 30 ajustes e o passo a passo do ambiente de homologação estão no README, seção "Atualização 1.14.0".
+
+- **Tipo:** Segurança, correção de regras e usabilidade
+- **Situação anterior / problema:** brechas de isolamento entre parceiros (exclusão em massa, estoque, uploads, anexos do Task, chamados); refresh token guardado em texto puro, sem rotação nem detecção de reuso; admin de parceiro podendo mexer em comissão, status e catálogo; comissão que não acompanhava venda cancelada; exclusão de cliente sem regras; listagens sem paginação real nem tela de erro; acessibilidade fraca; aplicativo deixando a venda nova em rascunho.
+- **O que foi feito:**
+  - Segurança: escopo de parceiro e filial nas operações citadas; estoque e importação não trocam o dono de linha ou chip; uploads conferidos por magic bytes e baixados como anexo; dados bancários só para administrador e titular, com auditoria de leitura (`AuditAction.VIEW`); CSV sem fórmulas; Multer 2 e limite de corpo por rota; Swagger desligado em produção; JWT HS256 com `iss`/`aud`; cabeçalhos no NGINX; bloqueio de login por conta, IP e conta+IP com `TRUST_PROXY`; seed só com `SEED_ADMIN_PASSWORD` forte.
+  - Sessões: refresh token como hash SHA-256, rotação a cada renovação, reuso derruba a família, desativação ou troca de senha derruba todas; redefinição de senha por e-mail com token de uso único (1 hora) e telas `/forgot-password` e `/redefinir-senha`.
+  - Consistência: ciclo de vida da comissão (`commission-lifecycle.ts`); regras de exclusão de cliente com limpeza de arquivos; posse e coerência de linha, chip e plano na venda; onboarding de usuário validando parceiro e filial; outbox para a comissão da venda ativada; travas e contadores compartilhados (Redis opcional, recuo para a tabela `coordination_entries`); dashboard com agregações e cache de 60 s; `/api/health/ready`.
+  - Usabilidade: Chamados no menu, "Nova demanda" só para administrador no app, modais de exclusão padronizados, `ErrorState` com "Tentar novamente", "Carregar mais" na web e rolagem infinita no app, menu "Alterar status" no Kanban, contraste e rótulos acessíveis, envio da venda para análise no app.
+  - Banco: migration `20261020180000_security_hardening` (novas tabelas, índices, conversão dos tokens existentes para hash sem derrubar sessões e view `client_document_duplicates`).
+  - Testes: `security-hardening.test.js` e `auth-refresh.test.js` no `pnpm test` (73 aprovados; 3 falhas antigas inalteradas).
+- **Por quê:** resultado de uma revisão de segurança, dados e usabilidade com 30 itens priorizados.
+- **Homologação:** Docker local no projeto `luxus-homolog` (banco próprio) exposto por túnel rápido do Cloudflare (`*.trycloudflare.com`), sem Luxus Task e sem telefonia-2.
+- **Erro pego na homologação:** a migration recriava o índice `sales_simCardId_idx` (já criado em `20260701180000_sale_process_fields`) e travava a API ao iniciar; a linha foi retirada e o banco ficou idêntico ao schema.
+- **E-mail de redefinição adiado (21/10/2026):** a versão segue sem servidor de e-mail; até configurar `SMTP_*` e `APP_URL` na Railway, o "Esqueci minha senha" não envia nada e a troca de senha é feita pelo administrador na tela de Usuários.
+- **Atenção ao publicar:** conferir `TRUST_PROXY`; gerar novo build do aplicativo para levar as mudanças do celular; depois, conferir a view `client_document_duplicates` antes de criar a unicidade de documento por parceiro. Roteiro de teste no README.
+
 ## 5. Decisões técnicas importantes
 
 - **Monorepo com pnpm e Turborepo:** API, web, aplicativo e pacotes compartilhados no mesmo repositório, para que tipos, enums, rótulos e permissões (`packages/types`) sejam iguais em todas as pontas. Por isso os Dockerfiles compilam `@luxus/types` e `@luxus/utils` antes da API e da web (Versão 1).
@@ -699,7 +718,7 @@ Este dia marca o início da integração com o **telefonia-2**, sistema de fatur
 
 - **README desatualizado em pontos importantes:** diz que vendas `APPROVED` e `ACTIVATED` contam nos indicadores (hoje só `ACTIVATED` conta), que os uploads aceitam só JPG, PNG, WebP e PDF (hoje qualquer tipo até 50 MB) e que o NGINX local responde em `http://localhost` na porta 80 (hoje o padrão é `127.0.0.1:8088`). Também não descreve o telefonia-2 nem a importação por planilha. Justificativa: quem chega se orienta primeiro pelo README.
 - **Credenciais de demonstração publicadas no README:** o README lista e-mails e senha inicial dos usuários de demonstração do seed. Justificativa: se o seed já tiver rodado em produção, essas contas existem lá; confirme que `RUN_DB_SEED=false` em produção e que essas senhas foram trocadas ou as contas removidas.
-- **Token de renovação com validade padrão de 365 dias:** definido na Versão 7 para manter a sessão. Justificativa: um token roubado vale por muito tempo; avalie um prazo menor via `JWT_REFRESH_EXPIRES_IN` ou revogação por inatividade.
+- **Token de renovação com validade padrão de 365 dias:** definido na Versão 7 para manter a sessão. Desde a Versão 37 ele é guardado como hash, trocado a cada renovação e revogado no reuso, mas o prazo padrão continua longo. Justificativa: avalie um prazo menor via `JWT_REFRESH_EXPIRES_IN` ou revogação por inatividade.
 - **Dependência forte do Luxus Task para concluir vendas:** desde a Versão 29 não há mais finalização forçada no Parceiros. Justificativa: se o Task ficar fora do ar por muito tempo, as vendas não concluem; vale documentar um procedimento de contingência.
 - **Duas numerações de versão:** este documento (Versões 0 a 35, por dia) e o `HISTORICO_DE_VERSOES.txt` (0.1.0 a 1.12.0). Justificativa: evitar confusão; combine qual será a referência oficial e mantenha as duas sincronizadas ou aposente uma.
 - **Arquivos soltos na raiz:** `Luxus Parceiros.docx` versionado (213 KB) e a pasta `__pycache__/` (não versionada) na raiz. Justificativa: documentos binários no Git não mostram diferenças; considere movê-los para `docs/` ou para um repositório de documentos.

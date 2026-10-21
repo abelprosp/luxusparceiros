@@ -53,6 +53,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import {
   Select,
   SelectContent,
@@ -324,6 +325,7 @@ function DocumentPreview({
   const [error, setError] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const isImage = isImageDocument(doc);
 
@@ -372,13 +374,10 @@ function DocumentPreview({
   };
 
   const handleDelete = async () => {
-    const confirmed = window.confirm(
-      `Excluir "${doc.name}"? O arquivo sai desta venda e, se ela já estiver no Luxus Task, sai de lá também.`,
-    );
-    if (!confirmed) return;
     setDeleting(true);
     try {
       await onDelete();
+      setConfirmDeleteOpen(false);
     } finally {
       setDeleting(false);
     }
@@ -521,7 +520,7 @@ function DocumentPreview({
             variant="outline"
             className="flex-1 text-destructive hover:text-destructive"
             disabled={busy}
-            onClick={() => void handleDelete()}
+            onClick={() => setConfirmDeleteOpen(true)}
           >
             {deleting ? (
               <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -534,6 +533,15 @@ function DocumentPreview({
       )}
       {replacing && <FileTransferBar label="Enviando o arquivo novo..." />}
       {deleting && <FileTransferBar label="Excluindo o arquivo..." />}
+      <DeleteConfirmationDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        itemType="documento"
+        itemLabel={doc.name}
+        description="O arquivo sai desta venda e, se ela já estiver no Luxus Task, sai de lá também."
+        deleting={deleting}
+        onConfirm={() => void handleDelete()}
+      />
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
+import { CoordinationService } from '@/common/coordination/coordination.service';
 import { ConfigService } from '@nestjs/config';
 import { SaleContractStage, SaleStatus, SaleTaskSyncStatus } from '@prisma/client';
 import { existsSync, readFileSync } from 'fs';
@@ -22,12 +23,23 @@ export class TelefoniaIntakeService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly coordination?: CoordinationService,
   ) {}
 
   onModuleInit() {
-    this.timer = setInterval(() => void this.processQueue(), 20_000);
+    this.timer = setInterval(() => this.runQueue(), 20_000);
     this.timer.unref();
-    setImmediate(() => void this.processQueue());
+    setImmediate(() => this.runQueue());
+  }
+
+  /** Só uma réplica da API envia ao telefonia-2 por vez. */
+  private runQueue() {
+    if (!this.isConfigured()) return;
+    const work = () => this.processQueue();
+    const locked = this.coordination
+      ? this.coordination.withLock('telefonia:queue', 10 * 60_000, work)
+      : work();
+    void locked.catch((error) => console.warn('[telefonia-intake] Falha ao percorrer a fila', error));
   }
 
   onModuleDestroy() {

@@ -15,6 +15,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState, LoadMoreButton } from '@/components/ui/error-state';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { useToast } from '@/components/ui/toaster';
 import { useAuth } from '@/hooks/useAuth';
 import { isPartnerUser } from '@/lib/rbac';
@@ -38,8 +40,6 @@ const STATUS_LABELS: Record<CommissionStatus, string> = {
 };
 
 export default function ComissoesPage() {
-  const [items, setItems] = useState<Commission[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -49,56 +49,35 @@ export default function ComissoesPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isPartner = isPartnerUser(user);
+  const canManage = !isPartner && !user?.partnerId;
   const [summary, setSummary] = useState({ forecast: 0, approved: 0, paid: 0, total: 0 });
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const fetchCommissions = useCallback(
+    (page: number) => getPaginated<Commission>('/commissions', {
+      search: search || undefined,
+      status: statusFilter !== 'all' ? statusFilter : undefined,
+      page,
+      limit: 50,
+    }),
+    [search, statusFilter],
+  );
+  const list = usePaginatedList(fetchCommissions);
+  const { items, loading } = list;
+
+  const loadSummary = useCallback(async () => {
+    if (!isPartner) return;
     try {
-      const listPromise = getPaginated<Commission>('/commissions', {
-        search: search || undefined,
-        status: statusFilter !== 'all' ? statusFilter : undefined,
-        limit: 50,
-      });
-
-      if (isPartner) {
-        const [listResult, summaryResult] = await Promise.allSettled([
-          listPromise,
-          api<{ forecast: number; approved: number; paid: number; total: number }>('/commissions/summary'),
-        ]);
-
-        if (listResult.status === 'fulfilled') {
-          setItems(listResult.value.data);
-        } else {
-          setItems([]);
-          toast({
-            title: 'Erro ao carregar comissões',
-            description: listResult.reason instanceof Error ? listResult.reason.message : 'Falha na requisição',
-            variant: 'destructive',
-          });
-        }
-
-        if (summaryResult.status === 'fulfilled') {
-          setSummary(summaryResult.value);
-        } else {
-          setSummary({ forecast: 0, approved: 0, paid: 0, total: 0 });
-        }
-      } else {
-        const res = await listPromise;
-        setItems(res.data);
-      }
-    } catch (err) {
-      setItems([]);
-      toast({
-        title: 'Erro ao carregar comissões',
-        description: err instanceof Error ? err.message : 'Falha na requisição',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
+      setSummary(await api<{ forecast: number; approved: number; paid: number; total: number }>('/commissions/summary'));
+    } catch {
+      setSummary({ forecast: 0, approved: 0, paid: 0, total: 0 });
     }
-  }, [search, statusFilter, isPartner, toast]);
+  }, [isPartner]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void loadSummary(); }, [loadSummary]);
+
+  const load = useCallback(async () => {
+    await Promise.all([list.reload(), loadSummary()]);
+  }, [list, loadSummary]);
 
   const handleApprove = async (id: string) => {
     try {
@@ -176,6 +155,8 @@ export default function ComissoesPage() {
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+      ) : list.error && items.length === 0 ? (
+        <ErrorState title="Erro ao carregar comissões" message={list.error} onRetry={() => void load()} />
       ) : items.length === 0 ? (
         <EmptyState
           icon={DollarSign}
@@ -197,7 +178,7 @@ export default function ComissoesPage() {
                 <TableHead>%</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Data</TableHead>
-                {!isPartner && <TableHead className="text-right">Ações</TableHead>}
+                {canManage && <TableHead className="text-right">Ações</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -209,7 +190,7 @@ export default function ComissoesPage() {
                   <TableCell>{Number(c.percentage) > 0 ? `${c.percentage}%` : '—'}</TableCell>
                   <TableCell><Badge variant="outline">{STATUS_LABELS[c.status] ?? c.status}</Badge></TableCell>
                   <TableCell>{formatDate(c.createdAt)}</TableCell>
-                  {!isPartner && (
+                  {canManage && (
                     <TableCell className="text-right space-x-1">
                       {c.status === CommissionStatus.FORECAST && (
                         <Button size="sm" variant="outline" onClick={() => handleApprove(c.id)}>
@@ -228,6 +209,15 @@ export default function ComissoesPage() {
             </TableBody>
           </Table>
         </div>
+      )}
+      {!loading && (
+        <LoadMoreButton
+          hasMore={list.hasMore}
+          loading={list.loadingMore}
+          onClick={() => void list.loadMore()}
+          shown={items.length}
+          total={list.total}
+        />
       )}
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>

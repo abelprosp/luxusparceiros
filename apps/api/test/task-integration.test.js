@@ -114,6 +114,7 @@ test('concluir a demanda no Task ativa a venda e gera a comissão', async () => 
     taskDemandId: '22222222-2222-4222-8222-222222222222',
     taskStatus: 'em_andamento', contractStage: 'TASK_PROCESSING', status: 'APPROVED',
   };
+  const outbox = [];
   const prisma = {
     request: { findUnique: async () => null },
     sale: {
@@ -122,6 +123,8 @@ test('concluir a demanda no Task ativa a venda e gera a comissão', async () => 
     },
     document: { findUnique: async () => null, upsert: async (args) => importedDocuments.push(args) },
     notification: { findFirst: async () => null },
+    outboxEvent: { upsert: async (args) => outbox.push(args) },
+    $transaction: async (operations) => Promise.all(operations),
   };
   const service = new TaskIntegrationService(
     { get: () => undefined }, prisma,
@@ -140,6 +143,9 @@ test('concluir a demanda no Task ativa a venda e gera a comissão', async () => 
   assert.equal(importedDocuments[0].create.purpose, 'SIGNED_CONTRACT');
   assert.equal(commissions, 1);
   assert.deepEqual(queued, [sale.id]);
+  assert.equal(outbox.length, 1);
+  assert.equal(outbox[0].create.type, 'COMMISSION_FROM_SALE');
+  assert.equal(outbox[0].create.aggregateId, sale.id);
 });
 
 test('status concluido do Task conclui a venda mesmo com etapa antiga no payload', async () => {
@@ -162,6 +168,8 @@ test('status concluido do Task conclui a venda mesmo com etapa antiga no payload
     },
     document: { findUnique: async () => null, upsert: async () => {} },
     notification: { findFirst: async () => null },
+    outboxEvent: { upsert: async () => ({}) },
+    $transaction: async (operations) => Promise.all(operations),
   };
   const service = new TaskIntegrationService(
     { get: () => undefined }, prisma,

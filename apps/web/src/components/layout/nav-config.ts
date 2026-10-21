@@ -14,6 +14,7 @@ import {
   User,
   Store,
   BookOpen,
+  LifeBuoy,
 } from 'lucide-react';
 import type { AuthUser } from '@luxus/types';
 import { canAccessRoute, isAttendantUser, isPartnerUser } from '@/lib/rbac';
@@ -29,6 +30,7 @@ export const adminNavItems: NavItem[] = [
   { href: '/parceiros', label: 'Parceiros', icon: Users },
   { href: '/usuarios', label: 'Usuários', icon: UserCog },
   { href: '/solicitacoes', label: 'Demandas', icon: FileText },
+  { href: '/chamados', label: 'Chamados', icon: LifeBuoy },
   { href: '/operadoras', label: 'Operadoras', icon: Radio },
   { href: '/planos', label: 'Planos', icon: Package },
   { href: '/estoque', label: 'Estoque', icon: Warehouse },
@@ -47,6 +49,7 @@ export const partnerNavItems: NavItem[] = [
   { href: '/filiais', label: 'Filiais', icon: Store },
   { href: '/estoque', label: 'Estoque', icon: Warehouse },
   { href: '/solicitacoes', label: 'Demandas', icon: FileText },
+  { href: '/chamados', label: 'Chamados', icon: LifeBuoy },
   { href: '/comissoes', label: 'Comissões', icon: DollarSign },
   { href: '/guia-de-uso', label: 'Guia de uso', icon: BookOpen },
 ];
@@ -56,6 +59,7 @@ export const attendantNavItems: NavItem[] = [
   { href: '/clientes', label: 'Clientes', icon: User },
   { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
   { href: '/solicitacoes', label: 'Demandas', icon: FileText },
+  { href: '/chamados', label: 'Chamados', icon: LifeBuoy },
   { href: '/guia-de-uso', label: 'Guia de uso', icon: BookOpen },
 ];
 

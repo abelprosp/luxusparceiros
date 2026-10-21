@@ -12,6 +12,8 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { MESSAGES } from '@/common/constants/messages';
 import { assertPartnerAccess } from '@/common/utils/partner-scope';
+import { revokePartnerSessions, revokeUserSessions } from '@/common/utils/session-revocation';
+import { BANK_FIELDS, BankField, canAccessBankData, maskBankData } from '@/common/utils/bank-data';
 import {
   CreatePartnerDto,
   ResetPartnerPasswordDto,
@@ -22,6 +24,9 @@ import {
 
 /** Vendas concluídas, canceladas ou rejeitadas mantêm a cobrança com que terminaram. */
 const OPEN_SALE_EXCLUDED_STATUSES: SaleStatus[] = [SaleStatus.ACTIVATED, SaleStatus.CANCELLED, SaleStatus.REJECTED];
+
+/** Comissão e situação comercial do parceiro são definidas apenas pela Luxus. */
+const PLATFORM_ONLY_FIELDS = ['commissionRate', 'status'] as const;
 
 type PartnerAddress = {
   address?: string | null;
@@ -69,10 +74,26 @@ export class PartnersService {
       this.prisma.partner.count({ where }),
     ]);
 
+    const enriched = await this.attachDocumentShareInfo(data);
     return {
-      data: await this.attachDocumentShareInfo(data),
+      data: enriched.map((partner) => maskBankData(partner, user)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  /** Detalhe consultado pela tela: registra quem visualizou dados bancários/PIX. */
+  async findOneForView(id: string, user: AuthUser) {
+    const partner = await this.findOne(id, user);
+    if (!partner.bankDataRestricted && BANK_FIELDS.some((field) => partner[field])) {
+      await this.auditService.log({
+        userId: user.id,
+        action: 'VIEW',
+        module: 'partner-bank-data',
+        entityId: id,
+        entityType: 'Partner',
+      });
+    }
+    return partner;
   }
 
   async findOne(id: string, user?: AuthUser) {
@@ -101,7 +122,7 @@ export class PartnersService {
     if (!partner) throw new NotFoundException(MESSAGES.NOT_FOUND);
     if (user) assertPartnerAccess(user, partner.id);
     const [enriched] = await this.attachDocumentShareInfo([partner]);
-    return enriched;
+    return maskBankData(enriched, user);
   }
 
   async findByDocument(document: string, excludeId?: string) {
@@ -130,6 +151,9 @@ export class PartnersService {
     }
 
     const { user: userDto, ...partnerData } = dto;
+    if (!canAccessBankData(actor)) {
+      for (const field of BANK_FIELDS) delete partnerData[field];
+    }
     const document = dto.document.replace(/\D/g, '');
     const coordinates = await this.geocodeAddress(partnerData);
 
@@ -169,16 +193,26 @@ export class PartnersService {
       module: 'partners',
       entityId: partner.id,
       entityType: 'Partner',
-      newData: partner as unknown as Prisma.InputJsonValue,
+      newData: { id: partner.id, name: partner.name, document: partner.document } as Prisma.InputJsonValue,
     });
 
-    return this.findOne(partner.id);
+    return this.findOne(partner.id, actor);
   }
 
   async update(id: string, dto: UpdatePartnerDto, actor: AuthUser) {
     const existing = await this.findOne(id, actor);
     const { user: _user, billedByLuxus: requestedBilling, ...partnerData } = dto;
     const billedByLuxus = actor.partnerId ? undefined : requestedBilling;
+    if (actor.partnerId) {
+      for (const field of PLATFORM_ONLY_FIELDS) delete partnerData[field];
+    }
+    if (!canAccessBankData(actor)) {
+      for (const field of BANK_FIELDS) delete partnerData[field];
+    }
+    const changedBankFields = BANK_FIELDS.filter(
+      (field) => partnerData[field] !== undefined && (partnerData[field] || null) !== (existing[field] || null),
+    );
+    const suspending = partnerData.status === PartnerStatus.SUSPENDED && existing.status !== PartnerStatus.SUSPENDED;
     const billingChanged = billedByLuxus !== undefined && billedByLuxus !== existing.billedByLuxus;
     if (partnerData.document !== undefined) {
       partnerData.document = partnerData.document.replace(/\D/g, '');
@@ -215,17 +249,30 @@ export class PartnersService {
           data: { billedByLuxus },
         });
       }
+      if (suspending) await revokePartnerSessions(tx, id);
       return updated;
     });
+    const auditData: Record<string, unknown> = { ...partner };
+    for (const field of BANK_FIELDS) delete auditData[field];
     await this.auditService.log({
       userId: actor.id,
       action: 'UPDATE',
       module: 'partners',
       entityId: id,
       entityType: 'Partner',
-      newData: partner as unknown as Prisma.InputJsonValue,
+      newData: auditData as Prisma.InputJsonValue,
     });
-    return this.findOne(id);
+    if (changedBankFields.length) {
+      await this.auditService.log({
+        userId: actor.id,
+        action: 'UPDATE',
+        module: 'partner-bank-data',
+        entityId: id,
+        entityType: 'Partner',
+        newData: { fields: changedBankFields satisfies BankField[] } as Prisma.InputJsonValue,
+      });
+    }
+    return this.findOne(id, actor);
   }
 
   private async attachDocumentShareInfo<T extends { id: string; document: string }>(partners: T[]) {
@@ -318,9 +365,12 @@ export class PartnersService {
     if (!user) throw new NotFoundException('Usuário parceiro não encontrado');
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { password: hashedPassword },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { password: hashedPassword },
+      });
+      await revokeUserSessions(tx, user.id);
     });
 
     await this.auditService.log({
@@ -349,6 +399,7 @@ export class PartnersService {
   }
 
   async setPartnerPlans(partnerId: string, dto: SetPartnerPlansDto, actor: AuthUser) {
+    this.assertPlatformActor(actor, 'Somente a Luxus pode alterar o catálogo e as comissões do parceiro');
     await this.findOne(partnerId, actor);
 
     await this.prisma.$transaction(async (tx) => {
@@ -379,14 +430,19 @@ export class PartnersService {
   }
 
   async suspend(id: string, dto: SuspendPartnerDto, actor: AuthUser) {
+    this.assertPlatformActor(actor, 'Somente a Luxus pode suspender parceiros');
     await this.findOne(id, actor);
-    const partner = await this.prisma.partner.update({
-      where: { id },
-      data: {
-        status: PartnerStatus.SUSPENDED,
-        suspendedAt: new Date(),
-        suspendedReason: dto.reason,
-      },
+    const partner = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.partner.update({
+        where: { id },
+        data: {
+          status: PartnerStatus.SUSPENDED,
+          suspendedAt: new Date(),
+          suspendedReason: dto.reason,
+        },
+      });
+      await revokePartnerSessions(tx, id);
+      return updated;
     });
     await this.auditService.log({
       userId: actor.id,
@@ -400,6 +456,7 @@ export class PartnersService {
   }
 
   async activate(id: string, actor: AuthUser) {
+    this.assertPlatformActor(actor, 'Somente a Luxus pode reativar parceiros');
     await this.findOne(id, actor);
     const partner = await this.prisma.partner.update({
       where: { id },
@@ -553,6 +610,10 @@ export class PartnersService {
       } as Prisma.InputJsonValue,
     });
     return { message: 'Parceiro removido com sucesso' };
+  }
+
+  private assertPlatformActor(actor: AuthUser, message: string) {
+    if (actor.partnerId) throw new ForbiddenException(message);
   }
 
   private async linkPartnerToActivePlans(

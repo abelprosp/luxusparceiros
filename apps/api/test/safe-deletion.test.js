@@ -13,6 +13,7 @@ function admin() {
 function salesHarness(overrides = {}) {
   const calls = { documents: 0, sale: 0, files: 0 };
   const prisma = {
+    commission: { deleteMany: async () => {} },
     document: { deleteMany: async () => { calls.documents += 1; } },
     sale: { delete: async () => { calls.sale += 1; } },
     $transaction: async (operations) => Promise.all(operations),
@@ -80,13 +81,26 @@ test('parceiro não pode excluir chamado', async () => {
   );
 });
 
-test('administrador exclui vendas de teste em lote e preserva comissão paga', async () => {
+function saleRow(overrides) {
+  return {
+    status: SaleStatus.IN_ANALYSIS,
+    taskDemandId: null,
+    taskSyncStatus: SaleTaskSyncStatus.NOT_READY,
+    documents: [],
+    commission: null,
+    ...overrides,
+  };
+}
+
+test('exclusão de vendas em lote preserva Task, ativadas e comissão paga', async () => {
   const deleted = [];
   const prisma = {
     sale: {
       findMany: async () => [
-        { id: 'sale-1', protocol: 'VND-1', taskDemandId: 'task-1', documents: [], commission: null },
-        { id: 'sale-2', protocol: 'VND-2', taskDemandId: null, documents: [], commission: { status: 'PAID' } },
+        saleRow({ id: 'sale-1', protocol: 'VND-1', taskDemandId: 'task-1', taskSyncStatus: SaleTaskSyncStatus.SYNCED }),
+        saleRow({ id: 'sale-2', protocol: 'VND-2', commission: { status: 'PAID' } }),
+        saleRow({ id: 'sale-3', protocol: 'VND-3', status: SaleStatus.ACTIVATED }),
+        saleRow({ id: 'sale-4', protocol: 'VND-4' }),
       ],
       delete: async ({ where }) => deleted.push(where.id),
     },
@@ -97,26 +111,52 @@ test('administrador exclui vendas de teste em lote e preserva comissão paga', a
   const service = new SalesService(
     prisma, { log: async () => {} }, {}, {}, {}, {}, {}, { removeStoredFiles: () => {} },
   );
-  const result = await service.bulkRemove(['sale-1', 'sale-2'], admin());
-  assert.deepEqual(deleted, ['sale-1']);
-  assert.deepEqual(result.deleted, ['sale-1']);
-  assert.match(result.failed[0].reason, /comissão.*paga/i);
-  assert.match(result.warning, /Luxus Task/);
+  const result = await service.bulkRemove(['sale-1', 'sale-2', 'sale-3', 'sale-4'], admin());
+  assert.deepEqual(deleted, ['sale-4']);
+  assert.deepEqual(result.deleted, ['sale-4']);
+  const reasons = Object.fromEntries(result.failed.map((item) => [item.id, item.reason]));
+  assert.match(reasons['sale-1'], /Luxus Task/);
+  assert.match(reasons['sale-2'], /comissão.*paga/i);
+  assert.match(reasons['sale-3'], /ativada/);
 });
 
-test('administrador exclui demandas do Parceiros em lote', async () => {
+test('exclusão de vendas em lote fica restrita ao parceiro e à filial do administrador', async () => {
+  let capturedWhere;
+  const prisma = {
+    sale: { findMany: async ({ where }) => { capturedWhere = where; return []; } },
+  };
+  const service = new SalesService(prisma, {}, {}, {}, {}, {}, {}, {});
+  const result = await service.bulkRemove(
+    ['sale-de-outro-parceiro'],
+    { ...admin(), partnerId: 'partner-1', branchId: 'branch-1' },
+  );
+  assert.equal(capturedWhere.partnerId, 'partner-1');
+  assert.equal(capturedWhere.branchId, 'branch-1');
+  assert.deepEqual(result.deleted, []);
+  assert.match(result.failed[0].reason, /não encontrada/);
+});
+
+test('exclusão de demandas em lote preserva as vinculadas ao Luxus Task', async () => {
   const deleted = [];
+  let capturedWhere;
   const prisma = {
     request: {
-      findMany: async () => [{ id: 'request-1', protocol: 'REQ-1', taskDemandId: 'task-1' }],
+      findMany: async ({ where }) => {
+        capturedWhere = where;
+        return [
+          { id: 'request-1', protocol: 'REQ-1', taskDemandId: 'task-1', status: 'IN_PROGRESS', documents: [] },
+          { id: 'request-2', protocol: 'REQ-2', taskDemandId: null, status: 'OPEN', documents: [] },
+        ];
+      },
       delete: async ({ where }) => deleted.push(where.id),
     },
     document: { deleteMany: async () => {} },
     $transaction: async (operations) => Promise.all(operations),
   };
   const service = new RequestsService(prisma, { log: async () => {} }, {}, {}, {});
-  const result = await service.bulkRemove(['request-1'], admin());
-  assert.deepEqual(deleted, ['request-1']);
-  assert.deepEqual(result.deleted, ['request-1']);
-  assert.match(result.warning, /Luxus Task/);
+  const result = await service.bulkRemove(['request-1', 'request-2'], { ...admin(), partnerId: 'partner-1' });
+  assert.equal(capturedWhere.partnerId, 'partner-1');
+  assert.deepEqual(deleted, ['request-2']);
+  assert.deepEqual(result.deleted, ['request-2']);
+  assert.match(result.failed[0].reason, /Luxus Task/);
 });

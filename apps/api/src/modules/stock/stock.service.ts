@@ -4,6 +4,7 @@ import { AuthUser } from '@luxus/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { resolvePartnerId } from '@/common/utils/partner-scope';
+import { csvRow } from '@/common/utils/csv';
 import { CreateStockMovementDto } from './dto/stock.dto';
 
 interface CsvRow {
@@ -27,6 +28,7 @@ export class StockService {
     const partnerId = resolvePartnerId(user, params.partnerId);
     const where: Prisma.StockMovementWhereInput = {};
     if (partnerId) where.partnerId = partnerId;
+    if (user.branchId) where.branchId = user.branchId;
     if (params.type) where.type = params.type;
 
     const [data, total] = await Promise.all([
@@ -102,26 +104,23 @@ export class StockService {
         where: simWhere,
         include: { operator: { select: { name: true } }, partner: { select: { name: true } } },
         orderBy: { createdAt: 'desc' },
+        take: 20_000,
       }),
       this.prisma.line.findMany({
         where: lineWhere,
+        take: 20_000,
         include: { operator: { select: { name: true } }, partner: { select: { name: true } } },
         orderBy: { createdAt: 'desc' },
       }),
     ]);
 
-    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
     const header = 'tipo,iccid,numero,operadora,parceiro,status';
     const rows = [
       ...simCards.map((item) =>
-        ['chip', item.iccid, '', item.operator.name, item.partner?.name ?? '', item.status]
-          .map((v) => escape(String(v)))
-          .join(','),
+        csvRow(['chip', item.iccid, '', item.operator.name, item.partner?.name ?? '', item.status]),
       ),
       ...lines.map((item) =>
-        ['linha', '', item.number, item.operator.name, item.partner?.name ?? '', item.status]
-          .map((v) => escape(String(v)))
-          .join(','),
+        csvRow(['linha', '', item.number, item.operator.name, item.partner?.name ?? '', item.status]),
       ),
     ];
 
@@ -130,14 +129,21 @@ export class StockService {
 
   async create(dto: CreateStockMovementDto, user: AuthUser) {
     const partnerId = resolvePartnerId(user, dto.partnerId);
+    const iccid = dto.iccid?.replace(/\s/g, '') || undefined;
+    const number = dto.number?.replace(/\D/g, '') || undefined;
+
+    if (dto.type === StockMovementType.ENTRY && iccid && dto.operatorId) {
+      await this.registerSimCard(iccid, dto.operatorId, partnerId, user);
+    }
 
     const movement = await this.prisma.stockMovement.create({
       data: {
         type: dto.type,
         partnerId,
+        branchId: user.branchId,
         operatorId: dto.operatorId,
-        iccid: dto.iccid,
-        number: dto.number,
+        iccid,
+        number,
         quantity: dto.quantity ?? 1,
         notes: dto.notes,
         userId: user.id,
@@ -147,19 +153,6 @@ export class StockService {
         partner: { select: { id: true, name: true } },
       },
     });
-
-    if (dto.type === StockMovementType.ENTRY && dto.iccid && dto.operatorId) {
-      await this.prisma.simCard.upsert({
-        where: { iccid: dto.iccid },
-        create: {
-          iccid: dto.iccid,
-          operatorId: dto.operatorId,
-          partnerId,
-          status: LineStatus.AVAILABLE,
-        },
-        update: { partnerId, status: LineStatus.AVAILABLE },
-      });
-    }
 
     await this.auditService.log({
       userId: user.id,
@@ -173,9 +166,12 @@ export class StockService {
   }
 
   async importCsv(csvContent: string, user: AuthUser, defaultOperatorId?: string) {
-    const lines = csvContent.trim().split('\n');
+    const lines = csvContent.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
     if (lines.length < 2) {
       throw new BadRequestException('CSV deve conter cabeçalho e ao menos uma linha');
+    }
+    if (lines.length > 5001) {
+      throw new BadRequestException('Importe no máximo 5.000 linhas por arquivo');
     }
 
     const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
@@ -187,64 +183,49 @@ export class StockService {
       headers.forEach((header, idx) => {
         (row as Record<string, string>)[header] = values[idx];
       });
+      const headerAliases = row as Record<string, string | undefined>;
+      row.operatorId = row.operatorId ?? headerAliases.operatorid;
+      row.partnerId = row.partnerId ?? headerAliases.partnerid;
 
       try {
-        const rowPartnerId = resolvePartnerId(user, row.partnerId);
-        if (row.iccid) {
-          const operatorId = row.operatorId ?? defaultOperatorId;
-          if (!operatorId) {
-            results.errors.push(`Linha ${i + 1}: operatorId é obrigatório`);
-            continue;
-          }
+        const rowPartnerId = resolvePartnerId(user, row.partnerId || undefined);
+        const operatorId = row.operatorId || defaultOperatorId;
+        const iccid = row.iccid?.replace(/\s/g, '');
+        const number = row.number?.replace(/\D/g, '');
+        if ((iccid || number) && !operatorId) {
+          results.errors.push(`Linha ${i + 1}: operatorId é obrigatório`);
+          continue;
+        }
 
-          await this.prisma.simCard.upsert({
-            where: { iccid: row.iccid },
-            create: {
-              iccid: row.iccid,
-              operatorId,
-              partnerId: rowPartnerId,
-              status: LineStatus.AVAILABLE,
-            },
-            update: { partnerId: rowPartnerId },
-          });
-
+        if (iccid && operatorId) {
+          await this.registerSimCard(iccid, operatorId, rowPartnerId, user);
           await this.prisma.stockMovement.create({
             data: {
               type: StockMovementType.ENTRY,
-              iccid: row.iccid,
+              iccid,
               operatorId,
               partnerId: rowPartnerId,
+              branchId: user.branchId,
               userId: user.id,
               notes: 'Importação CSV',
             },
           });
-
           results.imported++;
         }
 
-        if (row.number && row.operatorId) {
-          await this.prisma.line.upsert({
-            where: { number: row.number },
-            create: {
-              number: row.number,
-              operatorId: row.operatorId ?? defaultOperatorId!,
-              partnerId: rowPartnerId,
-              status: LineStatus.AVAILABLE,
-            },
-            update: { partnerId: rowPartnerId },
-          });
-
+        if (number && operatorId) {
+          await this.registerLine(number, operatorId, rowPartnerId, user);
           await this.prisma.stockMovement.create({
             data: {
               type: StockMovementType.ENTRY,
-              number: row.number,
-              operatorId: row.operatorId ?? defaultOperatorId,
+              number,
+              operatorId,
               partnerId: rowPartnerId,
+              branchId: user.branchId,
               userId: user.id,
               notes: 'Importação CSV',
             },
           });
-
           results.imported++;
         }
       } catch (error) {
@@ -261,5 +242,58 @@ export class StockService {
     });
 
     return results;
+  }
+
+  /**
+   * Cadastra o chip ou confirma que ele já é do mesmo dono. Nunca troca o dono de um chip existente:
+   * isso só pode ser feito pela administração da plataforma, fora da entrada de estoque.
+   */
+  private async registerSimCard(iccid: string, operatorId: string, partnerId: string | undefined, user: AuthUser) {
+    const existing = await this.prisma.simCard.findUnique({
+      where: { iccid },
+      select: { partnerId: true, operatorId: true },
+    });
+    if (!existing) {
+      await this.prisma.simCard.create({
+        data: { iccid, operatorId, partnerId, status: LineStatus.AVAILABLE },
+      });
+      return;
+    }
+    this.assertSameOwner('Chip', existing.partnerId, partnerId, user);
+    if (existing.operatorId !== operatorId) {
+      throw new BadRequestException(`Chip ${iccid} já cadastrado em outra operadora`);
+    }
+  }
+
+  private async registerLine(number: string, operatorId: string, partnerId: string | undefined, user: AuthUser) {
+    const existing = await this.prisma.line.findUnique({
+      where: { number },
+      select: { partnerId: true, operatorId: true },
+    });
+    if (!existing) {
+      await this.prisma.line.create({
+        data: { number, operatorId, partnerId, status: LineStatus.AVAILABLE },
+      });
+      return;
+    }
+    this.assertSameOwner('Linha', existing.partnerId, partnerId, user);
+    if (existing.operatorId !== operatorId) {
+      throw new BadRequestException(`Linha ${number} já cadastrada em outra operadora`);
+    }
+  }
+
+  private assertSameOwner(
+    label: string,
+    currentPartnerId: string | null,
+    requestedPartnerId: string | undefined,
+    user: AuthUser,
+  ) {
+    if ((currentPartnerId ?? null) === (requestedPartnerId ?? null)) return;
+    if (!currentPartnerId && !user.partnerId) {
+      throw new BadRequestException(
+        `${label} já cadastrado no estoque geral. Use a tela do item para destiná-lo a um parceiro.`,
+      );
+    }
+    throw new BadRequestException(`${label} já cadastrado para outro dono`);
   }
 }

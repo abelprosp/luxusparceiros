@@ -306,7 +306,20 @@ export default function NovaVendaScreen() {
           });
         }
 
-        Alert.alert('Sucesso', 'Venda registrada com sucesso', [
+        try {
+          await salesApi.submit(saleId);
+        } catch (submitError) {
+          Alert.alert(
+            'Venda salva como rascunho',
+            submitError instanceof Error
+              ? `${submitError.message}\n\nAbra a venda e envie para análise depois de corrigir.`
+              : 'Não foi possível enviar para análise. Abra a venda e tente novamente.',
+            [{ text: 'OK', onPress: () => router.back() }],
+          );
+          return;
+        }
+
+        Alert.alert('Sucesso', 'Venda enviada para análise', [
           { text: 'OK', onPress: () => router.back() },
         ]);
       }

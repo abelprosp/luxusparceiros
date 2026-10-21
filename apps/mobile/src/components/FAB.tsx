@@ -8,9 +8,10 @@ import { radius } from '@/theme';
 interface FABProps {
   href: Href;
   onPress?: () => void;
+  label?: string;
 }
 
-export function FAB({ href, onPress }: FABProps) {
+export function FAB({ href, onPress, label = 'Adicionar' }: FABProps) {
   const { colors } = useTheme();
   const router = useRouter();
 
@@ -19,6 +20,8 @@ export function FAB({ href, onPress }: FABProps) {
       style={[styles.fab, { backgroundColor: colors.primary }]}
       onPress={onPress ?? (() => router.push(href))}
       activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={label}
     >
       <Plus size={28} color="#FFFFFF" strokeWidth={2.5} />
     </TouchableOpacity>

@@ -191,6 +191,7 @@ export interface Sale {
   id: string;
   protocol: string;
   status: string;
+  reviewStatus?: string;
   value: number;
   commissionValue: number;
   isPortability: boolean;
@@ -333,6 +334,7 @@ export interface PartnerProfile {
   bankAccount?: string;
   pixKey?: string;
   pixKeyType?: string;
+  bankDataRestricted?: boolean;
 }
 
 export interface UserProfile extends AuthUser {
@@ -345,9 +347,10 @@ export interface UserProfile extends AuthUser {
 }
 
 export const clientsApi = {
-  list: (params?: { search?: string; page?: number; limit?: number }) => {
+  list: (params?: { search?: string; page?: number; limit?: number; isActive?: boolean }) => {
     const query = new URLSearchParams();
     if (params?.search) query.set('search', params.search);
+    if (typeof params?.isActive === 'boolean') query.set('isActive', String(params.isActive));
     if (params?.page) query.set('page', String(params.page));
     if (params?.limit) query.set('limit', String(params.limit));
     const qs = query.toString();
@@ -368,6 +371,7 @@ export const salesApi = {
   },
   get: (id: string) => api.get<ApiResponse<Sale>>(`/sales/${id}`),
   create: (data: Record<string, unknown>) => api.post<ApiResponse<Sale>>('/sales', data),
+  submit: (id: string) => api.post<ApiResponse<Sale>>(`/sales/${id}/submit`),
   resubmitDocuments: (id: string) =>
     api.post<ApiResponse<Sale>>(`/sales/${id}/resubmit-documents`),
 };

@@ -15,6 +15,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState, LoadMoreButton } from '@/components/ui/error-state';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-card';
 import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import { useToast } from '@/components/ui/toaster';
@@ -62,8 +64,6 @@ export default function ClientesPage() {
   const { user } = useAuth();
   const canWrite = hasPermission(user, PERMISSIONS.CLIENTS_WRITE);
   const canDelete = hasPermission(user, PERMISSIONS.CLIENTS_DELETE);
-  const [items, setItems] = useState<Client[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
@@ -74,6 +74,16 @@ export default function ClientesPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
+  const fetchClients = useCallback(
+    (page: number) => getPaginated<Client>('/clients', { search: search || undefined, page, limit: 50 }),
+    [search],
+  );
+  const list = usePaginatedList(fetchClients);
+  const { items, loading, reload: load } = list;
+
+  useEffect(() => {
+    setSelectedIds((current) => current.filter((id) => items.some((item) => item.id === id)));
+  }, [items]);
 
   const allSelected = items.length > 0 && selectedIds.length === items.length;
   const selectedLabel = useMemo(() => {
@@ -82,28 +92,6 @@ export default function ClientesPage() {
     }
     return `${selectedIds.length} clientes`;
   }, [items, selectedIds]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getPaginated<Client>('/clients', {
-        search: search || undefined,
-        limit: 50,
-      });
-      setItems(res.data);
-      setSelectedIds((current) => current.filter((id) => res.data.some((item) => item.id === id)));
-    } catch {
-      setItems([]);
-      setSelectedIds([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [search]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => load(), 300);
-    return () => clearTimeout(timer);
-  }, [load]);
 
   const toggleAll = (checked: boolean) => {
     setSelectedIds(checked ? items.map((item) => item.id) : []);
@@ -285,6 +273,8 @@ export default function ClientesPage() {
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+      ) : list.error && items.length === 0 ? (
+        <ErrorState message={list.error} onRetry={() => void load()} />
       ) : items.length === 0 ? (
         <EmptyState
           icon={User}
@@ -403,6 +393,15 @@ export default function ClientesPage() {
               }
             />
           ))}
+        />
+      )}
+      {!loading && (
+        <LoadMoreButton
+          hasMore={list.hasMore}
+          loading={list.loadingMore}
+          onClick={() => void list.loadMore()}
+          shown={items.length}
+          total={list.total}
         />
       )}
 

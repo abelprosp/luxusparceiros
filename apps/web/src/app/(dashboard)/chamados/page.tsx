@@ -32,6 +32,7 @@ import { MobileListCard, ResponsiveDataView } from '@/components/ui/mobile-list-
 import { ticketStatusBadge } from '@/lib/status-badge';
 import { useNotifications } from '@/components/notifications/notifications-provider';
 import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
+import { KanbanStatusMenu } from '@/components/ui/kanban-status-menu';
 
 interface Ticket {
   id: string;
@@ -365,21 +366,41 @@ export default function ChamadosPage() {
                             onClick={() => {
                               if (!didDragRef.current) openDetail(ticket.id);
                             }}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Abrir chamado ${ticket.protocol}: ${ticket.subject}`}
+                            onKeyDown={(event) => {
+                              if (event.target !== event.currentTarget) return;
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                openDetail(ticket.id);
+                              }
+                            }}
                           >
                             <CardContent className="space-y-2 p-3">
                               <div className="flex items-start gap-2">
-                                <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" />
+                                <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />
                                 <div className="min-w-0 flex-1 space-y-2">
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="truncate font-mono text-xs text-muted-foreground">
                                       {ticket.protocol}
                                     </span>
                                     <div className="flex shrink-0 items-center gap-1">
+                                      {canManageTickets && (
+                                        <KanbanStatusMenu
+                                          current={ticket.status}
+                                          options={columns}
+                                          itemLabel={ticket.protocol}
+                                          disabled={movingId === ticket.id}
+                                          onChange={(status) => void moveTicket(ticket.id, status)}
+                                        />
+                                      )}
                                       {canWriteTickets && (
                                       <Button
                                         variant="ghost"
                                         size="icon"
                                         className="h-6 w-6"
+                                        aria-label={`Editar chamado ${ticket.protocol}`}
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           openEdit(ticket.id);

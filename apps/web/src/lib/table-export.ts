@@ -24,7 +24,8 @@ function sanitizeCell(value: unknown): string {
 }
 
 function escapeCsvCell(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
+  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 function buildCsv(sections: ExportTableSection[]): string {

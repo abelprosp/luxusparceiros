@@ -28,6 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import { useToast } from '@/components/ui/toaster';
 import { formatCep, lookupCep, normalizeCep } from '@/lib/cep';
 
@@ -124,6 +125,8 @@ export default function ParceirosPage() {
   const [newPassword, setNewPassword] = useState('');
   const [selectedPlanIds, setSelectedPlanIds] = useState<Record<string, boolean>>({});
   const [documentDuplicates, setDocumentDuplicates] = useState<{ id: string; name: string }[]>([]);
+  const [partnerToDelete, setPartnerToDelete] = useState<Partner | null>(null);
+  const [deletingPartner, setDeletingPartner] = useState(false);
   const { toast } = useToast();
 
   const loadPartners = useCallback(async () => {
@@ -314,14 +317,18 @@ export default function ParceirosPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Deseja excluir este parceiro?')) return;
+  const handleDelete = async () => {
+    if (!partnerToDelete) return;
+    setDeletingPartner(true);
     try {
-      await api(`/partners/${id}`, { method: 'DELETE' });
+      await api(`/partners/${partnerToDelete.id}`, { method: 'DELETE' });
       toast({ title: 'Parceiro excluído', variant: 'success' });
+      setPartnerToDelete(null);
       loadPartners();
     } catch (err) {
       toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao excluir', variant: 'destructive' });
+    } finally {
+      setDeletingPartner(false);
     }
   };
 
@@ -411,7 +418,7 @@ export default function ParceirosPage() {
                       }}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)}>
+                      <Button variant="ghost" size="icon" onClick={() => setPartnerToDelete(p)} aria-label={`Excluir ${p.name}`}>
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </TableCell>
@@ -662,6 +669,16 @@ export default function ParceirosPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmationDialog
+        open={Boolean(partnerToDelete)}
+        onOpenChange={(open) => !open && setPartnerToDelete(null)}
+        itemType="parceiro"
+        itemLabel={partnerToDelete?.name ?? ''}
+        description="Usuários, filiais, clientes, vendas e demandas deste parceiro também serão removidos. Parceiros com comissões já pagas não podem ser excluídos; nesse caso, suspenda o cadastro."
+        deleting={deletingPartner}
+        onConfirm={() => void handleDelete()}
+      />
     </DashboardLayout>
   );
 }

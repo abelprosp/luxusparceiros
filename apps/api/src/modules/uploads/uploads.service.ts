@@ -27,6 +27,12 @@ import {
   isPlatformAdmin,
 } from '@/common/utils/partner-scope';
 import { TaskIntegrationService } from '@/modules/task-integration/task-integration.service';
+import {
+  AVATAR_FILE_TYPES,
+  DOCUMENT_FILE_TYPES,
+  DetectedFileType,
+  detectAllowedFileType,
+} from '@/common/utils/file-signature';
 
 const DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
@@ -63,11 +69,10 @@ export class UploadsService {
     },
     purpose: DocumentPurpose = DocumentPurpose.GENERAL,
   ) {
-    this.validateFile(file);
+    const detected = this.validateFile(file);
     await this.validateRelations(type, purpose, user, relations);
 
-    const ext = this.resolveExtension(file);
-    const filename = `${uuidv4()}${ext}`;
+    const filename = `${uuidv4()}${detected.extension}`;
     const filepath = join(this.uploadDir, filename);
 
     writeFileSync(filepath, file.buffer);
@@ -78,7 +83,7 @@ export class UploadsService {
         type,
         purpose,
         url: `/uploads/${filename}`,
-        mimeType: file.mimetype,
+        mimeType: detected.mimeType,
         size: file.size,
         uploadedBy: user.id,
         clientId: relations?.clientId,
@@ -136,10 +141,9 @@ export class UploadsService {
   }
 
   async uploadAvatar(file: Express.Multer.File, user: AuthUser) {
-    this.validateAvatar(file);
+    const detected = this.validateAvatar(file);
 
-    const ext = extname(file.originalname).toLowerCase();
-    const filename = `avatar-${user.id}-${uuidv4()}${ext}`;
+    const filename = `avatar-${user.id}-${uuidv4()}${detected.extension}`;
     const filepath = join(this.uploadDir, filename);
 
     writeFileSync(filepath, file.buffer);
@@ -198,6 +202,17 @@ export class UploadsService {
         throw new BadRequestException(
           'Anexos desta demanda são tratados no Luxus Task. No Parceiros só é possível baixar os arquivos sincronizados.',
         );
+      }
+    }
+    if (relations?.clientId && !relations.saleId) {
+      const client = await this.prisma.client.findUnique({
+        where: { id: relations.clientId },
+        select: { partnerId: true, branchId: true },
+      });
+      if (!client) throw new BadRequestException('Cliente não encontrado');
+      assertPartnerAccess(user, client.partnerId);
+      if (user.branchId && client.branchId !== user.branchId) {
+        throw new ForbiddenException(MESSAGES.FORBIDDEN);
       }
     }
     if (relations?.ticketId) {
@@ -352,7 +367,7 @@ export class UploadsService {
     file: Express.Multer.File,
     user: AuthUser,
   ) {
-    this.validateFile(file);
+    const detected = this.validateFile(file);
 
     const document = await this.prisma.document.findUnique({
       where: { id: documentId },
@@ -415,8 +430,7 @@ export class UploadsService {
       .replace(/^\/uploads\//, '')
       .replace(/[^a-zA-Z0-9._-]/g, '');
 
-    const ext = extname(file.originalname).toLowerCase();
-    const filename = `${uuidv4()}${ext}`;
+    const filename = `${uuidv4()}${detected.extension}`;
     const filepath = join(this.uploadDir, filename);
     writeFileSync(filepath, file.buffer);
 
@@ -426,7 +440,7 @@ export class UploadsService {
         data: {
           name: file.originalname,
           url: `/uploads/${filename}`,
-          mimeType: file.mimetype,
+          mimeType: detected.mimeType,
           size: file.size,
           uploadedBy: user.id,
         },
@@ -613,13 +627,7 @@ export class UploadsService {
     return types[extname(filename).toLowerCase()] ?? 'application/octet-stream';
   }
 
-  private resolveExtension(file: Express.Multer.File) {
-    const fromName = extname(file.originalname || '').toLowerCase();
-    if (/^\.[a-z0-9]{1,10}$/.test(fromName)) return fromName;
-    return '.bin';
-  }
-
-  private validateFile(file: Express.Multer.File) {
+  private validateFile(file: Express.Multer.File): DetectedFileType {
     if (!file) {
       throw new BadRequestException('Arquivo é obrigatório');
     }
@@ -628,21 +636,24 @@ export class UploadsService {
         `Arquivo excede o tamanho máximo de ${Math.round(this.maxSize / (1024 * 1024))} MB`,
       );
     }
+    const detected = detectAllowedFileType(file.buffer, DOCUMENT_FILE_TYPES);
+    if (!detected) {
+      throw new BadRequestException('Formato não permitido. Envie PDF, PNG ou JPEG.');
+    }
+    return detected;
   }
 
-  private validateAvatar(file: Express.Multer.File) {
+  private validateAvatar(file: Express.Multer.File): DetectedFileType {
     if (!file) {
       throw new BadRequestException('Imagem é obrigatória');
     }
     if (file.size > Math.min(this.maxSize, 5 * 1024 * 1024)) {
       throw new BadRequestException('A foto de perfil deve ter no máximo 5 MB');
     }
-
-    const ext = extname(file.originalname).toLowerCase();
-    const imageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
-    if (!imageMimeTypes.includes(file.mimetype) || !imageExtensions.includes(ext)) {
+    const detected = detectAllowedFileType(file.buffer, AVATAR_FILE_TYPES);
+    if (!detected) {
       throw new BadRequestException('Use uma imagem JPG, PNG ou WebP');
     }
+    return detected;
   }
 }

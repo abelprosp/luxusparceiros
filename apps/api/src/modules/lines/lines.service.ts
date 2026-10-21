@@ -102,11 +102,41 @@ export class LinesService {
   }
 
   async update(id: string, dto: UpdateLineDto, user: AuthUser) {
-    await this.findOne(id, user);
+    const existing = await this.findOne(id, user);
+    this.assertCanManage(existing, user);
     const { partnerId: requestedPartnerId, ...fields } = dto;
     const partnerId = requestedPartnerId
       ? resolvePartnerId(user, requestedPartnerId)
       : undefined;
+    const ownerId = partnerId ?? existing.partnerId;
+    const operatorId = fields.operatorId ?? existing.operatorId;
+    if (fields.clientId) {
+      const client = await this.prisma.client.findUnique({
+        where: { id: fields.clientId },
+        select: { partnerId: true },
+      });
+      if (!client || client.partnerId !== ownerId) {
+        throw new BadRequestException('Cliente inválido para o dono desta linha');
+      }
+    }
+    if (fields.planId) {
+      const plan = await this.prisma.plan.findUnique({
+        where: { id: fields.planId },
+        select: { operatorId: true },
+      });
+      if (!plan || plan.operatorId !== operatorId) {
+        throw new BadRequestException('O plano não pertence à operadora da linha');
+      }
+    }
+    if (fields.simCardId) {
+      const simCard = await this.prisma.simCard.findUnique({
+        where: { id: fields.simCardId },
+        select: { partnerId: true, operatorId: true },
+      });
+      if (!simCard || simCard.operatorId !== operatorId || (simCard.partnerId && simCard.partnerId !== ownerId)) {
+        throw new BadRequestException('Chip inválido para esta linha');
+      }
+    }
     const line = await this.prisma.line.update({
       where: { id },
       data: { ...fields, ...(partnerId && { partnerId }) },
@@ -133,13 +163,17 @@ export class LinesService {
       throw new ForbiddenException('Parceiro é obrigatório para reservar linha');
     }
 
-    const updated = await this.prisma.line.update({
-      where: { id },
+    const claimed = await this.prisma.line.updateMany({
+      where: { id, status: LineStatus.AVAILABLE, OR: [{ partnerId: null }, { partnerId }] },
       data: {
         status: LineStatus.RESERVED,
         partnerId,
         reservedAt: new Date(),
       },
+    });
+    if (claimed.count !== 1) throw new BadRequestException(MESSAGES.LINE_NOT_AVAILABLE);
+    const updated = await this.prisma.line.findUniqueOrThrow({
+      where: { id },
       include: { operator: true, partner: true },
     });
 
@@ -156,7 +190,12 @@ export class LinesService {
   }
 
   async remove(id: string, user: AuthUser) {
-    await this.findOne(id, user);
+    const existing = await this.findOne(id, user);
+    this.assertCanManage(existing, user);
+    const sales = await this.prisma.sale.count({ where: { lineId: id } });
+    if (sales > 0) {
+      throw new BadRequestException('Linha vinculada a vendas não pode ser removida');
+    }
     await this.prisma.line.delete({ where: { id } });
     await this.auditService.log({
       userId: user.id,
@@ -166,5 +205,12 @@ export class LinesService {
       entityType: 'Line',
     });
     return { message: 'Linha removida com sucesso' };
+  }
+
+  /** Linhas do estoque geral (sem parceiro) só são alteradas pela equipe Luxus. */
+  private assertCanManage(line: { partnerId: string | null }, user: AuthUser) {
+    if (!line.partnerId && user.partnerId) {
+      throw new ForbiddenException('Linhas do estoque geral só podem ser alteradas pela Luxus');
+    }
   }
 }

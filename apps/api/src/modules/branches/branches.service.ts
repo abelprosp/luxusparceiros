@@ -12,6 +12,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { MESSAGES } from '@/common/constants/messages';
 import { assertPartnerAccess, isAdminRole, resolvePartnerId } from '@/common/utils/partner-scope';
+import { revokeUserSessions } from '@/common/utils/session-revocation';
 import { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto';
 
 const branchInclude = {
@@ -277,6 +278,9 @@ export class BranchesService {
     }
 
     await tx.user.update({ where: { id: attendant.id }, data: userData });
+    if (params.password || params.branchStatus !== BranchStatus.ACTIVE) {
+      await revokeUserSessions(tx, attendant.id);
+    }
   }
 
   private async assertPartnerCanManageBranches(partnerId: string) {

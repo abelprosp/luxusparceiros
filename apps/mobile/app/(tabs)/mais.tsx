@@ -8,6 +8,7 @@ import {
   FileText,
   DollarSign,
   User,
+  LifeBuoy,
   ChevronRight,
   LogOut,
 } from 'lucide-react-native';
@@ -45,6 +46,12 @@ export default function MaisScreen() {
       subtitle: 'Atendimento integrado ao Luxus Task',
       icon: <FileText size={22} color={colors.primary} />,
       href: '/(tabs)/solicitacoes',
+    },
+    {
+      title: 'Chamados',
+      subtitle: 'Suporte da equipe Luxus',
+      icon: <LifeBuoy size={22} color={colors.primary} />,
+      href: '/(tabs)/chamados',
     },
     {
       title: 'Comissões',

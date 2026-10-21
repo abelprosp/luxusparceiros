@@ -14,6 +14,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState, LoadMoreButton } from '@/components/ui/error-state';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { useToast } from '@/components/ui/toaster';
 
 interface Campaign {
@@ -34,9 +37,9 @@ interface CampaignMetrics {
 }
 
 export default function CampanhasPage() {
-  const [items, setItems] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [metricsOpen, setMetricsOpen] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
@@ -45,15 +48,27 @@ export default function CampanhasPage() {
   const [form, setForm] = useState({ title: '', description: '', startDate: '', endDate: '', goal: '' });
   const { toast } = useToast();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getPaginated<Campaign>('/campaigns', { search: search || undefined, limit: 50 });
-      setItems(res.data);
-    } catch { setItems([]); } finally { setLoading(false); }
-  }, [search]);
+  const fetchCampaigns = useCallback(
+    (page: number) => getPaginated<Campaign>('/campaigns', { search: search || undefined, page, limit: 50 }),
+    [search],
+  );
+  const list = usePaginatedList(fetchCampaigns);
+  const { items, loading, reload: load } = list;
 
-  useEffect(() => { load(); }, [load]);
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api(`/campaigns/${deleteTarget.id}`, { method: 'DELETE' });
+      toast({ title: 'Campanha excluída', variant: 'success' });
+      setDeleteTarget(null);
+      load();
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao excluir', variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const handleSave = async () => {
     try {
@@ -102,6 +117,8 @@ export default function CampanhasPage() {
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+      ) : list.error && items.length === 0 ? (
+        <ErrorState message={list.error} onRetry={() => void load()} />
       ) : items.length === 0 ? (
         <EmptyState icon={Megaphone} title="Nenhuma campanha" description="Crie a primeira campanha." />
       ) : (
@@ -134,7 +151,7 @@ export default function CampanhasPage() {
                     <Button variant="ghost" size="icon" onClick={() => { setEditing(c); setForm({ title: c.title, description: '', startDate: c.startDate.split('T')[0], endDate: c.endDate.split('T')[0], goal: c.goal ? String(c.goal) : '' }); setDialogOpen(true); }}>
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={async () => { await api(`/campaigns/${c.id}`, { method: 'DELETE' }); load(); }}>
+                    <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(c)} aria-label={`Excluir ${c.title}`}>
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
                   </TableCell>
@@ -144,6 +161,25 @@ export default function CampanhasPage() {
           </Table>
         </div>
       )}
+      {!loading && (
+        <LoadMoreButton
+          hasMore={list.hasMore}
+          loading={list.loadingMore}
+          onClick={() => void list.loadMore()}
+          shown={items.length}
+          total={list.total}
+        />
+      )}
+
+      <DeleteConfirmationDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        itemType="campanha"
+        itemLabel={deleteTarget?.title ?? ''}
+        description="Esta ação não pode ser desfeita. As vendas já registradas continuam no sistema, apenas sem o vínculo com a campanha."
+        deleting={deleting}
+        onConfirm={() => void handleDelete()}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>

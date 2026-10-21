@@ -4,6 +4,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { MESSAGES } from '@/common/constants/messages';
 import { realizedSaleStatusFilter } from '@/common/constants/realized-sale-statuses';
+import { assertDateRange } from '@/common/utils/date-range';
 import { CreateCampaignDto, UpdateCampaignDto } from './dto/campaign.dto';
 
 @Injectable()
@@ -80,6 +81,7 @@ export class CampaignsService {
   }
 
   async create(dto: CreateCampaignDto, actorId?: string) {
+    assertDateRange(dto.startDate, dto.endDate, 'período da campanha');
     const campaign = await this.prisma.campaign.create({
       data: {
         ...dto,
@@ -98,7 +100,8 @@ export class CampaignsService {
   }
 
   async update(id: string, dto: UpdateCampaignDto, actorId?: string) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
+    assertDateRange(dto.startDate ?? existing.startDate, dto.endDate ?? existing.endDate, 'período da campanha');
     const data: Prisma.CampaignUpdateInput = { ...dto };
     if (dto.startDate) data.startDate = new Date(dto.startDate);
     if (dto.endDate) data.endDate = new Date(dto.endDate);

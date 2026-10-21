@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Search, Plus, Wallet } from 'lucide-react';
 import { FinancialType } from '@luxus/types';
 import { formatCurrency, formatDate } from '@luxus/utils';
@@ -15,6 +15,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState, LoadMoreButton } from '@/components/ui/error-state';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { useToast } from '@/components/ui/toaster';
 
 interface FinancialRecord {
@@ -27,27 +29,23 @@ interface FinancialRecord {
 }
 
 export default function FinanceiroPage() {
-  const [items, setItems] = useState<FinancialRecord[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ type: 'REVENUE', description: '', value: '', category: '' });
   const { toast } = useToast();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getPaginated<FinancialRecord>('/financial', {
-        search: search || undefined,
-        type: typeFilter !== 'all' ? typeFilter : undefined,
-        limit: 50,
-      });
-      setItems(res.data);
-    } catch { setItems([]); } finally { setLoading(false); }
-  }, [search, typeFilter]);
-
-  useEffect(() => { load(); }, [load]);
+  const fetchRecords = useCallback(
+    (page: number) => getPaginated<FinancialRecord>('/financial', {
+      search: search || undefined,
+      type: typeFilter !== 'all' ? typeFilter : undefined,
+      page,
+      limit: 50,
+    }),
+    [search, typeFilter],
+  );
+  const list = usePaginatedList(fetchRecords);
+  const { items, loading, reload: load } = list;
 
   const handleSave = async () => {
     try {
@@ -89,6 +87,8 @@ export default function FinanceiroPage() {
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+      ) : list.error && items.length === 0 ? (
+        <ErrorState message={list.error} onRetry={() => void load()} />
       ) : items.length === 0 ? (
         <EmptyState icon={Wallet} title="Nenhum registro" description="Adicione registros financeiros." />
       ) : (
@@ -118,6 +118,15 @@ export default function FinanceiroPage() {
             </TableBody>
           </Table>
         </div>
+      )}
+      {!loading && (
+        <LoadMoreButton
+          hasMore={list.hasMore}
+          loading={list.loadingMore}
+          onClick={() => void list.loadMore()}
+          shown={items.length}
+          total={list.total}
+        />
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

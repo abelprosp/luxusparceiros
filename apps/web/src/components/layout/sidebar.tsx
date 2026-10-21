@@ -20,6 +20,7 @@ const NAV_GROUPS = [
     label: 'Operação',
     paths: [
       '/solicitacoes',
+      '/chamados',
       '/operadoras',
       '/planos',
       '/estoque',
@@ -62,10 +63,11 @@ function NavItem({
             ? 'bg-primary/15 text-white shadow-[inset_0_0_0_1px_rgba(59,130,246,0.16)]'
             : 'bg-white/12 text-white shadow-inner'
           : expanded
-            ? 'text-white/55 hover:bg-white/8 hover:text-white'
-            : 'text-white/45 hover:bg-white/8 hover:text-white/80',
+            ? 'text-white/70 hover:bg-white/8 hover:text-white'
+            : 'text-white/65 hover:bg-white/8 hover:text-white',
       )}
       title={expanded ? undefined : label}
+      aria-label={expanded ? undefined : label}
       aria-current={isActive ? 'page' : undefined}
     >
       {isActive && expanded && (
@@ -75,8 +77,9 @@ function NavItem({
         className={cn(
           'shrink-0 transition-colors',
           expanded ? 'h-[18px] w-[18px]' : 'h-5 w-5',
-          expanded && (isActive ? 'text-primary' : 'text-white/55 group-hover:text-white'),
+          expanded && (isActive ? 'text-primary' : 'text-white/70 group-hover:text-white'),
         )}
+        aria-hidden="true"
       />
       {expanded && <span className="truncate">{label}</span>}
     </Link>
@@ -230,7 +233,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                 )}
               >
                 {expanded && (
-                  <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/30">
+                  <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/60">
                     {group.label}
                   </p>
                 )}

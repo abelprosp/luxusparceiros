@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Plus, Search, Pencil, Trash2, Radio } from 'lucide-react';
 import { api, getPaginated } from '@/lib/api';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -12,6 +12,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState, LoadMoreButton } from '@/components/ui/error-state';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { useToast } from '@/components/ui/toaster';
 
 interface Operator {
@@ -23,23 +26,35 @@ interface Operator {
 }
 
 export default function OperadorasPage() {
-  const [items, setItems] = useState<Operator[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Operator | null>(null);
   const [form, setForm] = useState({ name: '', description: '' });
+  const [deleteTarget, setDeleteTarget] = useState<Operator | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getPaginated<Operator>('/operators', { search: search || undefined, limit: 50 });
-      setItems(res.data);
-    } catch { setItems([]); } finally { setLoading(false); }
-  }, [search]);
+  const fetchOperators = useCallback(
+    (page: number) => getPaginated<Operator>('/operators', { search: search || undefined, page, limit: 50 }),
+    [search],
+  );
+  const list = usePaginatedList(fetchOperators);
+  const { items, loading, reload: load } = list;
 
-  useEffect(() => { load(); }, [load]);
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api(`/operators/${deleteTarget.id}`, { method: 'DELETE' });
+      toast({ title: 'Operadora excluída', variant: 'success' });
+      setDeleteTarget(null);
+      load();
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Falha ao excluir', variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const handleSave = async () => {
     try {
@@ -71,6 +86,8 @@ export default function OperadorasPage() {
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+      ) : list.error && items.length === 0 ? (
+        <ErrorState message={list.error} onRetry={() => void load()} />
       ) : items.length === 0 ? (
         <EmptyState icon={Radio} title="Nenhuma operadora" description="Cadastre a primeira operadora." />
       ) : (
@@ -94,7 +111,7 @@ export default function OperadorasPage() {
                     <Button variant="ghost" size="icon" onClick={() => { setEditing(op); setForm({ name: op.name, description: op.description || '' }); setDialogOpen(true); }}>
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={async () => { await api(`/operators/${op.id}`, { method: 'DELETE' }); load(); }}>
+                    <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(op)} aria-label={`Excluir ${op.name}`}>
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
                   </TableCell>
@@ -104,6 +121,25 @@ export default function OperadorasPage() {
           </Table>
         </div>
       )}
+      {!loading && (
+        <LoadMoreButton
+          hasMore={list.hasMore}
+          loading={list.loadingMore}
+          onClick={() => void list.loadMore()}
+          shown={items.length}
+          total={list.total}
+        />
+      )}
+
+      <DeleteConfirmationDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        itemType="operadora"
+        itemLabel={deleteTarget?.name ?? ''}
+        description="Esta ação não pode ser desfeita. Se a operadora tiver registros vinculados, a exclusão será recusada."
+        deleting={deleting}
+        onConfirm={() => void handleDelete()}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>

@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Alert, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { RequestType } from '@luxus/types';
+import { RequestType, UserRole } from '@luxus/types';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   requestsApi,
   clientsApi,
@@ -19,6 +20,24 @@ import { spacing, typography, radius } from '@/theme';
 const REQUEST_TYPES = Object.values(RequestType);
 
 export default function NovaSolicitacaoScreen() {
+  const { user } = useAuth();
+  const { colors } = useTheme();
+  if (user?.role !== UserRole.ADMIN) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+        <View style={styles.scroll}>
+          <ScreenHeader title="Nova Demanda" showBack />
+          <Text style={[styles.label, { color: colors.textSecondary }]}>
+            Somente a equipe Luxus abre novas demandas. Fale com o suporte pelo menu Chamados.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+  return <NovaSolicitacaoForm />;
+}
+
+function NovaSolicitacaoForm() {
   const { colors } = useTheme();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
