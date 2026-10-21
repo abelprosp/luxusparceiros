@@ -669,9 +669,9 @@ Este dia marca o início da integração com o **telefonia-2**, sistema de fatur
 - **Por quê:** regra definida pelo cliente: "quem cria o parceiro marca se ele quer ou não; toda venda já é criada nessa base; sem nada marcado, a venda é feita fora do sistema da Luxus".
 - **Atenção ao publicar:** até o administrador marcar os parceiros cobrados pela Luxus, nenhuma venda nova vai para o faturamento (telefonia-2).
 
-### Versão 37 — 2026-10-20 — Segurança, consistência e usabilidade (1.14.0)
+### Versão 37 — 2026-10-21 — Segurança, consistência e usabilidade (1.14.0)
 
-**Situação:** em homologação na branch `homologacao`, ainda não publicada na `main`. A lista completa dos 30 ajustes e o passo a passo do ambiente de homologação estão no README, seção "Atualização 1.14.0".
+**Commits:** `8fa69c9`. **Situação:** em produção desde 21/10/2026, depois de testada e aprovada na homologação. A lista completa dos 30 ajustes e o passo a passo do ambiente de homologação estão no README, seção "Atualização 1.14.0".
 
 - **Tipo:** Segurança, correção de regras e usabilidade
 - **Situação anterior / problema:** brechas de isolamento entre parceiros (exclusão em massa, estoque, uploads, anexos do Task, chamados); refresh token guardado em texto puro, sem rotação nem detecção de reuso; admin de parceiro podendo mexer em comissão, status e catálogo; comissão que não acompanhava venda cancelada; exclusão de cliente sem regras; listagens sem paginação real nem tela de erro; acessibilidade fraca; aplicativo deixando a venda nova em rascunho.

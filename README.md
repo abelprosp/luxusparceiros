@@ -239,7 +239,7 @@ Módulos da API (`apps/api/src/modules`): `auth`, `users` (inclui perfil), `part
 
 Telas da web (`apps/web/src/app/(dashboard)`): dashboard, vendas, clientes, parceiros, filiais, estoque, planos, operadoras, comissões, campanhas, financeiro, chamados, solicitações (menu "Demandas"), usuários, auditoria, perfil, configurações e guia de uso. Fora da área autenticada ficam `login` e `forgot-password`.
 
-Outros arquivos na raiz: `HISTORICO_DE_VERSOES.txt` (histórico com numeração 0.1.0 a 1.13.0), `DOCUMENTACAO_COMPLETA.txt`, `RELATORIO_TECNICO.md` e `Luxus Parceiros.docx` (manual de processos). A pasta `__pycache__/` na raiz não faz parte do sistema e pode ser ignorada.
+Outros arquivos na raiz: `HISTORICO_DE_VERSOES.txt` (histórico com numeração 0.1.0 a 1.14.0), `DOCUMENTACAO_COMPLETA.txt`, `RELATORIO_TECNICO.md` e `Luxus Parceiros.docx` (manual de processos). A pasta `__pycache__/` na raiz não faz parte do sistema e pode ser ignorada.
 
 ## Como rodar localmente
 
@@ -476,7 +476,7 @@ Marcar no cadastro os parceiros cobrados pela Luxus. Até isso ser feito, nenhum
 
 ## Atualização 1.14.0: segurança, consistência e usabilidade
 
-Situação: **em homologação** desde 20/10/2026, na branch `homologacao`. Ainda **não** foi para a `main` nem para a produção.
+Situação: **em produção** desde 21/10/2026 (commit `8fa69c9`). Passou pela homologação (túnel Cloudflare, banco próprio) e foi aprovada nos testes antes de ser mesclada na `main`.
 
 São 30 ajustes, agrupados abaixo.
 
