@@ -476,7 +476,7 @@ Marcar no cadastro os parceiros cobrados pela Luxus. Até isso ser feito, nenhum
 
 ## Atualização 1.14.0: segurança, consistência e usabilidade
 
-Situação: **em produção** desde 21/10/2026 (commit `8fa69c9`). Passou pela homologação (túnel Cloudflare, banco próprio) e foi aprovada nos testes antes de ser mesclada na `main`.
+Situação: **em produção** desde 23/10/2026 (commit `8fa69c9`; o deploy saiu com `00df38e`, depois da instabilidade da Railway). Passou pela homologação (túnel Cloudflare, banco próprio) e foi aprovada nos testes antes de ser mesclada na `main`.
 
 São 30 ajustes, agrupados abaixo.
 
